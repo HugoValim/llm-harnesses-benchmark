@@ -69,24 +69,17 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def load_openrouter_api_key() -> str | None:
-    command = [
-        "zsh",
-        "-lc",
-        'source ~/.config/zsh/secrets >/dev/null 2>&1 && printf %s "$OPENROUTER_API_KEY"',
-    ]
-    try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)
-    except Exception:
-        return None
-    value = completed.stdout.strip()
-    return value or None
+def load_ollama_env() -> dict[str, str]:
+    """Defaults for generated apps that read OLLAMA_HOST / OLLAMA_MODEL from the environment."""
+    return {
+        "OLLAMA_HOST": os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+        "OLLAMA_MODEL": os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
+    }
 
 
-def command_env(api_key: str | None, extra: dict[str, str] | None = None) -> dict[str, str]:
+def command_env(ollama_env: dict[str, str], extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
-    if api_key:
-        env["OPENROUTER_API_KEY"] = api_key
+    env.update(ollama_env)
     if extra:
         env.update(extra)
     return env
@@ -319,7 +312,7 @@ def local_attempt(
     project_dir: Path,
     app_root: Path,
     runtime_dir: Path,
-    api_key: str | None,
+    ollama_env: dict[str, str],
     timeouts: argparse.Namespace,
 ) -> dict[str, Any]:
     method_dir = runtime_dir / "local"
@@ -328,7 +321,7 @@ def local_attempt(
     venv_python = venv_dir / "bin" / "python"
 
     env = command_env(
-        api_key,
+        ollama_env,
         {
             "DJANGO_DEBUG": "1",
             "PORT": "8000",
@@ -466,7 +459,7 @@ def docker_build_attempt(app_root: Path, runtime_dir: Path, timeouts: argparse.N
 def docker_compose_attempt(
     app_root: Path,
     runtime_dir: Path,
-    api_key: str | None,
+    ollama_env: dict[str, str],
     timeouts: argparse.Namespace,
 ) -> dict[str, Any]:
     method_dir = runtime_dir / "docker-compose"
@@ -475,7 +468,7 @@ def docker_compose_attempt(
         return {"method": "docker-compose", "success": False, "note": "no docker compose file"}
 
     env = command_env(
-        api_key,
+        ollama_env,
         {
             "COMPOSE_PROJECT_NAME": f"llmpybench_{safe_slug(app_root.parent.name)}_{safe_slug(app_root.name)}",
         },
@@ -592,7 +585,7 @@ def analyze_one(
     result_dir: Path,
     result_payload: dict[str, Any],
     args: argparse.Namespace,
-    api_key: str | None,
+    ollama_env: dict[str, str],
 ) -> dict[str, Any]:
     project_dir = result_dir / "project"
     runtime_dir = project_dir / RUNTIME_DIRNAME
@@ -615,9 +608,9 @@ def analyze_one(
         return report
 
     report["app_root"] = str(app_root)
-    report["methods"]["local"] = local_attempt(project_dir, app_root, runtime_dir, api_key, args)
+    report["methods"]["local"] = local_attempt(project_dir, app_root, runtime_dir, ollama_env, args)
     report["methods"]["docker_build"] = docker_build_attempt(app_root, runtime_dir, args)
-    report["methods"]["docker_compose"] = docker_compose_attempt(app_root, runtime_dir, api_key, args)
+    report["methods"]["docker_compose"] = docker_compose_attempt(app_root, runtime_dir, ollama_env, args)
     save_json(runtime_dir / "runtime_report.json", report)
     write_report(runtime_dir / "runtime_report.md", report)
     return report
@@ -626,7 +619,7 @@ def analyze_one(
 def main() -> int:
     args = parse_args()
     results_dir = Path(args.results_dir)
-    api_key = load_openrouter_api_key()
+    ollama_env = load_ollama_env()
     summaries: list[dict[str, Any]] = []
 
     result_paths = sorted(results_dir.glob("*/result.json"))
@@ -638,7 +631,7 @@ def main() -> int:
 
     for result_path in result_paths:
         payload = load_json(result_path)
-        report = analyze_one(result_path.parent, payload, args, api_key)
+        report = analyze_one(result_path.parent, payload, args, ollama_env)
         summaries.append(
             {
                 "slug": report["slug"],
