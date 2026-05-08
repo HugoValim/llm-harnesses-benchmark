@@ -1,4 +1,5 @@
 """Process management and benchmark execution."""
+
 from __future__ import annotations
 
 import json
@@ -118,26 +119,36 @@ def build_codex_command(
     # (e.g., `exec npx --yes @openai/codex "$@"`) so we launch through bash
     # to ensure the full shell environment (mise, node) is available.
     codex_args = [
-        "codex", "exec",
+        "codex",
+        "exec",
         "--json",
         "--ephemeral",
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
-        "-s", "danger-full-access",
-        "-C", str(project_dir.resolve()),
-        "-m", model_id,
+        "-s",
+        "danger-full-access",
+        "-C",
+        str(project_dir.resolve()),
+        "-m",
+        model_id,
     ]
     if reasoning_effort:
         codex_args.extend(["-c", f"model_reasoning_effort={reasoning_effort}"])
     # Multi-agent: register the subagent via -c agents.<name>.config_file=<path>
     if codex_subagent:
         sub_name = codex_subagent.get("name", "coder")
-        sub_desc = codex_subagent.get("description", f"Delegate coding tasks to {sub_name}")
+        sub_desc = codex_subagent.get(
+            "description", f"Delegate coding tasks to {sub_name}"
+        )
         toml_path = write_codex_subagent_toml(project_dir, codex_subagent)
-        codex_args.extend([
-            "-c", f'agents.{sub_name}.config_file="{toml_path}"',
-            "-c", f'agents.{sub_name}.description="{sub_desc}"',
-        ])
+        codex_args.extend(
+            [
+                "-c",
+                f'agents.{sub_name}.config_file="{toml_path}"',
+                "-c",
+                f'agents.{sub_name}.description="{sub_desc}"',
+            ]
+        )
     codex_args.append("-")  # read prompt from stdin
     # Wrap in bash -lc to get login shell environment (mise, PATH, etc.)
     cmd = ["bash", "-lc", " ".join(shlex_quote(a) for a in codex_args)]
@@ -164,7 +175,9 @@ def export_opencode_session(
         if completed.stderr:
             error_path.write_text(completed.stderr)
         return export_path
-    error_path.write_text(completed.stderr or completed.stdout or "opencode export failed")
+    error_path.write_text(
+        completed.stderr or completed.stdout or "opencode export failed"
+    )
     print_line(f"[{model_slug}] opencode export failed for session {session_id}")
     return None
 
@@ -196,7 +209,9 @@ def parse_event_stream(raw: str) -> list[dict[str, Any]]:
 
 
 def extract_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
-    finish = next((event for event in reversed(events) if event.get("type") == "step_finish"), {})
+    finish = next(
+        (event for event in reversed(events) if event.get("type") == "step_finish"), {}
+    )
     tokens = finish.get("part", {}).get("tokens", {}) if finish else {}
     text_parts = []
     for event in events:
@@ -206,7 +221,9 @@ def extract_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
         if isinstance(text, str):
             text_parts.append(text)
     return {
-        "session_id": next((event.get("sessionID") for event in events if event.get("sessionID")), None),
+        "session_id": next(
+            (event.get("sessionID") for event in events if event.get("sessionID")), None
+        ),
         "finish_reason": finish.get("part", {}).get("reason"),
         "tokens": tokens,
         "assistant_output": "\n".join(text_parts).strip(),
@@ -346,7 +363,9 @@ def stream_process_output(
     error_loop_threshold = 5
     tool_call_loop_detector = ToolCallLoopDetector(threshold=5)
 
-    def _make_result(timed_out: bool, stalled: bool, stall_reason: str | None) -> StreamResult:
+    def _make_result(
+        timed_out: bool, stalled: bool, stall_reason: str | None
+    ) -> StreamResult:
         return StreamResult(
             stdout="".join(stdout_chunks),
             stderr="".join(stderr_chunks),
@@ -409,8 +428,12 @@ def stream_process_output(
                                     or "unknown"
                                 )
                                 if isinstance(error_detail, dict):
-                                    error_detail = error_detail.get("message", str(error_detail))
-                                description = f"error: {shorten_text(str(error_detail))}"
+                                    error_detail = error_detail.get(
+                                        "message", str(error_detail)
+                                    )
+                                description = (
+                                    f"error: {shorten_text(str(error_detail))}"
+                                )
                                 last_event_message = description
                                 last_activity_detail = description
                                 if consecutive_error_events <= 2:
@@ -445,21 +468,42 @@ def stream_process_output(
                                 if reason == "stop":
                                     terminal_stop_seen_at = now
                                 timestamp = event.get("timestamp")
-                                output_tokens = event.get("part", {}).get("tokens", {}).get("output")
+                                output_tokens = (
+                                    event.get("part", {})
+                                    .get("tokens", {})
+                                    .get("output")
+                                )
                                 if (
                                     current_step_started_at is not None
                                     and isinstance(timestamp, int)
                                     and isinstance(output_tokens, int)
                                     and timestamp > current_step_started_at
                                 ):
-                                    duration_seconds = (timestamp - current_step_started_at) / 1000
-                                    latest_preview_output_tps = round(output_tokens / duration_seconds, 2)
-                                    preview_output_tps_samples.append(latest_preview_output_tps)
-                                    print_line(f"[{model_slug}] preview output_tps={latest_preview_output_tps:.2f}")
-                                    if not preview_gate_decided and len(preview_output_tps_samples) >= min_preview_samples:
+                                    duration_seconds = (
+                                        timestamp - current_step_started_at
+                                    ) / 1000
+                                    latest_preview_output_tps = round(
+                                        output_tokens / duration_seconds, 2
+                                    )
+                                    preview_output_tps_samples.append(
+                                        latest_preview_output_tps
+                                    )
+                                    print_line(
+                                        f"[{model_slug}] preview output_tps={latest_preview_output_tps:.2f}"
+                                    )
+                                    if (
+                                        not preview_gate_decided
+                                        and len(preview_output_tps_samples)
+                                        >= min_preview_samples
+                                    ):
                                         preview_gate_decided = True
                                         preview_average_output_tps = round(
-                                            sum(preview_output_tps_samples[:min_preview_samples]) / min_preview_samples,
+                                            sum(
+                                                preview_output_tps_samples[
+                                                    :min_preview_samples
+                                                ]
+                                            )
+                                            / min_preview_samples,
                                             2,
                                         )
                                         print_line(
@@ -468,7 +512,8 @@ def stream_process_output(
                                         )
                                         if (
                                             min_preview_output_tps is not None
-                                            and preview_average_output_tps < min_preview_output_tps
+                                            and preview_average_output_tps
+                                            < min_preview_output_tps
                                         ):
                                             kill_process_group(process)
                                             slow_reason = (
@@ -477,7 +522,9 @@ def stream_process_output(
                                                 f"below threshold {min_preview_output_tps:.2f}"
                                             )
                                             print_line(f"[{model_slug}] {slow_reason}")
-                                            return _make_result(False, True, slow_reason)
+                                            return _make_result(
+                                                False, True, slow_reason
+                                            )
 
                             # Codex: turn.completed is the terminal stop equivalent
                             if event.get("type") == "turn.completed":
@@ -488,9 +535,15 @@ def stream_process_output(
                                 part = event.get("part", {})
                                 tool_name = part.get("tool", "")
                                 tool_input = part.get("state", {}).get("input", {})
-                                if tool_name and tool_call_loop_detector.record(tool_name, tool_input):
+                                if tool_name and tool_call_loop_detector.record(
+                                    tool_name, tool_input
+                                ):
                                     kill_process_group(process)
-                                    stall_reason = tool_call_loop_detector.loop_description(tool_name)
+                                    stall_reason = (
+                                        tool_call_loop_detector.loop_description(
+                                            tool_name
+                                        )
+                                    )
                                     print_line(f"[{model_slug}] {stall_reason}")
                                     return _make_result(False, True, stall_reason)
 
@@ -499,9 +552,15 @@ def stream_process_output(
                                 item = event.get("item", {})
                                 if item.get("type") == "command_execution":
                                     cmd = item.get("command", "")
-                                    if cmd and tool_call_loop_detector.record("command_execution", {"command": cmd}):
+                                    if cmd and tool_call_loop_detector.record(
+                                        "command_execution", {"command": cmd}
+                                    ):
                                         kill_process_group(process)
-                                        stall_reason = tool_call_loop_detector.loop_description("command_execution")
+                                        stall_reason = (
+                                            tool_call_loop_detector.loop_description(
+                                                "command_execution"
+                                            )
+                                        )
                                         print_line(f"[{model_slug}] {stall_reason}")
                                         return _make_result(False, True, stall_reason)
 
@@ -523,7 +582,10 @@ def stream_process_output(
                         last_activity_detail = last_event_message
                         print_line(f"[{model_slug}] {last_event_message}")
 
-            if terminal_stop_seen_at is not None and now - terminal_stop_seen_at >= terminal_stop_grace_seconds:
+            if (
+                terminal_stop_seen_at is not None
+                and now - terminal_stop_seen_at >= terminal_stop_grace_seconds
+            ):
                 if process.poll() is None:
                     kill_process_group(process)
                     try:
@@ -542,7 +604,9 @@ def stream_process_output(
                     last_activity = now
                     last_activity_detail = f"project file count changed to {file_count}"
                 session_hint = session_id if session_id else "-"
-                detail = last_event_message if last_event_message else "waiting for output"
+                detail = (
+                    last_event_message if last_event_message else "waiting for output"
+                )
                 remote_state = backend.fetch_status_string() if backend else None
                 remote_suffix = f" {remote_state}" if remote_state else ""
                 print_line(
@@ -553,9 +617,7 @@ def stream_process_output(
             idle_seconds = now - last_activity
             if idle_seconds >= no_progress_timeout_seconds:
                 kill_process_group(process)
-                stall_reason = (
-                    f"no progress for {format_duration(idle_seconds)}; last activity: {last_activity_detail}"
-                )
+                stall_reason = f"no progress for {format_duration(idle_seconds)}; last activity: {last_activity_detail}"
                 print_line(f"[{model_slug}] {stall_reason}")
                 return _make_result(False, True, stall_reason)
 
@@ -609,7 +671,7 @@ def _verify_opencode_config(
     # Check that the model entry exists in the config
     model_key = model["id"]
     if model_key.startswith("ollama/"):
-        model_key = model_key[len("ollama/"):]
+        model_key = model_key[len("ollama/") :]
     models_map = config.get("provider", {}).get("ollama", {}).get("models", {})
     entry = models_map.get(model_key)
     if not entry:
@@ -628,7 +690,9 @@ def _verify_opencode_config(
                 f"doesn't match llama_swap_model '{llama_swap_model}'"
             )
 
-    print_line(f"[{model_slug}] opencode config verified: {resolved} baseURL={base_url}")
+    print_line(
+        f"[{model_slug}] opencode config verified: {resolved} baseURL={base_url}"
+    )
 
 
 def run_opencode_phase(
@@ -649,12 +713,16 @@ def run_opencode_phase(
 ) -> dict[str, Any]:
     prompt_path.write_text(prompt)
     _verify_opencode_config(bench.opencode_config_path, model, model_slug, project_dir)
-    command = build_opencode_command(bench.runner, model["id"], prompt, continue_session_id=continue_session_id)
+    command = build_opencode_command(
+        bench.runner, model["id"], prompt, continue_session_id=continue_session_id
+    )
     wall_start = time.monotonic()
     process_env = os.environ.copy()
     if bench.opencode_config_path is not None:
         process_env["OPENCODE_CONFIG"] = str(bench.opencode_config_path.resolve())
-    process_env["OPENCODE_PERMISSION"] = json.dumps(OPENCODE_YOLO_PERMISSION, separators=(",", ":"))
+    process_env["OPENCODE_PERMISSION"] = json.dumps(
+        OPENCODE_YOLO_PERMISSION, separators=(",", ":")
+    )
     process = subprocess.Popen(
         command,
         cwd=project_dir,
@@ -666,7 +734,11 @@ def run_opencode_phase(
         bufsize=1,
     )
 
-    effective_min_tps = bench.min_preview_output_tps if override_min_preview_tps is ... else override_min_preview_tps
+    effective_min_tps = (
+        bench.min_preview_output_tps
+        if override_min_preview_tps is ...
+        else override_min_preview_tps
+    )
 
     result = stream_process_output(
         process=process,
@@ -716,7 +788,9 @@ def run_opencode_phase(
         "model": model,
         "opencode_session_id": metrics["session_id"],
         "paths": {
-            "opencode_config": str(bench.opencode_config_path) if bench.opencode_config_path is not None else None,
+            "opencode_config": str(bench.opencode_config_path)
+            if bench.opencode_config_path is not None
+            else None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),
@@ -735,7 +809,9 @@ def run_opencode_phase(
         "tokens": metrics["tokens"],
         "preview_output_tokens_per_second": result.latest_preview_output_tps,
         "preview_output_tokens_per_second_average": result.preview_average_output_tps,
-        "tokens_per_second": round(total_tokens / elapsed_seconds, 2) if total_tokens and elapsed_seconds else None,
+        "tokens_per_second": round(total_tokens / elapsed_seconds, 2)
+        if total_tokens and elapsed_seconds
+        else None,
         "output_tokens_per_second": (
             round(metrics["tokens"].get("output", 0) / elapsed_seconds, 2)
             if metrics["tokens"].get("output") and elapsed_seconds
@@ -794,7 +870,11 @@ def run_codex_phase(
         except BrokenPipeError:
             pass
 
-    effective_min_tps = bench.min_preview_output_tps if override_min_preview_tps is ... else override_min_preview_tps
+    effective_min_tps = (
+        bench.min_preview_output_tps
+        if override_min_preview_tps is ...
+        else override_min_preview_tps
+    )
 
     result = stream_process_output(
         process=process,
@@ -864,7 +944,9 @@ def run_codex_phase(
         "tokens": metrics["tokens"],
         "preview_output_tokens_per_second": result.latest_preview_output_tps,
         "preview_output_tokens_per_second_average": result.preview_average_output_tps,
-        "tokens_per_second": round(total_tokens / elapsed_seconds, 2) if total_tokens and elapsed_seconds else None,
+        "tokens_per_second": round(total_tokens / elapsed_seconds, 2)
+        if total_tokens and elapsed_seconds
+        else None,
         "output_tokens_per_second": (
             round(metrics["tokens"].get("output", 0) / elapsed_seconds, 2)
             if metrics["tokens"].get("output") and elapsed_seconds
@@ -899,10 +981,14 @@ def _kill_stale_opencode_processes() -> None:
         try:
             result = subprocess.run(
                 ["pgrep", "-f", pattern],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             pids = [int(p) for p in result.stdout.strip().split() if p.strip()]
-            stale.extend(p for p in pids if p not in (our_pid, our_ppid) and p not in stale)
+            stale.extend(
+                p for p in pids if p not in (our_pid, our_ppid) and p not in stale
+            )
         except (OSError, ValueError):
             continue
 
@@ -952,12 +1038,16 @@ def _evict_competing_backend(bench: BenchmarkConfig, model_slug: str) -> None:
         if ollama:
             active = ollama.list_active()
             if active:
-                print_line(f"[{model_slug}] evicting Ollama models to free GPU: {', '.join(active)}")
+                print_line(
+                    f"[{model_slug}] evicting Ollama models to free GPU: {', '.join(active)}"
+                )
                 ollama.unload_all()
                 # Verify eviction succeeded
                 still_active = ollama.list_active()
                 if still_active:
-                    print_line(f"[{model_slug}] WARNING: Ollama still has models loaded after eviction: {', '.join(still_active)}")
+                    print_line(
+                        f"[{model_slug}] WARNING: Ollama still has models loaded after eviction: {', '.join(still_active)}"
+                    )
     elif isinstance(bench.backend, OllamaBackend):
         # llama-swap auto-evicts on TTL but we can't force it.
         # Best-effort: load a tiny model to trigger swap, then unload it.
@@ -983,20 +1073,28 @@ def _ensure_local_model_ready(
         # Context is configured server-side, so context_limit is irrelevant.
         target_model = model.get("llama_swap_model")
         if not target_model:
-            print_line(f"[{model['slug']}] preflight skipped: no llama_swap_model configured")
+            print_line(
+                f"[{model['slug']}] preflight skipped: no llama_swap_model configured"
+            )
             return False, "no llama_swap_model configured for this model"
-        return bench.backend.ensure_model_ready(target_model, model["slug"], context_limit=None)
+        return bench.backend.ensure_model_ready(
+            target_model, model["slug"], context_limit=None
+        )
 
     # Ollama path: resolve model name and context from opencode config
     target_model = resolve_ollama_model_name(model["id"], bench.opencode_config_path)
-    context_limit = resolve_ollama_context_limit(model["id"], bench.opencode_config_path)
+    context_limit = resolve_ollama_context_limit(
+        model["id"], bench.opencode_config_path
+    )
     if not target_model:
         target_model = model.get("ollama_model_name") or model["id"].split("/", 1)[-1]
 
     return bench.backend.ensure_model_ready(target_model, model["slug"], context_limit)
 
 
-def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: int) -> dict[str, Any]:
+def run_model(
+    model: dict[str, Any], bench: BenchmarkConfig, index: int, total: int
+) -> dict[str, Any]:
     result_dir = bench.results_dir / model["slug"]
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
@@ -1028,12 +1126,16 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
 
     started_at = utc_now()
     print_line("")
-    print_line(f"[{index}/{total}] starting {model['slug']} -> {model['id']} (runner={runner_type})")
+    print_line(
+        f"[{index}/{total}] starting {model['slug']} -> {model['id']} (runner={runner_type})"
+    )
     print_line(f"[{model['slug']}] results_dir={result_dir}")
     print_line(f"[{model['slug']}] timeout={bench.timeout_seconds}s")
     if runner_type != "codex" and bench.opencode_config_path is not None:
         print_line(f"[{model['slug']}] opencode_config={bench.opencode_config_path}")
-    print_line(f"[{model['slug']}] no_progress_timeout={bench.no_progress_timeout_seconds}s")
+    print_line(
+        f"[{model['slug']}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
+    )
 
     # Preflight for local models
     is_local = model["provider"] == "ollama"
@@ -1050,7 +1152,9 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
                 "model": model,
                 "opencode_session_id": None,
                 "paths": {
-                    "opencode_config": str(bench.opencode_config_path) if bench.opencode_config_path is not None else None,
+                    "opencode_config": str(bench.opencode_config_path)
+                    if bench.opencode_config_path is not None
+                    else None,
                     "project_dir": str(project_dir),
                     "prompt": str(prompt_path),
                     "stderr": str(stderr_path),
@@ -1073,7 +1177,9 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
                 "phases": [],
             }
             save_json(result_path, payload)
-            print_line(f"[{index}/{total}] finished {model['slug']} status=failed preflight_error={preflight_message}")
+            print_line(
+                f"[{index}/{total}] finished {model['slug']} status=failed preflight_error={preflight_message}"
+            )
             return payload
 
     _run_phase = run_codex_phase if runner_type == "codex" else run_opencode_phase
@@ -1103,13 +1209,19 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
         and not phase1.get("timed_out")
         and not phase1.get("stalled")
     ):
-        continued_session_id = phase1.get("opencode_session_id") if runner_type != "codex" else None
-        print_line(f"[{model['slug']}] primary phase complete; continuing with follow-up prompt")
+        continued_session_id = (
+            phase1.get("opencode_session_id") if runner_type != "codex" else None
+        )
+        print_line(
+            f"[{model['slug']}] primary phase complete; continuing with follow-up prompt"
+        )
         phase2_kwargs: dict[str, Any] = {
             "bench": bench,
             "model": model,
             "model_slug": model["slug"],
-            "prompt": build_followup_prompt(bench.followup_prompt, continued_session_id),
+            "prompt": build_followup_prompt(
+                bench.followup_prompt, continued_session_id
+            ),
             "started_at": utc_now(),
             "project_dir": project_dir,
             "prompt_path": followup_prompt_path,
@@ -1128,8 +1240,11 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
     if (
         bench.auto_skip_slow_preview
         and isinstance(bench.min_preview_output_tps, float)
-        and isinstance(final_phase.get("preview_output_tokens_per_second_average"), float)
-        and float(final_phase["preview_output_tokens_per_second_average"]) < bench.min_preview_output_tps
+        and isinstance(
+            final_phase.get("preview_output_tokens_per_second_average"), float
+        )
+        and float(final_phase["preview_output_tokens_per_second_average"])
+        < bench.min_preview_output_tps
     ):
         note = (
             f" Skipped by default after benchmark preview averaged "
@@ -1137,22 +1252,32 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
             f"{bench.min_preview_samples} steps (< {bench.min_preview_output_tps:.2f})."
         )
         if mark_model_skip_by_default(bench.config_path, model["slug"], note):
-            print_line(f"[{model['slug']}] marked skip_by_default in {bench.config_path}")
+            print_line(
+                f"[{model['slug']}] marked skip_by_default in {bench.config_path}"
+            )
 
-    session_id = final_phase.get("opencode_session_id") or phase1.get("opencode_session_id")
+    session_id = final_phase.get("opencode_session_id") or phase1.get(
+        "opencode_session_id"
+    )
     exported_session = None
     if runner_type != "codex":
         process_env = os.environ.copy()
         if bench.opencode_config_path is not None:
             process_env["OPENCODE_CONFIG"] = str(bench.opencode_config_path.resolve())
-        process_env["OPENCODE_PERMISSION"] = json.dumps(OPENCODE_YOLO_PERMISSION, separators=(",", ":"))
+        process_env["OPENCODE_PERMISSION"] = json.dumps(
+            OPENCODE_YOLO_PERMISSION, separators=(",", ":")
+        )
         exported_session = (
-            export_opencode_session(session_id, session_export_path, process_env, model["slug"])
+            export_opencode_session(
+                session_id, session_export_path, process_env, model["slug"]
+            )
             if isinstance(session_id, str) and session_id
             else None
         )
 
-    total_elapsed = round(sum(float(phase.get("elapsed_seconds") or 0.0) for phase in phases), 2)
+    total_elapsed = round(
+        sum(float(phase.get("elapsed_seconds") or 0.0) for phase in phases), 2
+    )
     payload = {
         **final_phase,
         "elapsed_seconds": total_elapsed,
@@ -1160,18 +1285,30 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
         "model": model,
         "opencode_session_id": session_id,
         "paths": {
-            "opencode_config": str(bench.opencode_config_path) if bench.opencode_config_path is not None else None,
+            "opencode_config": str(bench.opencode_config_path)
+            if bench.opencode_config_path is not None
+            else None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),
             "stdout": str(stdout_path),
-            "followup_prompt": str(followup_prompt_path) if followup_prompt_path.exists() else None,
-            "followup_stderr": str(followup_stderr_path) if followup_stderr_path.exists() else None,
-            "followup_stdout": str(followup_stdout_path) if followup_stdout_path.exists() else None,
-            "session_export": str(exported_session) if exported_session is not None else None,
+            "followup_prompt": str(followup_prompt_path)
+            if followup_prompt_path.exists()
+            else None,
+            "followup_stderr": str(followup_stderr_path)
+            if followup_stderr_path.exists()
+            else None,
+            "followup_stdout": str(followup_stdout_path)
+            if followup_stdout_path.exists()
+            else None,
+            "session_export": str(exported_session)
+            if exported_session is not None
+            else None,
         },
         "primary_prompt_sha256": prompt_sha256(bench.prompt),
-        "followup_prompt_sha256": prompt_sha256(bench.followup_prompt) if bench.followup_prompt else None,
+        "followup_prompt_sha256": prompt_sha256(bench.followup_prompt)
+        if bench.followup_prompt
+        else None,
         "session_exported": exported_session is not None,
         "phases": phases,
     }
@@ -1188,7 +1325,9 @@ def run_model(model: dict[str, Any], bench: BenchmarkConfig, index: int, total: 
     if is_local and bench.backend is not None:
         active = bench.backend.list_active()
         if active:
-            print_line(f"[{model['slug']}] post-run cleanup: unloading {', '.join(active)}")
+            print_line(
+                f"[{model['slug']}] post-run cleanup: unloading {', '.join(active)}"
+            )
             bench.backend.unload_all()
 
     return payload

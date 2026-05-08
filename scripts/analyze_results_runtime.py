@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify benchmark-generated Python (Django + Channels) apps by booting them locally and via Docker."""
+
 from __future__ import annotations
 
 import argparse
@@ -37,7 +38,9 @@ class CommandResult:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify benchmark-generated Python (Django + Channels) apps.")
+    parser = argparse.ArgumentParser(
+        description="Verify benchmark-generated Python (Django + Channels) apps."
+    )
     parser.add_argument("--results-dir", default=str(RESULTS_DIR))
     parser.add_argument("--max-projects", type=int)
     parser.add_argument("--only")
@@ -77,7 +80,9 @@ def load_ollama_env() -> dict[str, str]:
     }
 
 
-def command_env(ollama_env: dict[str, str], extra: dict[str, str] | None = None) -> dict[str, str]:
+def command_env(
+    ollama_env: dict[str, str], extra: dict[str, str] | None = None
+) -> dict[str, str]:
     env = os.environ.copy()
     env.update(ollama_env)
     if extra:
@@ -88,12 +93,18 @@ def command_env(ollama_env: dict[str, str], extra: dict[str, str] | None = None)
 def discover_app_root(project_dir: Path) -> Path | None:
     """Find the Django project root: the directory containing manage.py."""
     candidates: list[tuple[int, Path]] = []
-    for candidate in [project_dir, *sorted(project_dir.glob("*")), *sorted(project_dir.glob("*/*"))]:
+    for candidate in [
+        project_dir,
+        *sorted(project_dir.glob("*")),
+        *sorted(project_dir.glob("*/*")),
+    ]:
         if not candidate.is_dir():
             continue
         if (candidate / "manage.py").exists():
             score = 0
-            if (candidate / "requirements.txt").exists() or (candidate / "pyproject.toml").exists():
+            if (candidate / "requirements.txt").exists() or (
+                candidate / "pyproject.toml"
+            ).exists():
                 score += 3
             if candidate == project_dir:
                 score += 1
@@ -114,10 +125,19 @@ def detect_settings_module(app_root: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def detect_install_command(app_root: Path, venv_python: Path) -> tuple[list[str], str] | None:
+def detect_install_command(
+    app_root: Path, venv_python: Path
+) -> tuple[list[str], str] | None:
     """Pick the install invocation matching what the model produced."""
     if (app_root / "requirements.txt").exists():
-        return [str(venv_python), "-m", "pip", "install", "-r", "requirements.txt"], "requirements.txt"
+        return [
+            str(venv_python),
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements.txt",
+        ], "requirements.txt"
     if (app_root / "pyproject.toml").exists():
         return [str(venv_python), "-m", "pip", "install", "."], "pyproject.toml"
     return None
@@ -180,7 +200,9 @@ def run_command(
             ok = False
             note = f"timed out after {timeout_seconds}s"
     elapsed = round(time.monotonic() - started, 2)
-    return CommandResult(ok, command, cwd, exit_code, elapsed, stdout_path, stderr_path, note)
+    return CommandResult(
+        ok, command, cwd, exit_code, elapsed, stdout_path, stderr_path, note
+    )
 
 
 def wait_for_http(url: str, timeout_seconds: int = 60) -> bool:
@@ -202,7 +224,9 @@ def wait_for_http(url: str, timeout_seconds: int = 60) -> bool:
     return False
 
 
-def run_browser_probe(url: str, out_dir: Path, message: str, timeout_seconds: int) -> dict[str, Any]:
+def run_browser_probe(
+    url: str, out_dir: Path, message: str, timeout_seconds: int
+) -> dict[str, Any]:
     command = [
         "node",
         str(BROWSER_PROBE),
@@ -251,7 +275,12 @@ def cleanup_compose(app_root: Path, env: dict[str, str]) -> None:
 
 def detect_compose_host_port(app_root: Path) -> int:
     """Try to detect host port from compose port mappings; fallback to 8000 (Django default)."""
-    for name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"):
+    for name in (
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    ):
         compose_file = app_root / name
         if not compose_file.exists():
             continue
@@ -358,7 +387,10 @@ def local_attempt(
 
     install_spec = detect_install_command(app_root, venv_python)
     if install_spec is None:
-        result["install"] = {"ok": False, "note": "no requirements.txt or pyproject.toml found in app root"}
+        result["install"] = {
+            "ok": False,
+            "note": "no requirements.txt or pyproject.toml found in app root",
+        }
         return result
     install_cmd, install_source = install_spec
     install = run_command(
@@ -399,7 +431,10 @@ def local_attempt(
         "--noreload",
         f"127.0.0.1:{port}",
     ]
-    with server_stdout.open("w") as stdout_handle, server_stderr.open("w") as stderr_handle:
+    with (
+        server_stdout.open("w") as stdout_handle,
+        server_stderr.open("w") as stderr_handle,
+    ):
         process = subprocess.Popen(
             server_cmd,
             cwd=app_root,
@@ -416,10 +451,15 @@ def local_attempt(
         ready = wait_for_http(url, timeout_seconds=60)
         result["server_ready"] = ready
         if ready:
-            probe = run_browser_probe(url, method_dir / "browser", "hello world", timeouts.browser_timeout)
+            probe = run_browser_probe(
+                url, method_dir / "browser", "hello world", timeouts.browser_timeout
+            )
             result["browser_probe"] = probe
         else:
-            result["browser_probe"] = {"ok": False, "error": "server never became ready"}
+            result["browser_probe"] = {
+                "ok": False,
+                "error": "server never became ready",
+            }
     finally:
         try:
             os.killpg(process.pid, signal.SIGTERM)
@@ -432,11 +472,15 @@ def local_attempt(
 
     result["server_stdout_excerpt"] = summarize_file(server_stdout, 25)
     result["server_stderr_excerpt"] = summarize_file(server_stderr, 25)
-    result["success"] = bool(result.get("server_ready") and result.get("browser_probe", {}).get("ok"))
+    result["success"] = bool(
+        result.get("server_ready") and result.get("browser_probe", {}).get("ok")
+    )
     return result
 
 
-def docker_build_attempt(app_root: Path, runtime_dir: Path, timeouts: argparse.Namespace) -> dict[str, Any]:
+def docker_build_attempt(
+    app_root: Path, runtime_dir: Path, timeouts: argparse.Namespace
+) -> dict[str, Any]:
     method_dir = runtime_dir / "docker-build"
     method_dir.mkdir(parents=True, exist_ok=True)
     tag = f"llm-pybench-{safe_slug(app_root.parent.name)}-{safe_slug(app_root.name)}"
@@ -464,8 +508,15 @@ def docker_compose_attempt(
 ) -> dict[str, Any]:
     method_dir = runtime_dir / "docker-compose"
     method_dir.mkdir(parents=True, exist_ok=True)
-    if not (app_root / "docker-compose.yml").exists() and not (app_root / "compose.yml").exists():
-        return {"method": "docker-compose", "success": False, "note": "no docker compose file"}
+    if (
+        not (app_root / "docker-compose.yml").exists()
+        and not (app_root / "compose.yml").exists()
+    ):
+        return {
+            "method": "docker-compose",
+            "success": False,
+            "note": "no docker compose file",
+        }
 
     env = command_env(
         ollama_env,
@@ -491,25 +542,40 @@ def docker_compose_attempt(
         cleanup_compose(app_root, env)
         return result
 
-    port = detect_compose_published_port(app_root, env) or detect_compose_host_port(app_root)
+    port = detect_compose_published_port(app_root, env) or detect_compose_host_port(
+        app_root
+    )
     url = f"http://127.0.0.1:{port}"
     ready = wait_for_http(url, timeout_seconds=90)
     result["url"] = url
     result["detected_port"] = port
     result["compose_ready"] = ready
     if ready:
-        result["browser_probe"] = run_browser_probe(url, method_dir / "browser", "hello world", timeouts.browser_timeout)
+        result["browser_probe"] = run_browser_probe(
+            url, method_dir / "browser", "hello world", timeouts.browser_timeout
+        )
         result["success"] = bool(result["browser_probe"].get("ok"))
     else:
-        result["browser_probe"] = {"ok": False, "error": f"docker compose app never became reachable on port {port}"}
+        result["browser_probe"] = {
+            "ok": False,
+            "error": f"docker compose app never became reachable on port {port}",
+        }
 
     ps = subprocess.run(
         ["docker", "compose", "ps"],
-        cwd=app_root, env=env, capture_output=True, text=True, check=False,
+        cwd=app_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     logs = subprocess.run(
         ["docker", "compose", "logs", "--no-color", "--tail", "200"],
-        cwd=app_root, env=env, capture_output=True, text=True, check=False,
+        cwd=app_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     (method_dir / "compose-ps.log").write_text(ps.stdout + ps.stderr)
     (method_dir / "compose-logs.log").write_text(logs.stdout + logs.stderr)
@@ -525,15 +591,23 @@ def write_report(report_path: Path, report: dict[str, Any]) -> None:
     lines.append(f"- Original benchmark verdict: `{report.get('benchmark_works')}`")
     lines.append(f"- Project dir: `{report.get('project_dir')}`")
     lines.append(f"- App root: `{report.get('app_root') or '-'} `")
-    settings_module = (report.get("methods", {}).get("local") or {}).get("settings_module")
+    settings_module = (report.get("methods", {}).get("local") or {}).get(
+        "settings_module"
+    )
     if settings_module:
         lines.append(f"- DJANGO_SETTINGS_MODULE: `{settings_module}`")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
-    lines.append(f"- Local run: `{report['methods'].get('local', {}).get('success', False)}`")
-    lines.append(f"- Docker build: `{report['methods'].get('docker_build', {}).get('success', False)}`")
-    lines.append(f"- Docker compose: `{report['methods'].get('docker_compose', {}).get('success', False)}`")
+    lines.append(
+        f"- Local run: `{report['methods'].get('local', {}).get('success', False)}`"
+    )
+    lines.append(
+        f"- Docker build: `{report['methods'].get('docker_build', {}).get('success', False)}`"
+    )
+    lines.append(
+        f"- Docker compose: `{report['methods'].get('docker_compose', {}).get('success', False)}`"
+    )
     lines.append("")
     for key, title in (
         ("local", "Local Run"),
@@ -593,7 +667,9 @@ def analyze_one(
     report: dict[str, Any] = {
         "slug": result_dir.name,
         "benchmark_status": result_payload.get("status"),
-        "benchmark_works": (result_payload.get("project_summary") or {}).get("works_as_intended"),
+        "benchmark_works": (result_payload.get("project_summary") or {}).get(
+            "works_as_intended"
+        ),
         "project_dir": str(project_dir),
         "app_root": None,
         "methods": {},
@@ -602,15 +678,24 @@ def analyze_one(
     app_root = discover_app_root(project_dir)
     if app_root is None:
         for key in ("local", "docker_build", "docker_compose"):
-            report["methods"][key] = {"success": False, "note": "no Django app root (manage.py) discovered"}
+            report["methods"][key] = {
+                "success": False,
+                "note": "no Django app root (manage.py) discovered",
+            }
         save_json(runtime_dir / "runtime_report.json", report)
         write_report(runtime_dir / "runtime_report.md", report)
         return report
 
     report["app_root"] = str(app_root)
-    report["methods"]["local"] = local_attempt(project_dir, app_root, runtime_dir, ollama_env, args)
-    report["methods"]["docker_build"] = docker_build_attempt(app_root, runtime_dir, args)
-    report["methods"]["docker_compose"] = docker_compose_attempt(app_root, runtime_dir, ollama_env, args)
+    report["methods"]["local"] = local_attempt(
+        project_dir, app_root, runtime_dir, ollama_env, args
+    )
+    report["methods"]["docker_build"] = docker_build_attempt(
+        app_root, runtime_dir, args
+    )
+    report["methods"]["docker_compose"] = docker_compose_attempt(
+        app_root, runtime_dir, ollama_env, args
+    )
     save_json(runtime_dir / "runtime_report.json", report)
     write_report(runtime_dir / "runtime_report.md", report)
     return report
@@ -639,15 +724,21 @@ def main() -> int:
                 "benchmark_works": report["benchmark_works"],
                 "app_root": report["app_root"],
                 "local_success": report["methods"]["local"].get("success", False),
-                "docker_build_success": report["methods"]["docker_build"].get("success", False),
-                "docker_compose_success": report["methods"]["docker_compose"].get("success", False),
+                "docker_build_success": report["methods"]["docker_build"].get(
+                    "success", False
+                ),
+                "docker_compose_success": report["methods"]["docker_compose"].get(
+                    "success", False
+                ),
             }
         )
         slug = report["slug"]
         local_ok = summaries[-1]["local_success"]
         build_ok = summaries[-1]["docker_build_success"]
         compose_ok = summaries[-1]["docker_compose_success"]
-        print(f"[{slug}] local={local_ok} docker_build={build_ok} docker_compose={compose_ok}")
+        print(
+            f"[{slug}] local={local_ok} docker_build={build_ok} docker_compose={compose_ok}"
+        )
 
     summary_path = results_dir / "runtime_verification_summary.json"
     save_json(summary_path, {"generated_at": utc_now(), "results": summaries})

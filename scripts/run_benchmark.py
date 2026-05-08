@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Benchmark coding models through opencode."""
+
 from __future__ import annotations
 
 import argparse
@@ -22,13 +23,17 @@ from benchmark.util import load_json, print_line
 DEFAULT_NO_PROGRESS_MINUTES = 6
 
 
-def _cleanup_backends(backend: LocalModelBackend | None, local_api_base: str | None) -> None:
+def _cleanup_backends(
+    backend: LocalModelBackend | None, local_api_base: str | None
+) -> None:
     """Unload models from both Ollama and llama-swap to free GPU after the benchmark."""
     # Unload the active backend
     if backend is not None:
         active = backend.list_active()
         if active:
-            print_line(f"Cleanup: unloading {backend.backend_name} models: {', '.join(active)}")
+            print_line(
+                f"Cleanup: unloading {backend.backend_name} models: {', '.join(active)}"
+            )
             backend.unload_all()
 
     # Also unload Ollama if we were using llama-swap (they share GPU)
@@ -43,7 +48,9 @@ def _cleanup_backends(backend: LocalModelBackend | None, local_api_base: str | N
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark coding models through opencode.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark coding models through opencode."
+    )
     parser.add_argument("--config", default="config/models.json")
     parser.add_argument("--opencode-config", default="config/opencode.benchmark.json")
     parser.add_argument("--prompt", default="prompts/benchmark_prompt.txt")
@@ -62,9 +69,20 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_NO_PROGRESS_MINUTES,
         help="Fail a run if stdout, stderr, and project files stay idle for this many minutes.",
     )
-    parser.add_argument("--model", action="append", dest="models", help="Run only the given slug(s).")
-    parser.add_argument("--max-runs", type=int, default=None, help="Cap how many models to execute this invocation.")
-    parser.add_argument("--force", action="store_true", help="Re-run even if a terminal result.json already exists.")
+    parser.add_argument(
+        "--model", action="append", dest="models", help="Run only the given slug(s)."
+    )
+    parser.add_argument(
+        "--max-runs",
+        type=int,
+        default=None,
+        help="Cap how many models to execute this invocation.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run even if a terminal result.json already exists.",
+    )
     parser.add_argument(
         "--report-only",
         action="store_true",
@@ -129,34 +147,51 @@ def main() -> int:
     results_dir.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    selected_models = [model for model in config["models"] if not model.get("skip_by_default")]
+    selected_models = [
+        model for model in config["models"] if not model.get("skip_by_default")
+    ]
     if args.models:
         wanted = set(args.models)
-        selected_models = [model for model in config["models"] if model["slug"] in wanted]
+        selected_models = [
+            model for model in config["models"] if model["slug"] in wanted
+        ]
         missing = wanted - {model["slug"] for model in selected_models}
         if missing:
-            print(f"Unknown model slug(s): {', '.join(sorted(missing))}", file=sys.stderr)
+            print(
+                f"Unknown model slug(s): {', '.join(sorted(missing))}", file=sys.stderr
+            )
             return 1
 
     if args.max_runs is not None:
         selected_models = selected_models[: args.max_runs]
 
     # Check that required runner binaries are available
-    has_opencode_models = any(m.get("runner_type", "opencode") == "opencode" for m in selected_models)
+    has_opencode_models = any(
+        m.get("runner_type", "opencode") == "opencode" for m in selected_models
+    )
     has_codex_models = any(m.get("runner_type") == "codex" for m in selected_models)
     if has_opencode_models and shutil.which("opencode") is None:
-        print("opencode is not available on PATH (needed by selected models)", file=sys.stderr)
+        print(
+            "opencode is not available on PATH (needed by selected models)",
+            file=sys.stderr,
+        )
         return 1
     if has_codex_models and shutil.which("codex") is None:
-        print("codex is not available on PATH (needed by selected models)", file=sys.stderr)
+        print(
+            "codex is not available on PATH (needed by selected models)",
+            file=sys.stderr,
+        )
         return 1
 
     warmup_payload = load_ollama_warmup_payload(warmup_path)
 
     if args.sync_ollama_contexts_only:
         config_summary = write_local_opencode_config(
-            opencode_config_path, selected_models, warmup_payload,
-            local_api_base=args.local_api_base, local_backend_type=args.local_backend,
+            opencode_config_path,
+            selected_models,
+            warmup_payload,
+            local_api_base=args.local_api_base,
+            local_backend_type=args.local_backend,
         )
         print_local_opencode_config_summary(config_summary)
         return 0
@@ -170,10 +205,15 @@ def main() -> int:
         print_line(f"Local backend: {backend.backend_name} at {api_base}")
 
     if not args.report_only:
-        opencode_models = [m for m in selected_models if m.get("runner_type", "opencode") == "opencode"]
+        opencode_models = [
+            m for m in selected_models if m.get("runner_type", "opencode") == "opencode"
+        ]
         config_summary = write_local_opencode_config(
-            opencode_config_path, opencode_models, warmup_payload,
-            local_api_base=args.local_api_base, local_backend_type=args.local_backend,
+            opencode_config_path,
+            opencode_models,
+            warmup_payload,
+            local_api_base=args.local_api_base,
+            local_backend_type=args.local_backend,
         )
         print_local_opencode_config_summary(config_summary)
         opencode_override = opencode_config_path if config_summary.get("path") else None
@@ -207,7 +247,9 @@ def main() -> int:
         _cleanup_backends(backend, args.local_api_base)
 
     results = load_results(config, results_dir, warmup_payload)
-    report_path.write_text(build_report(config, results, prompt, warmup_payload, warmup_path))
+    report_path.write_text(
+        build_report(config, results, prompt, warmup_payload, warmup_path)
+    )
     completed = sum(1 for result in results if result["status"] != "not_run")
     print_line(f"Report updated: {report_path}")
     print_line(f"Progress snapshot: completed_or_attempted={completed}/{len(results)}")

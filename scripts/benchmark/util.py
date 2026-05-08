@@ -1,4 +1,5 @@
 """Shared utilities for the benchmark harness."""
+
 from __future__ import annotations
 
 import hashlib

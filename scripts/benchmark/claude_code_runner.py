@@ -1,4 +1,5 @@
 """Runner for Claude Code headless benchmark (claude -p --output-format stream-json)."""
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,9 @@ def _kill_group(process: subprocess.Popen[str]) -> None:
         return
 
 
-def build_command(model: str, prompt: str, command_prefix: list[str] | None = None) -> list[str]:
+def build_command(
+    model: str, prompt: str, command_prefix: list[str] | None = None
+) -> list[str]:
     """Build the claude -p command. Prompt is passed as positional arg.
 
     command_prefix replaces the default ["claude"] head — e.g. ["ollama", "launch", "claude"]
@@ -67,10 +70,13 @@ def build_command(model: str, prompt: str, command_prefix: list[str] | None = No
     on the claude side, since the shim configures it).
     """
     prefix = command_prefix if command_prefix else ["claude"]
-    is_ollama_launch = len(prefix) >= 2 and prefix[0] == "ollama" and prefix[1] == "launch"
+    is_ollama_launch = (
+        len(prefix) >= 2 and prefix[0] == "ollama" and prefix[1] == "launch"
+    )
     claude_args = [
         "-p",
-        "--output-format", "stream-json",
+        "--output-format",
+        "stream-json",
         "--dangerously-skip-permissions",
         "--verbose",
         prompt,
@@ -168,7 +174,9 @@ def stream_process(
     assistant_turns = 0
     session_id: str | None = None
 
-    def _build(timed_out: bool, stalled: bool, stall_reason: str | None) -> ClaudeCodeStreamResult:
+    def _build(
+        timed_out: bool, stalled: bool, stall_reason: str | None
+    ) -> ClaudeCodeStreamResult:
         return ClaudeCodeStreamResult(
             stdout="".join(stdout_chunks),
             stderr="".join(stderr_chunks),
@@ -191,7 +199,9 @@ def stream_process(
                 return _build(True, False, None)
 
             streams = [s for s in (process.stdout, process.stderr) if s is not None]
-            ready, _, _ = select.select(streams, [], [], 1.0) if streams else ([], [], [])
+            ready, _, _ = (
+                select.select(streams, [], [], 1.0) if streams else ([], [], [])
+            )
 
             for stream in ready:
                 chunk = stream.readline()
@@ -225,11 +235,15 @@ def stream_process(
                             tool_use_counts[tool_name] += 1
                             if tool_name == "Task":
                                 tinput = part.get("input", {})
-                                subagent_invocations.append({
-                                    "parent_model": model,
-                                    "subagent_type": tinput.get("subagent_type"),
-                                    "description": tinput.get("description", "")[:300],
-                                })
+                                subagent_invocations.append(
+                                    {
+                                        "parent_model": model,
+                                        "subagent_type": tinput.get("subagent_type"),
+                                        "description": tinput.get("description", "")[
+                                            :300
+                                        ],
+                                    }
+                                )
 
                     if etype == "result":
                         final_result_event = event
@@ -240,12 +254,18 @@ def stream_process(
                         last_activity_detail = description
                         print_line(f"[{model_slug}] {description}")
 
-                    is_error = (etype == "result" and event.get("is_error")) or (etype == "system" and event.get("subtype") == "error")
+                    is_error = (etype == "result" and event.get("is_error")) or (
+                        etype == "system" and event.get("subtype") == "error"
+                    )
                     if is_error:
                         consecutive_error_events += 1
                         if consecutive_error_events >= error_loop_threshold:
                             _kill_group(process)
-                            return _build(False, True, f"{consecutive_error_events} consecutive errors")
+                            return _build(
+                                False,
+                                True,
+                                f"{consecutive_error_events} consecutive errors",
+                            )
                     else:
                         consecutive_error_events = 0
                         last_activity = now
@@ -260,14 +280,19 @@ def stream_process(
                         print_line(f"[{model_slug}] {last_activity_detail}")
 
             # Graceful exit once the result event has been observed
-            if terminal_result_seen_at is not None and (now - terminal_result_seen_at) >= terminal_grace_seconds:
+            if (
+                terminal_result_seen_at is not None
+                and (now - terminal_result_seen_at) >= terminal_grace_seconds
+            ):
                 if process.poll() is None:
                     _kill_group(process)
                     try:
                         process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         pass
-                print_line(f"[{model_slug}] terminal result observed; finalizing after {terminal_grace_seconds:.0f}s grace")
+                print_line(
+                    f"[{model_slug}] terminal result observed; finalizing after {terminal_grace_seconds:.0f}s grace"
+                )
                 return _build(False, False, None)
 
             if now - last_heartbeat >= heartbeat_interval:
@@ -286,7 +311,11 @@ def stream_process(
             idle = now - last_activity
             if idle >= no_progress_timeout_seconds:
                 _kill_group(process)
-                return _build(False, True, f"no progress for {format_duration(idle)}; last: {last_activity_detail}")
+                return _build(
+                    False,
+                    True,
+                    f"no progress for {format_duration(idle)}; last: {last_activity_detail}",
+                )
 
             if process.poll() is not None and not ready:
                 return _build(False, False, None)
@@ -329,8 +358,15 @@ def run_variant(
     if not force and result_path.exists():
         try:
             cached = json.loads(result_path.read_text())
-            if cached.get("status") in ("completed", "completed_with_errors", "failed", "timeout"):
-                print_line(f"[{slug}] cached result status={cached['status']}; skipping (use --force to rerun)")
+            if cached.get("status") in (
+                "completed",
+                "completed_with_errors",
+                "failed",
+                "timeout",
+            ):
+                print_line(
+                    f"[{slug}] cached result status={cached['status']}; skipping (use --force to rerun)"
+                )
                 return cached
         except (json.JSONDecodeError, OSError):
             pass
@@ -345,9 +381,13 @@ def run_variant(
     wall_start = time.monotonic()
 
     print_line("")
-    print_line(f"Starting {slug} -> {variant['main_model']} (subagent={variant.get('subagent', {}).get('name') if variant.get('subagent') else 'none'})")
+    print_line(
+        f"Starting {slug} -> {variant['main_model']} (subagent={variant.get('subagent', {}).get('name') if variant.get('subagent') else 'none'})"
+    )
     print_line(f"[{slug}] results_dir={result_dir}")
-    print_line(f"[{slug}] timeout={timeout_seconds}s no_progress_timeout={no_progress_timeout_seconds}s")
+    print_line(
+        f"[{slug}] timeout={timeout_seconds}s no_progress_timeout={no_progress_timeout_seconds}s"
+    )
     if command_prefix:
         print_line(f"[{slug}] command_prefix={command_prefix}")
 
@@ -358,9 +398,13 @@ def run_variant(
         # subscription auth reads ~/.claude/.credentials.json from the real HOME and
         # will fail under isolation.
         isolated_env["HOME"] = str(result_dir.resolve())
-        print_line(f"[{slug}] HOME isolated to {result_dir} (API-key auth required; subscription auth will fail)")
+        print_line(
+            f"[{slug}] HOME isolated to {result_dir} (API-key auth required; subscription auth will fail)"
+        )
     else:
-        print_line(f"[{slug}] HOME not isolated — subscription auth via ~/.claude/ works; user-level agents may leak")
+        print_line(
+            f"[{slug}] HOME not isolated — subscription auth via ~/.claude/ works; user-level agents may leak"
+        )
 
     # Optional per-variant env overrides — used by deepclaude-style variants that swap
     # ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN + ANTHROPIC_DEFAULT_*_MODEL to point
@@ -383,7 +427,9 @@ def run_variant(
                 # Indirect lookup so we don't commit secrets to JSON
                 resolved = os.environ.get(val[1:], "")
                 if not resolved:
-                    print_line(f"[{slug}] WARNING: env override {raw_key} references {val} but it is empty in parent env")
+                    print_line(
+                        f"[{slug}] WARNING: env override {raw_key} references {val} but it is empty in parent env"
+                    )
                 isolated_env[raw_key] = resolved
                 applied.append(f"{raw_key}=<{val}>")
             else:
@@ -464,7 +510,8 @@ def run_variant(
         "subagent_invocations": result.subagent_invocations,
         "subagent_invocation_counts": dict(subagent_counts_by_type),
         "prompt_sha256": prompt_sha256(prompt),
-        "command": command[:-1] + ["<prompt>"],  # don't dump the full prompt into result.json
+        "command": command[:-1]
+        + ["<prompt>"],  # don't dump the full prompt into result.json
         "paths": {
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
@@ -485,8 +532,6 @@ def run_variant(
             in_tok = u.get("inputTokens", 0)
             out_tok = u.get("outputTokens", 0)
             cache_read = u.get("cacheReadInputTokens", 0)
-            print_line(
-                f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}"
-            )
+            print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
 
     return payload

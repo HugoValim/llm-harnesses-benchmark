@@ -11,6 +11,7 @@ Auth:
   - Anthropic models use Claude subscription auth (claude login).
   - Non-Anthropic models use ollama launch claude --model <tag>.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,31 +42,40 @@ def parse_args() -> argparse.Namespace:
         description="Run LLM-powered code audit on benchmark results."
     )
     parser.add_argument(
-        "--audit-config", default=str(AUDIT_CONFIG_PATH),
+        "--audit-config",
+        default=str(AUDIT_CONFIG_PATH),
         help="Path to audit_models.json (auditor registry).",
     )
     parser.add_argument(
-        "--benchmark-config", default=str(BENCHMARK_CONFIG_PATH),
+        "--benchmark-config",
+        default=str(BENCHMARK_CONFIG_PATH),
         help="Path to claude_code_models.json (target variant registry).",
     )
     parser.add_argument(
-        "--prompt", default=str(PROMPT_TEMPLATE_PATH),
+        "--prompt",
+        default=str(PROMPT_TEMPLATE_PATH),
         help="Path to audit prompt template (must contain {project_dir} and {model_slug} placeholders).",
     )
     parser.add_argument(
-        "--results-dir", default=str(DEFAULT_RESULTS_DIR),
+        "--results-dir",
+        default=str(DEFAULT_RESULTS_DIR),
         help="Directory where audit reports are written.",
     )
     parser.add_argument(
-        "--benchmark-results-dir", default=str(DEFAULT_BENCHMARK_RESULTS_DIR),
+        "--benchmark-results-dir",
+        default=str(DEFAULT_BENCHMARK_RESULTS_DIR),
         help="Directory where benchmark results live (to locate target project dirs).",
     )
     parser.add_argument(
-        "--auditor", action="append", default=None,
+        "--auditor",
+        action="append",
+        default=None,
         help="Select auditor(s) by slug from audit_models.json. Repeatable. Default: all non-skipped.",
     )
     parser.add_argument(
-        "--target", action="append", default=None,
+        "--target",
+        action="append",
+        default=None,
         help=(
             "Select target(s) by slug from claude_code_models.json. Repeatable. "
             "Use 'all' to select every target with an existing project/ dir. "
@@ -73,7 +83,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--variant", action="append", default=None,
+        "--variant",
+        action="append",
+        default=None,
         help=(
             "(Deprecated — use --auditor and --target instead.) "
             "Select auditor or target variant by slug. Repeatable. "
@@ -82,20 +94,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--timeout-minutes", type=int, default=30,
+        "--timeout-minutes",
+        type=int,
+        default=30,
         help="Per-audit timeout (default: 30). Audits are shorter than builds.",
     )
     parser.add_argument(
-        "--no-progress-minutes", type=int, default=6,
+        "--no-progress-minutes",
+        type=int,
+        default=6,
         help="Stall detection threshold (default: 6).",
     )
     parser.add_argument("--force", action="store_true", help="Re-run even if cached.")
     parser.add_argument(
-        "--report-only", action="store_true",
+        "--report-only",
+        action="store_true",
         help="Rebuild comparison.md from existing reports without running.",
     )
     parser.add_argument(
-        "--jobs", "-j", type=int, default=1,
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
         help="Number of concurrent audits (default: 1 = sequential). Use 0 for one worker per job.",
     )
     return parser.parse_args()
@@ -116,8 +136,12 @@ def resolve_variant_sets(
       2. --variant (legacy: auto-partition by config membership)
       3. Default: all non-skipped auditors × all targets with existing project/ dirs.
     """
-    all_auditors = [v for v in audit_config.get("variants", []) if not v.get("skip_by_default")]
-    all_targets = [v for v in benchmark_config.get("variants", []) if not v.get("skip_by_default")]
+    all_auditors = [
+        v for v in audit_config.get("variants", []) if not v.get("skip_by_default")
+    ]
+    all_targets = [
+        v for v in benchmark_config.get("variants", []) if not v.get("skip_by_default")
+    ]
     audit_slugs = {v["slug"] for v in all_auditors}
     target_slugs = {v["slug"] for v in all_targets}
 
@@ -128,17 +152,33 @@ def resolve_variant_sets(
 
         # Special sentinel: "all" in --target means every target with a project dir
         if wanted_targets and "all" in wanted_targets:
-            targets = [v for v in all_targets if (benchmark_results_dir / v["slug"] / "project").exists()]
+            targets = [
+                v
+                for v in all_targets
+                if (benchmark_results_dir / v["slug"] / "project").exists()
+            ]
 
         missing_auditors = (wanted_auditors or set()) - audit_slugs - {"all"}
         missing_targets = (wanted_targets or set()) - target_slugs - {"all"}
         if missing_auditors:
-            print(f"Unknown auditor slug(s): {', '.join(sorted(missing_auditors))}", file=sys.stderr)
-            print("Available auditors:  " + ", ".join(sorted(audit_slugs)), file=sys.stderr)
+            print(
+                f"Unknown auditor slug(s): {', '.join(sorted(missing_auditors))}",
+                file=sys.stderr,
+            )
+            print(
+                "Available auditors:  " + ", ".join(sorted(audit_slugs)),
+                file=sys.stderr,
+            )
             sys.exit(1)
         if missing_targets:
-            print(f"Unknown target slug(s): {', '.join(sorted(missing_targets))}", file=sys.stderr)
-            print("Available targets:   " + ", ".join(sorted(target_slugs)), file=sys.stderr)
+            print(
+                f"Unknown target slug(s): {', '.join(sorted(missing_targets))}",
+                file=sys.stderr,
+            )
+            print(
+                "Available targets:   " + ", ".join(sorted(target_slugs)),
+                file=sys.stderr,
+            )
             sys.exit(1)
         return auditors, targets
 
@@ -149,13 +189,23 @@ def resolve_variant_sets(
         missing = wanted_variants - audit_slugs - target_slugs
         if missing:
             print(f"Unknown slug(s): {', '.join(sorted(missing))}", file=sys.stderr)
-            print("Available auditors:  " + ", ".join(sorted(audit_slugs)), file=sys.stderr)
-            print("Available targets:   " + ", ".join(sorted(target_slugs)), file=sys.stderr)
+            print(
+                "Available auditors:  " + ", ".join(sorted(audit_slugs)),
+                file=sys.stderr,
+            )
+            print(
+                "Available targets:   " + ", ".join(sorted(target_slugs)),
+                file=sys.stderr,
+            )
             sys.exit(1)
         return auditors, targets
 
     # Mode 3: default — all auditors, all targets with project dirs
-    targets = [v for v in all_targets if (benchmark_results_dir / v["slug"] / "project").exists()]
+    targets = [
+        v
+        for v in all_targets
+        if (benchmark_results_dir / v["slug"] / "project").exists()
+    ]
     return all_auditors, targets
 
 
@@ -190,8 +240,13 @@ def _build_comparison_table(reports_dir: Path) -> str:
 
             # Extract total score and tier with simple regex
             import re
-            total_match = re.search(r"Total\s*[:=]\s*(\d+)(?:\s*/\s*100)?", report_text, re.IGNORECASE)
-            tier_match = re.search(r"Tier\s*[:=]\s*([ABCD])", report_text, re.IGNORECASE)
+
+            total_match = re.search(
+                r"Total\s*[:=]\s*(\d+)(?:\s*/\s*100)?", report_text, re.IGNORECASE
+            )
+            tier_match = re.search(
+                r"Tier\s*[:=]\s*([ABCD])", report_text, re.IGNORECASE
+            )
 
             total = total_match.group(1) if total_match else "?"
             tier = tier_match.group(1) if tier_match else "?"
@@ -208,7 +263,11 @@ def _build_comparison_table(reports_dir: Path) -> str:
                 for pat in patterns:
                     m = re.search(pat, report_text, re.DOTALL | re.IGNORECASE)
                     if m:
-                        score = m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(1)
+                        score = (
+                            m.group(2)
+                            if m.lastindex and m.lastindex >= 2
+                            else m.group(1)
+                        )
                         break
                 dim_scores.append(score)
 
@@ -244,8 +303,12 @@ def main() -> int:
     wanted_targets = set(args.target) if args.target else None
     wanted_variants = set(args.variant) if args.variant else None
     auditors, targets = resolve_variant_sets(
-        wanted_auditors, wanted_targets, wanted_variants,
-        audit_config, benchmark_config, benchmark_results_dir,
+        wanted_auditors,
+        wanted_targets,
+        wanted_variants,
+        audit_config,
+        benchmark_config,
+        benchmark_results_dir,
     )
 
     if not auditors:
@@ -349,7 +412,10 @@ def main() -> int:
                     print_line(f"[{job_slug}] {status}")
         else:
             with ThreadPoolExecutor(max_workers=jobs_count) as pool:
-                futures = {pool.submit(_run, a, t): f"{a['slug']}__auditing__{t['slug']}" for a, t in jobs}
+                futures = {
+                    pool.submit(_run, a, t): f"{a['slug']}__auditing__{t['slug']}"
+                    for a, t in jobs
+                }
                 for fut in as_completed(futures):
                     job_slug = futures[fut]
                     _, status, err = fut.result()

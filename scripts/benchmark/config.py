@@ -1,4 +1,5 @@
 """Benchmark configuration loading and opencode config generation."""
+
 from __future__ import annotations
 
 import json
@@ -80,21 +81,24 @@ def load_opencode_ollama_api_base() -> str | None:
     if not payload:
         return None
     base_url = (
-        payload.get("provider", {})
-        .get("ollama", {})
-        .get("options", {})
-        .get("baseURL")
+        payload.get("provider", {}).get("ollama", {}).get("options", {}).get("baseURL")
     )
     if not isinstance(base_url, str) or not base_url:
         return None
     return base_url[:-3] if base_url.endswith("/v1") else base_url
 
 
-def resolve_ollama_model_name(opencode_model_id: str, config_path: Path | None = None) -> str | None:
+def resolve_ollama_model_name(
+    opencode_model_id: str, config_path: Path | None = None
+) -> str | None:
     payload = load_opencode_config_from_path(config_path)
     if not payload:
         return None
-    normalized = opencode_model_id.split("/", 1)[1] if opencode_model_id.startswith("ollama/") else opencode_model_id
+    normalized = (
+        opencode_model_id.split("/", 1)[1]
+        if opencode_model_id.startswith("ollama/")
+        else opencode_model_id
+    )
     model_entry = (
         payload.get("provider", {})
         .get("ollama", {})
@@ -107,11 +111,17 @@ def resolve_ollama_model_name(opencode_model_id: str, config_path: Path | None =
     return None
 
 
-def resolve_ollama_context_limit(opencode_model_id: str, config_path: Path | None = None) -> int | None:
+def resolve_ollama_context_limit(
+    opencode_model_id: str, config_path: Path | None = None
+) -> int | None:
     payload = load_opencode_config_from_path(config_path)
     if not payload:
         return None
-    normalized = opencode_model_id.split("/", 1)[1] if opencode_model_id.startswith("ollama/") else opencode_model_id
+    normalized = (
+        opencode_model_id.split("/", 1)[1]
+        if opencode_model_id.startswith("ollama/")
+        else opencode_model_id
+    )
     model_entry = (
         payload.get("provider", {})
         .get("ollama", {})
@@ -127,11 +137,13 @@ def resolve_ollama_context_limit(opencode_model_id: str, config_path: Path | Non
 def provider_model_key(model: dict[str, Any]) -> str:
     provider_prefix = f"{model['provider']}/"
     if model["id"].startswith(provider_prefix):
-        return model["id"][len(provider_prefix):]
+        return model["id"][len(provider_prefix) :]
     return model["id"]
 
 
-def fallback_ollama_config_entry(model: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+def fallback_ollama_config_entry(
+    model: dict[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
     model_name = model.get("ollama_model_name")
     if not isinstance(model_name, str) or not model_name:
         return None
@@ -154,7 +166,9 @@ def fallback_ollama_config_entry(model: dict[str, Any]) -> tuple[str, dict[str, 
     return model_key, entry
 
 
-def apply_ollama_model_overrides(local_entry: dict[str, Any], model: dict[str, Any]) -> dict[str, Any]:
+def apply_ollama_model_overrides(
+    local_entry: dict[str, Any], model: dict[str, Any]
+) -> dict[str, Any]:
     model_name = model.get("ollama_model_name")
     if isinstance(model_name, str) and model_name:
         local_entry["id"] = model_name
@@ -216,7 +230,12 @@ def summarize_project(project_dir: Path) -> dict[str, Any]:
     readme_present = present["readme_md"] or present["readme_lower"]
     compose_present = any(
         present[name]
-        for name in ("docker_compose_yml", "docker_compose_yaml", "compose_yml", "compose_yaml")
+        for name in (
+            "docker_compose_yml",
+            "docker_compose_yaml",
+            "compose_yml",
+            "compose_yaml",
+        )
     )
     rails_present = present["gemfile"] and present["routes"] and present["app_dir"]
     tests_present = present["tests_dir"]
@@ -326,7 +345,11 @@ def prepare_local_opencode_config(
         if model.get("provider") != "ollama":
             cloud_provider_names.add(model["provider"])
         sub = model.get("opencode_subagent")
-        if isinstance(sub, dict) and sub.get("provider") and sub["provider"] != "ollama":
+        if (
+            isinstance(sub, dict)
+            and sub.get("provider")
+            and sub["provider"] != "ollama"
+        ):
             cloud_provider_names.add(sub["provider"])
 
     for provider_name in sorted(cloud_provider_names):
@@ -365,11 +388,19 @@ def prepare_local_opencode_config(
         if model.get("provider") != "ollama":
             continue
         warmup_entry = warmup_results.get(model["slug"])
-        verified_context = warmup_entry.get("highest_verified_context") if isinstance(warmup_entry, dict) else None
+        verified_context = (
+            warmup_entry.get("highest_verified_context")
+            if isinstance(warmup_entry, dict)
+            else None
+        )
         override_context = model.get("benchmark_context_override")
 
         model_key = provider_model_key(model)
-        config_entry = source_ollama_models.get(model_key) if isinstance(source_ollama_models, dict) else None
+        config_entry = (
+            source_ollama_models.get(model_key)
+            if isinstance(source_ollama_models, dict)
+            else None
+        )
         fallback = fallback_ollama_config_entry(model)
         if not isinstance(config_entry, dict) and fallback is not None:
             _, config_entry = fallback
@@ -408,8 +439,14 @@ def prepare_local_opencode_config(
 
         if chosen_context is not None:
             local_entry.setdefault("limit", {})["context"] = chosen_context
-            source_label = "override" if isinstance(override_context, int) and override_context > 0 else "warmup"
-            summary["configured"].append(f"{model['slug']}={chosen_context} ({source_label})")
+            source_label = (
+                "override"
+                if isinstance(override_context, int) and override_context > 0
+                else "warmup"
+            )
+            summary["configured"].append(
+                f"{model['slug']}={chosen_context} ({source_label})"
+            )
         elif not using_llama_swap:
             summary["missing_warmup"].append(model["slug"])
 
@@ -436,7 +473,9 @@ def prepare_local_opencode_config(
         provider_models.setdefault(model_key, fallback_entry)
 
     # Multi-agent: emit primary + subagent definitions for any model with opencode_subagent
-    multi_agent_models = [m for m in models if isinstance(m.get("opencode_subagent"), dict)]
+    multi_agent_models = [
+        m for m in models if isinstance(m.get("opencode_subagent"), dict)
+    ]
     if multi_agent_models:
         agent_map = local_config.setdefault("agent", {})
         for model in multi_agent_models:
@@ -466,7 +505,11 @@ def prepare_local_opencode_config(
                 prov_entry = local_config["provider"].setdefault(sub_provider, {})
                 prov_models = prov_entry.setdefault("models", {})
                 # Strip the "<provider>/" prefix to get the bare model key
-                bare_key = sub_model_id.split("/", 1)[-1] if "/" in sub_model_id else sub_model_id
+                bare_key = (
+                    sub_model_id.split("/", 1)[-1]
+                    if "/" in sub_model_id
+                    else sub_model_id
+                )
                 entry = {"name": bare_key, "tool_call": True}
                 if auto_reasoning:
                     entry["reasoning"] = True
@@ -476,8 +519,14 @@ def prepare_local_opencode_config(
                 # llama-swap-backed subagent: add to the ollama provider models map
                 ollama_prov = local_config["provider"].setdefault("ollama", {})
                 ollama_models = ollama_prov.setdefault("models", {})
-                llama_swap_name = sub.get("llama_swap_model") or sub_model_id.split("/", 1)[-1]
-                bare_key = sub_model_id.split("/", 1)[-1] if "/" in sub_model_id else sub_model_id
+                llama_swap_name = (
+                    sub.get("llama_swap_model") or sub_model_id.split("/", 1)[-1]
+                )
+                bare_key = (
+                    sub_model_id.split("/", 1)[-1]
+                    if "/" in sub_model_id
+                    else sub_model_id
+                )
                 entry = {
                     "id": llama_swap_name,
                     "name": llama_swap_name,
@@ -491,10 +540,16 @@ def prepare_local_opencode_config(
             agent_map[sub_name] = {
                 "mode": "subagent",
                 "model": sub_model_id,
-                "description": sub.get("description", f"Delegate coding tasks to {sub_name}"),
-                "prompt": sub.get("prompt", "You are a focused coding agent. Execute precisely."),
+                "description": sub.get(
+                    "description", f"Delegate coding tasks to {sub_name}"
+                ),
+                "prompt": sub.get(
+                    "prompt", "You are a focused coding agent. Execute precisely."
+                ),
             }
-        summary["multi_agent_subagents"] = sorted({m["opencode_subagent"]["name"] for m in multi_agent_models})
+        summary["multi_agent_subagents"] = sorted(
+            {m["opencode_subagent"]["name"] for m in multi_agent_models}
+        )
 
     if not local_config["provider"]:
         summary["skipped_reason"] = "no provider config available for selected models"
@@ -511,7 +566,10 @@ def write_local_opencode_config(
     local_backend_type: str | None = None,
 ) -> dict[str, Any]:
     local_config, summary = prepare_local_opencode_config(
-        models, warmup_payload, local_api_base=local_api_base, local_backend_type=local_backend_type,
+        models,
+        warmup_payload,
+        local_api_base=local_api_base,
+        local_backend_type=local_backend_type,
     )
     if local_config is None:
         return summary
@@ -543,6 +601,10 @@ def print_local_opencode_config_summary(summary: dict[str, Any]) -> None:
     else:
         print_line("Ollama benchmark contexts: none")
     if missing_warmup:
-        print_line(f"Ollama benchmark config missing warmup: {', '.join(missing_warmup)}")
+        print_line(
+            f"Ollama benchmark config missing warmup: {', '.join(missing_warmup)}"
+        )
     if missing_source_entry:
-        print_line(f"Ollama benchmark config missing source entries: {', '.join(missing_source_entry)}")
+        print_line(
+            f"Ollama benchmark config missing source entries: {', '.join(missing_source_entry)}"
+        )

@@ -1,4 +1,5 @@
 """Benchmark report generation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,7 +41,9 @@ def load_results(
     return rows
 
 
-def build_notes(result: dict[str, Any], warmup_minimum_useful_context: int | None) -> str:
+def build_notes(
+    result: dict[str, Any], warmup_minimum_useful_context: int | None
+) -> str:
     summary = result["project_summary"]
     notes = summary.get("works_note", "")
     if result.get("timed_out"):
@@ -54,7 +57,10 @@ def build_notes(result: dict[str, Any], warmup_minimum_useful_context: int | Non
         recommendation = warmup.get("recommendation")
         if highest is None:
             warmup_note = "Warmup found no verified Ollama context."
-        elif warmup_minimum_useful_context is not None and highest < warmup_minimum_useful_context:
+        elif (
+            warmup_minimum_useful_context is not None
+            and highest < warmup_minimum_useful_context
+        ):
             warmup_note = f"Warmup only verified up to {highest} context."
         else:
             warmup_note = f"Warmup verified {highest} context."
@@ -89,7 +95,13 @@ def build_report(
     lines.append("")
     lines.append("## Progress")
     lines.append("")
-    for status in ("completed", "completed_with_errors", "failed", "timeout", "not_run"):
+    for status in (
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "timeout",
+        "not_run",
+    ):
         lines.append(f"- `{status}`: {counts.get(status, 0)}")
     lines.append("")
     lines.append("## Runner")
@@ -102,7 +114,9 @@ def build_report(
     lines.append("## Model Selection")
     lines.append("")
     for model in config["models"]:
-        lines.append(f"- `{model['slug']}` -> `{model['id']}`: {model['selection_reason']}")
+        lines.append(
+            f"- `{model['slug']}` -> `{model['id']}`: {model['selection_reason']}"
+        )
     lines.append("")
     if warmup_payload:
         lines.append("## Ollama Warmup")
@@ -111,7 +125,9 @@ def build_report(
             lines.append(f"Loaded from `{warmup_path}`.")
             lines.append("")
         if warmup_minimum_useful_context is not None:
-            lines.append(f"Minimum useful context target: `{warmup_minimum_useful_context}`")
+            lines.append(
+                f"Minimum useful context target: `{warmup_minimum_useful_context}`"
+            )
             lines.append("")
         lines.append("| Model | Highest verified ctx | Recommendation |")
         lines.append("| --- | ---: | --- |")
@@ -122,7 +138,9 @@ def build_report(
             warmup = result.get("ollama_warmup")
             if isinstance(warmup, dict):
                 highest = format_value(warmup.get("highest_verified_context"))
-                recommendation = str(warmup.get("recommendation", "-")).replace("|", "/")
+                recommendation = str(warmup.get("recommendation", "-")).replace(
+                    "|", "/"
+                )
             else:
                 highest = "-"
                 recommendation = "No warmup result recorded."
@@ -130,14 +148,20 @@ def build_report(
         lines.append("")
     lines.append("## Results")
     lines.append("")
-    lines.append("| Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |")
+    lines.append(
+        "| Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |"
+    )
     lines.append("| --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |")
     for result in results:
         model = result["model"]
         summary = result["project_summary"]
         tokens = result.get("tokens", {})
         warmup = result.get("ollama_warmup")
-        warmup_context = format_value(warmup.get("highest_verified_context")) if isinstance(warmup, dict) else "-"
+        warmup_context = (
+            format_value(warmup.get("highest_verified_context"))
+            if isinstance(warmup, dict)
+            else "-"
+        )
         notes = build_notes(result, warmup_minimum_useful_context)
         lines.append(
             "| {label} | {provider} | {warmup_context} | {status} | {elapsed} | {total_tokens} | {tps} | {works} | {files} | {notes} |".format(
@@ -162,10 +186,18 @@ def build_report(
     lines.append("- `prompt.txt`: exact prompt used for the run")
     lines.append("- `opencode-output.ndjson`: raw JSON event stream from opencode")
     lines.append("- `opencode-stderr.log`: stderr from the opencode process")
-    lines.append("- `followup-prompt.txt`: second-phase validation prompt for continuations when enabled")
-    lines.append("- `followup-opencode-output.ndjson`: raw JSON event stream from the follow-up continuation")
-    lines.append("- `followup-opencode-stderr.log`: stderr from the follow-up continuation")
-    lines.append("- `session-export.json`: exported opencode session snapshot when available")
+    lines.append(
+        "- `followup-prompt.txt`: second-phase validation prompt for continuations when enabled"
+    )
+    lines.append(
+        "- `followup-opencode-output.ndjson`: raw JSON event stream from the follow-up continuation"
+    )
+    lines.append(
+        "- `followup-opencode-stderr.log`: stderr from the follow-up continuation"
+    )
+    lines.append(
+        "- `session-export.json`: exported opencode session snapshot when available"
+    )
     lines.append("- `result.json`: normalized metadata used for this report")
     lines.append("")
     return "\n".join(lines) + "\n"

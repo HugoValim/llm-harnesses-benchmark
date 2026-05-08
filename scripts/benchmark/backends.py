@@ -1,4 +1,5 @@
 """Local model backend abstraction (Ollama, llama-swap)."""
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,9 @@ def _api_url(api_base: str, path: str) -> str:
     return urllib.parse.urljoin(api_base.rstrip("/") + "/", path.lstrip("/"))
 
 
-def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any] | None:
+def _post_json(
+    url: str, payload: dict[str, Any], timeout: float
+) -> dict[str, Any] | None:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -98,7 +101,9 @@ class LocalModelBackend(ABC):
         for model in current:
             self.unload(model)
 
-    def preflight_context_candidates(self, context_limit: int | None) -> list[int | None]:
+    def preflight_context_candidates(
+        self, context_limit: int | None
+    ) -> list[int | None]:
         if context_limit is None:
             return [None]
         ordered: list[int | None] = [context_limit]
@@ -117,7 +122,9 @@ class LocalModelBackend(ABC):
     ) -> tuple[bool, str]:
         """Unload other models, then try to preload the target at available context sizes."""
         if not self.health_check():
-            print_line(f"[{model_slug}] preflight skipped: unable to reach {self.backend_name}")
+            print_line(
+                f"[{model_slug}] preflight skipped: unable to reach {self.backend_name}"
+            )
             return True, f"preflight skipped: unable to reach {self.backend_name}"
 
         current = self.list_active()
@@ -133,10 +140,14 @@ class LocalModelBackend(ABC):
             print_line(f"[{model_slug}] preloading: {model_name}{ctx_str}")
             ok, message = self.preload(model_name, candidate_context)
             if ok:
-                print_line(f"[{model_slug}] preload ok: {model_name}{ctx_str} — {message}")
+                print_line(
+                    f"[{model_slug}] preload ok: {model_name}{ctx_str} — {message}"
+                )
                 return True, message
             last_message = message
-            print_line(f"[{model_slug}] preload failed: {model_name}{ctx_str}: {message}")
+            print_line(
+                f"[{model_slug}] preload failed: {model_name}{ctx_str}: {message}"
+            )
 
         return False, last_message
 
@@ -214,7 +225,11 @@ class LlamaSwapBackend(LocalModelBackend):
         data = payload.get("data")
         if not isinstance(data, list):
             return []
-        return [item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        return [
+            item["id"]
+            for item in data
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
 
     def list_active(self) -> list[str] | None:
         """Return currently loaded/running model names via /running endpoint."""
@@ -224,7 +239,11 @@ class LlamaSwapBackend(LocalModelBackend):
         running = payload.get("running")
         if not isinstance(running, list):
             return []
-        return [item["model"] for item in running if isinstance(item, dict) and isinstance(item.get("model"), str)]
+        return [
+            item["model"]
+            for item in running
+            if isinstance(item, dict) and isinstance(item.get("model"), str)
+        ]
 
     def unload(self, model: str) -> bool:
         # llama-swap manages model lifecycle automatically —
@@ -249,7 +268,11 @@ class LlamaSwapBackend(LocalModelBackend):
             return False, "no response from llama-swap (model may have failed to load)"
         if isinstance(response.get("error"), (str, dict)):
             error = response["error"]
-            message = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+            message = (
+                error.get("message", str(error))
+                if isinstance(error, dict)
+                else str(error)
+            )
             return False, message
         if response.get("choices"):
             tps = None
@@ -273,5 +296,7 @@ BACKEND_TYPES: dict[str, type[LocalModelBackend]] = {
 def create_backend(backend_type: str, api_base: str) -> LocalModelBackend:
     cls = BACKEND_TYPES.get(backend_type)
     if cls is None:
-        raise ValueError(f"Unknown backend type: {backend_type!r}. Available: {', '.join(BACKEND_TYPES)}")
+        raise ValueError(
+            f"Unknown backend type: {backend_type!r}. Available: {', '.join(BACKEND_TYPES)}"
+        )
     return cls(api_base)

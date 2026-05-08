@@ -1,4 +1,5 @@
 """Loop detection for tool calls, inspired by Gemini CLI LoopDetectionService."""
+
 from __future__ import annotations
 
 import hashlib

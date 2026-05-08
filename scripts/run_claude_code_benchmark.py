@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Benchmark Claude Code (not opencode) variants on the Python (Django + Channels + LangChain) brief."""
+
 from __future__ import annotations
 
 import argparse
@@ -18,21 +19,41 @@ from benchmark.util import load_json, print_line, save_json  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Claude Code benchmark for the Python brief")
-    parser.add_argument("--config", default=str(REPO_ROOT / "config" / "claude_code_ollama_cloud_models.json"))
-    parser.add_argument("--prompt", default=str(REPO_ROOT / "prompts" / "benchmark_prompt.txt"))
+    parser = argparse.ArgumentParser(
+        description="Claude Code benchmark for the Python brief"
+    )
+    parser.add_argument(
+        "--config",
+        default=str(REPO_ROOT / "config" / "claude_code_ollama_cloud_models.json"),
+    )
+    parser.add_argument(
+        "--prompt", default=str(REPO_ROOT / "prompts" / "benchmark_prompt.txt")
+    )
     parser.add_argument("--results-dir", default=str(REPO_ROOT / "results-claude-code"))
-    parser.add_argument("--report", default=str(REPO_ROOT / "docs" / "report.claude-code.md"))
-    parser.add_argument("--variant", action="append", default=None,
-                        help="Run specific variant(s) by slug. Repeatable. Default: all.")
+    parser.add_argument(
+        "--report", default=str(REPO_ROOT / "docs" / "report.claude-code.md")
+    )
+    parser.add_argument(
+        "--variant",
+        action="append",
+        default=None,
+        help="Run specific variant(s) by slug. Repeatable. Default: all.",
+    )
     parser.add_argument("--timeout-minutes", type=int, default=90)
     parser.add_argument("--no-progress-minutes", type=int, default=6)
-    parser.add_argument("--force", action="store_true", help="Re-run even if cached result exists")
-    parser.add_argument("--report-only", action="store_true", help="Rebuild report without running")
     parser.add_argument(
-        "--jobs", "-j", type=int, default=1,
+        "--force", action="store_true", help="Re-run even if cached result exists"
+    )
+    parser.add_argument(
+        "--report-only", action="store_true", help="Rebuild report without running"
+    )
+    parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
         help="Number of variants to run concurrently (default: 1 = sequential). "
-             "Use 0 to fan out to one worker per selected variant.",
+        "Use 0 to fan out to one worker per selected variant.",
     )
     return parser.parse_args()
 
@@ -119,7 +140,10 @@ def main() -> int:
         variants = [v for v in all_variants if v["slug"] in wanted]
         missing = wanted - {v["slug"] for v in variants}
         if missing:
-            print(f"Unknown variant slug(s): {', '.join(sorted(missing))}", file=sys.stderr)
+            print(
+                f"Unknown variant slug(s): {', '.join(sorted(missing))}",
+                file=sys.stderr,
+            )
             return 1
     else:
         variants = [v for v in all_variants if not v.get("skip_by_default")]
