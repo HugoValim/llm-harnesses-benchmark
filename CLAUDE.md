@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-This is a benchmark harness that drives autonomous coding sessions against a fixed Python (Django + Channels + LangChain) brief and compares the resulting projects across cloud LLMs. It is the sibling project to the Rails-targeting `llm-coding-benchmark` — same harness architecture, different application target.
+This is a benchmark harness that drives autonomous coding sessions against a fixed Python (Django + Channels chat SPA against a local Ollama server) brief and compares the resulting projects across cloud LLMs. It is the sibling project to the Rails-targeting `llm-coding-benchmark` — same harness architecture, different application target.
 
 ## Common commands
 
@@ -83,7 +83,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 
 ### Prompts
 
-- `prompts/benchmark_prompt.txt` — Phase 1 implementation brief (Django + Channels + LangChain chat SPA).
+- `prompts/benchmark_prompt.txt` — Phase 1 implementation brief (Django + Channels + Ollama chat SPA).
 - `prompts/benchmark_followup_prompt.txt` — Phase 2 validation brief (boot app, run docker build, docker compose up).
 - `prompts/audit_prompt_template.txt` — Rubric for automated code audits. Interpolated with `{project_dir}` and `{model_slug}`.
 

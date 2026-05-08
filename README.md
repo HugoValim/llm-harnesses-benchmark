@@ -1,15 +1,15 @@
 # LLM Python Coding Benchmark
 
-A benchmark harness that drives autonomous coding sessions against a fixed **Python (Django + Channels + LangChain)** brief and compares the resulting projects across cloud LLMs.
+A benchmark harness that drives autonomous coding sessions against a fixed **Python (Django + Channels chat SPA against local Ollama)** brief and compares the resulting projects across cloud LLMs.
 
-This is a sibling project to the Rails-targeting `llm-coding-benchmark`. Same harness, different application target. The Python brief is built around library APIs that LLMs frequently misremember (LangChain's import paths, deprecated `LLMChain`, Channels consumer scaffolding), so the resulting projects double as a benchmarkable signal of each model's library-API knowledge.
+This is a sibling project to the Rails-targeting `llm-coding-benchmark`. Same harness, different application target. The Python brief is built around APIs that LLMs frequently misremember (Ollama via `langchain-ollama` / the `ollama` Python client, deprecated community imports, Channels consumer scaffolding), so the resulting projects double as a benchmarkable signal of each model's library-API knowledge.
 
 ## What each model is asked to build
 
 A minimal ChatGPT-style chat SPA, end-to-end:
 
 - **Web stack:** Django + Django Channels (ASGI WebSocket consumers for streaming model output).
-- **LLM client:** Latest LangChain (with `langchain-anthropic`) wired to OpenRouter, calling the latest Claude Sonnet. The model picks the wiring (`ChatAnthropic` w/ custom `base_url`, or `ChatOpenAI` against the OpenAI-compat endpoint with `model="anthropic/claude-sonnet-4.6"`) — but it must be a real, working configuration.
+- **LLM client:** A real integration with a **local Ollama** server: `OLLAMA_HOST` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `qwen2.5:7b`). The model may use `langchain-ollama`'s `ChatOllama` with `.astream(...)`, or the official `ollama` Python client with `AsyncClient` and `chat(..., stream=True)` — but it must stream tokens into the WebSocket consumer, not a stub.
 - **UI:** HTMX + WebSocket extension (or a small amount of vanilla JS) for partial DOM updates, Tailwind for styling.
 - **Quality tooling:** pytest (+ pytest-django, pytest-asyncio), ruff (lint + format), mypy, bandit, coverage.py, pip-audit.
 - **Containerization:** Dockerfile + docker-compose, with daphne or uvicorn as the production ASGI server.
@@ -20,11 +20,11 @@ The full brief lives in `prompts/benchmark_prompt.txt`. A two-phase flow (`promp
 
 ## Why this brief
 
-It mirrors what the Rails brief does for RubyLLM — picks a library that LLMs reliably hallucinate APIs for. The signals you get back:
+It mirrors what the Rails brief does for RubyLLM — picks a library surface that LLMs reliably hallucinate APIs for. The signals you get back:
 
-- **LangChain hallucination surface.** `from langchain.chat_models` vs `langchain_anthropic`, deprecated `LLMChain`, fabricated streaming hooks, `.invoke` vs `.run` vs `.predict` confusion.
+- **Ollama / client wiring.** Wrong import paths, sync vs async misuse, missing `stream=True`, or hardcoded host/model instead of env-driven `OLLAMA_HOST` / `OLLAMA_MODEL`.
 - **ASGI/WebSocket wiring.** Channels forces an async consumer (`AsyncWebsocketConsumer`, `ProtocolTypeRouter`, `URLRouter`, `channels.routing.get_default_application`). Tests whether the model knows the real scaffolding or hallucinates Flask/FastAPI patterns into a Django project.
-- **Two-SDK glue.** LangChain calling Anthropic models *through OpenRouter* has at least two correct wirings. Models that pick one and execute cleanly are stronger than those that mix idioms.
+- **Two valid stacks.** Either `langchain-ollama` or the raw `ollama` client can be correct; mixing idioms or inventing APIs is a failure mode.
 
 ## Project layout
 
@@ -61,9 +61,9 @@ python-benchmark/
 
 | Slug | Provider | Why |
 |---|---|---|
-| `claude_sonnet_4_6` | OpenRouter | The reference model the brief asks the build to wire into LangChain — running it as a target tests whether Sonnet can produce a working Sonnet-backed app. |
-| `claude_opus_4_7` | OpenRouter | Tier-A baseline — measures whether stronger planning translates to fewer LangChain hallucinations. |
-| `kimi_k2_6` | OpenRouter | Hit Tier 3 in the Rails profile by hallucinating RubyLLM's fluent API. The Python equivalent test: does it hallucinate LangChain APIs? |
+| `claude_sonnet_4_6` | OpenRouter | Strong baseline for whether the model can implement the Ollama-backed Django chat brief end-to-end. |
+| `claude_opus_4_7` | OpenRouter | Tier-A baseline — measures whether stronger planning translates to fewer integration mistakes (Ollama client, Channels, Docker). |
+| `kimi_k2_6` | OpenRouter | Hit Tier 3 in the Rails profile by hallucinating RubyLLM's fluent API. The Python equivalent test: does it hallucinate Ollama or Channels APIs? |
 | `deepseek_v4_pro` | OpenRouter | `enable_followup: false` + `reasoning: false` — opencode's ai-sdk strips `reasoning_content` but DeepSeek's API requires it echoed back, breaking multi-turn at turn 2. The runtime analyzer (below) fills in the boot/Docker validation that phase 2 would have done. |
 | `minimax_m2_7` | OpenRouter | Mid-tier model whose Python-stack knowledge is largely unmeasured here. |
 
@@ -75,7 +75,8 @@ Edit `config/models.json` to add/remove models. Each entry needs a `slug`, `id` 
 - **Python 3.10+** (the harness uses `X | None` union syntax).
 - **Docker + Docker Compose** for the runtime verification phase.
 - **Node** for the browser probe (`scripts/browser_probe.mjs` uses Chromium via the CDP).
-- An **OpenRouter API key** in `OPENROUTER_API_KEY` for the opencode runs. The brief tells the model to source `~/.config/zsh/secrets`; the runner picks that up too.
+- An **OpenRouter API key** in `OPENROUTER_API_KEY` if you run **opencode/codex** against cloud models in `config/models.json` (the harness agent uses your home opencode provider config). This is separate from the generated app, which talks to **Ollama** via `OLLAMA_HOST` / `OLLAMA_MODEL`.
+- For **runtime verification** (`analyze_results_runtime.py`), ensure **Ollama** is running locally (or reachable at `OLLAMA_HOST`) with `OLLAMA_MODEL` pulled (e.g. `ollama pull qwen2.5:7b`); the analyzer injects defaults for `OLLAMA_HOST` and `OLLAMA_MODEL` into the subprocess environment when probing the generated project.
 - A working **opencode config** at `~/.config/opencode/opencode.json` with the providers used in `config/models.json`. The runner copies this and writes a benchmark-isolated config at `config/opencode.benchmark.json` on each run.
 - For the **Claude Code** runs (`run_claude_code_benchmark.py`): just `claude` on `$PATH` and a logged-in subscription (`claude login`). No `ANTHROPIC_API_KEY` needed unless you flip `runner.isolate_home` to `true` in `config/claude_code_models.json`.
 
@@ -242,9 +243,9 @@ python scripts/analyze_results_runtime.py --install-timeout 1800
 
 When you read the per-model output, classify the LLM integration code by hand:
 
-- **Tier 1** — correct LangChain + Channels wiring + proper test mocking. Boots locally, Docker compose works, browser probe sees a streamed reply.
-- **Tier 2** — correct primary call but partial issues (multi-turn broken, wrong package, Dockerfile bugs, `LLMChain` deprecation warnings, broken WebSocket routing).
-- **Tier 3** — hallucinated API. `from langchain.chat_models import ChatAnthropic` (not where it lives anymore), fabricated streaming callbacks, `consumer.send_to_group()` with the wrong signature. Crashes on first call.
+- **Tier 1** — correct Ollama + Channels wiring + proper test mocking. Boots locally, Docker compose works, browser probe sees a streamed reply.
+- **Tier 2** — correct primary call but partial issues (multi-turn broken, wrong package, Dockerfile bugs, deprecated LangChain community imports if using `langchain-ollama`, broken WebSocket routing).
+- **Tier 3** — hallucinated API. Wrong `ChatOllama` import path, fabricated streaming hooks, `consumer.send_to_group()` with the wrong signature. Crashes on first call.
 
 Auto-generated `docs/report.md` only shows the harness-level signal (status + tokens + tests-passing claims). The Tier classification has to come from reading the LLM-integration code by hand.
 
@@ -265,9 +266,9 @@ python scripts/run_audit_benchmark.py --variant <new-slug>
 
 ## Secrets handling
 
-- The brief sources `~/.config/zsh/secrets` for `OPENROUTER_API_KEY`.
-- The runtime analyzer does the same when launching the local server and Docker compose, so the generated apps can talk to OpenRouter during the browser probe.
-- **Never commit, echo, or log the API key.** If you suspect a secret leaked into a log or generated file, rotate it immediately.
+- The generated app brief uses **no API keys** for Ollama; configure `OLLAMA_HOST` and `OLLAMA_MODEL` only. Do not commit secrets into the repo.
+- The runtime analyzer forwards `OLLAMA_HOST` / `OLLAMA_MODEL` (with defaults) into the environment when launching the local server and Docker compose so the generated app can reach Ollama during the browser probe.
+- If you use **OpenRouter** for the harness (opencode cloud models), keep `OPENROUTER_API_KEY` in your user environment or secrets manager — **never commit, echo, or log the API key.** If you suspect a secret leaked into a log or generated file, rotate it immediately.
 
 ## Known harness pitfalls (inherited from the parent project)
 
