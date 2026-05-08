@@ -19,7 +19,7 @@ from benchmark.util import load_json, print_line, save_json  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Claude Code benchmark for the Python brief")
-    parser.add_argument("--config", default=str(REPO_ROOT / "config" / "claude_code_models.json"))
+    parser.add_argument("--config", default=str(REPO_ROOT / "config" / "claude_code_ollama_cloud_models.json"))
     parser.add_argument("--prompt", default=str(REPO_ROOT / "prompts" / "benchmark_prompt.txt"))
     parser.add_argument("--results-dir", default=str(REPO_ROOT / "results-claude-code"))
     parser.add_argument("--report", default=str(REPO_ROOT / "docs" / "report.claude-code.md"))
