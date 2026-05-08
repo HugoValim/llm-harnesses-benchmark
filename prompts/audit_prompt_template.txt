@@ -1,0 +1,114 @@
+Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
+
+## Source of truth for LangChain / Channels / Django API claims
+
+Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv:
+
+- {project_dir}/.venv/lib/python3.12/site-packages/langchain_anthropic/chat_models.py
+- {project_dir}/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py
+- {project_dir}/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
+- {project_dir}/.venv/lib/python3.12/site-packages/channels/generic/websocket.py (for AsyncWebsocketConsumer, connect, receive_json, send_json, disconnect)
+- {project_dir}/.venv/lib/python3.12/site-packages/channels/routing.py (for ProtocolTypeRouter, URLRouter)
+
+Key facts about the installed packages (DO NOT guess — grep the source):
+
+- `from langchain_anthropic import ChatAnthropic` is the correct import in langchain 1.x. `from langchain.chat_models import ChatAnthropic` is GONE.
+- `ChatAnthropic(model="...", anthropic_api_key="...", anthropic_api_url="...")` or `ChatAnthropic(model="...", api_key="...", base_url="...")` — verify the exact constructor in chat_models.py.
+- `ChatOpenAI(model="anthropic/claude-sonnet-4-6", openai_api_key="...", openai_api_base="https://openrouter.ai/api/v1")` is also valid for OpenRouter's OpenAI-compatible endpoint.
+- `.invoke(messages)` or `.ainvoke(messages)` returns an `AIMessage` with `.content`. `.predict()`, `.run()`, `.call()` are NOT streaming methods.
+- `.stream(messages)` / `.astream(messages)` are the correct streaming methods; they yield `AIMessageChunk` objects with `.content`.
+- `AsyncWebsocketConsumer` is from `channels.generic.websocket`. It has `connect(self)`, `disconnect(self, close_code)`, `receive_json(self, content)`, `send_json(self, content)`.
+- `ProtocolTypeRouter` and `URLRouter` are from `channels.routing`.
+- `LLMChain` is deprecated in langchain 1.x; its presence is a deduction.
+
+## The benchmark prompt's explicit deliverables
+
+(Score against THIS, not what you think a good Django app should look like.)
+
+1. Django + Django Channels (no DRF, no auth, no Celery)
+2. Newest Python from mise
+3. ChatGPT-style SPA, not an API service
+4. Tailwind (django-tailwind / PostCSS / tailwind CLI — any one, properly wired)
+5. HTMX + ws ext (or small vanilla JS) for partial DOM updates as tokens stream
+6. Channels AsyncWebsocketConsumer for streaming
+7. OPENROUTER_API_KEY via env, sourced from ~/.config/zsh/secrets
+8. No secrets in source / .env / Dockerfile / compose / README
+9. Latest LangChain + langchain-anthropic, configured for OpenRouter + Claude Sonnet (either ChatAnthropic w/ base_url or ChatOpenAI against OpenRouter's OpenAI-compat endpoint)
+10. Token streaming from model → WebSocket
+11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LangChain wiring (mocked), template rendering
+12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
+13. Dockerfile + docker-compose with ASGI server (daphne or uvicorn)
+14. Real README (not a "this README would normally document…" stub)
+15. Stay in workspace root, no nested chat_app/ subdir
+
+## Audit dimensions — score each per its weight, total 100
+
+1. **Deliverable completeness** (0-25)
+   - Dockerfile present AND has valid Python (3.10+). Missing/broken: -5.
+   - docker-compose.yml present. Missing: -5.
+   - README has actual content (NOT the stock template). Stock template: -5.
+   - requirements.txt OR pyproject.toml present. Missing: -5.
+   - Each missing tool config (ruff, mypy, bandit, coverage, pip-audit): -1.
+   - Tailwind claimed but not wired (CDN only when django-tailwind/PostCSS was the approach): -2.
+   - ASGI server (daphne/uvicorn) missing from Dockerfile: -3.
+   - DRF / auth / Celery present: -3 each.
+
+2. **LangChain integration correctness** (0-20)
+   - Hallucinated import path (e.g. `from langchain.chat_models import ChatAnthropic`): -10.
+   - Wrong streaming method (`.predict`, `.run`, `.call`): -5.
+   - Deprecated `LLMChain`: -3.
+   - Fabricated callbacks not in `langchain_core.callbacks`: -5.
+   - No streaming (returns full response): -7.
+   - No multi-turn (one-shot only): -3.
+   - Correct entry + `.astream` / `.stream` + real OpenRouter base_url + tokens piped to WS: full marks.
+
+3. **Test quality** (0-15)
+   - Tests don't exercise LLM path (constants/import smoke only): -10.
+   - No real mocks (pytest-mock, monkeypatch, FakeLLM): -3.
+   - Tests mock the hallucinated API: -5.
+   - No consumer test (WebsocketCommunicator): -3.
+   - No view/template test: -2.
+
+4. **Error handling** (0-10)
+   - No try/except around LLM calls (one upstream blip = 500): -4.
+   - No missing-API-key preflight: -3.
+   - No `disconnect` handling on consumer: -2.
+   - No user-visible degraded UI on error: -1.
+
+5. **Persistence / multi-turn state** (0-10)
+   - In-memory per-consumer (per-tab) history is OK per brief — full marks if turns accumulate.
+   - Class variable / module global (race-prone across consumers): -5.
+   - No history (single-turn only): -7.
+
+6. **Frontend wiring (Tailwind / HTMX / partials)** (0-10)
+   - Single template dump (no {% include %} / partials): -3.
+   - Tailwind not actually built (no static/, no CLI invocation, no PostCSS config) when not using CDN: -3.
+   - No HTMX ws ext or equivalent JS streaming: -4.
+   - Token-by-token UI updates not visible (only full-message swap): -2.
+
+7. **Architecture** (0-5)
+   - Consumer wires LangChain inline with no service layer: -2.
+   - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
+   - View doing template + LLM in one function: -1.
+
+8. **Production readiness** (0-5)
+   - Secret leaked into Dockerfile / compose / README / source: -5 (instant fail).
+   - CSRF disabled globally: -2.
+   - `|safe` on raw LLM output (XSS): -2.
+   - `DEBUG=True` hardcoded: -1.
+   - `ASGI_APPLICATION` missing: -2.
+
+## Required output sections
+
+A. **Quick summary line** (1 sentence).
+B. **Scores** per dimension with 1-line justification each (exact file:line refs when claiming bugs).
+C. **Total score / 100**.
+D. **Practical tier**:
+   - **A (80-100)**: ship as-is or with trivial (<30 min) patches.
+   - **B (60-79)**: 1-2 hours to ship. Architecture is sound, minor gaps.
+   - **C (40-59)**: major rework needed. Core bugs or missing deliverables.
+   - **D (0-39)**: throw away or use only for architectural inspiration.
+E. **Verification section** — for every API call you claim is hallucinated, show the grep result from the installed package source that proves it. If you can't prove it, call it "unverified, likely correct."
+F. **One killer strength** + **one killer weakness**.
+
+Under 800 words. No speculation — code excerpts + package source grep only.

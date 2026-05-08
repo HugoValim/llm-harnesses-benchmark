@@ -1,0 +1,46 @@
+{
+  "runner": {
+    "command": "claude",
+    "isolate_home": false,
+    "notes": [
+      "Uses Claude Code CLI in headless mode (-p with --output-format stream-json).",
+      "--dangerously-skip-permissions enables full autonomy (no confirmation prompts).",
+      "Project-local .claude/agents/*.md files are auto-loaded from the project directory.",
+      "isolate_home defaults to false so Claude subscription auth (read from ~/.claude/) works. Set to true only when auth is via ANTHROPIC_API_KEY and you want strict user-level agent isolation.",
+      "Per-variant command_prefix overrides the leading ['claude'] — used here to invoke Ollama Cloud models through the user's `ollama launch claude` shim."
+    ]
+  },
+  "variants": [
+    {
+      "slug": "claude_sonnet_alone",
+      "label": "Claude Sonnet 4.6 alone (Claude Code, subscription auth)",
+      "main_model": "claude-sonnet-4-6",
+      "subagent": null,
+      "selection_reason": "Pure Sonnet through the Claude Code CLI on the Python (Django + Channels + LangChain) brief. Same prompt as the opencode runs. Direct comparison vs claude_sonnet_4_6 in config/models.json (same model, different harness). Uses Claude subscription auth — no ANTHROPIC_API_KEY required."
+    },
+    {
+      "slug": "kimi_k2_6_ollama_cloud",
+      "label": "Kimi K2.6 (Ollama Cloud) via Claude Code",
+      "main_model": "kimi-k2.6:cloud",
+      "subagent": null,
+      "command_prefix": ["ollama", "launch", "claude"],
+      "selection_reason": "User-recommended Ollama Cloud model — state-of-the-art coding + long-horizon execution + multimodal agent swarm. Direct comparison vs kimi_k2_6 in config/models.json (Moonshot Kimi via OpenRouter through opencode): same model family, different harness AND different provider, isolating where the LangChain hallucinations come from."
+    },
+    {
+      "slug": "glm_5_1_ollama_cloud",
+      "label": "GLM 5.1 (Ollama Cloud) via Claude Code",
+      "main_model": "glm-5.1:cloud",
+      "subagent": null,
+      "command_prefix": ["ollama", "launch", "claude"],
+      "selection_reason": "Long-horizon agentic engineering with autonomous execution and sustained iteration. Tests whether GLM 5.1's multi-turn agentic behavior produces a complete Django + Channels + LangChain app within the no_progress_timeout."
+    },
+    {
+      "slug": "qwen3_5_ollama_cloud",
+      "label": "Qwen 3.5 (Ollama Cloud) via Claude Code",
+      "main_model": "qwen3.5:cloud",
+      "subagent": null,
+      "command_prefix": ["ollama", "launch", "claude"],
+      "selection_reason": "Reasoning, coding, and agentic tool use with vision. Tests whether Qwen 3.5's reasoning carries through to correct LangChain wiring (ChatAnthropic vs ChatOpenAI, anthropic-compat endpoint, streaming hooks)."
+    }
+  ]
+}

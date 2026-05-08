@@ -1,0 +1,42 @@
+{
+  "runner": {
+    "command": "claude",
+    "isolate_home": false,
+    "notes": [
+      "Same runner logic as claude_code_models.json, but used for code audits.",
+      "For non-Anthropic models, use command_prefix: ['ollama','launch','claude'] with main_model as the Ollama tag.",
+      "isolate_home defaults to false so Claude subscription auth (read from ~/.claude/) works.",
+      "Set to true only when auth is via ANTHROPIC_API_KEY and you want strict user-level agent isolation."
+    ]
+  },
+  "variants": [
+    {
+      "slug": "claude_opus_4_7",
+      "label": "Claude Opus 4.7 auditor",
+      "main_model": "claude-opus-4-7",
+      "subagent": null,
+      "selection_reason": "Highest reasoning quality for catching subtle LangChain/Channels hallucinations and cross-file consistency. Most expensive."
+    },
+    {
+      "slug": "claude_sonnet_4_6",
+      "label": "Claude Sonnet 4.6 auditor",
+      "main_model": "claude-sonnet-4-6",
+      "subagent": null,
+      "selection_reason": "Mid-tier auditor. Good code reading, faster turnaround. Will likely match Opus on obvious API calls but may miss edge cases."
+    },
+    {
+      "slug": "claude_haiku_4_5",
+      "label": "Claude Haiku 4.5 auditor",
+      "main_model": "claude-haiku-4-5",
+      "subagent": null,
+      "selection_reason": "Cheapest, fastest. Risk of shallow reads on multi-file audits — better suited to a single-file pass or a first-pass screen."
+    },
+    {
+      "slug": "kimi_k2_6_auditor",
+      "label": "Kimi K2.6 (Ollama Cloud) auditor",
+      "main_model": "kimi-k2.6:cloud",
+      "command_prefix": ["ollama", "launch", "claude"],
+      "selection_reason": "Alternative auditor via Ollama Cloud. Tests whether the same model that built the project can audit it (or a different model under the same harness)."
+    }
+  ]
+}

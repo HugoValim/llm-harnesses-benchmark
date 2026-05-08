@@ -1,0 +1,26 @@
+# Benchmark output
+/results/*/
+/results-claude-code/*/
+/results/runtime_verification_summary.json
+
+# Audit reports
+/audit-reports/
+
+# Generated opencode config (auto-rewritten on every run)
+/config/opencode.benchmark.json
+
+# Auto-generated reports — uncomment if you want to keep them out of git
+# /docs/report.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.python-version
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
