@@ -136,9 +136,8 @@ def _describe_event(event: dict[str, Any]) -> str | None:
         return None  # tool results — noisy
     if etype == "result":
         reason = event.get("stop_reason", "?")
-        cost = event.get("total_cost_usd", 0)
         turns = event.get("num_turns", 0)
-        return f"result: {reason} turns={turns} cost=${cost:.4f}"
+        return f"result: {reason} turns={turns}"
     return None
 
 
@@ -415,9 +414,8 @@ def run_variant(
     wall_end = time.monotonic()
     elapsed = round(wall_end - wall_start, 2)
 
-    # Extract the critical pricing data from the final result event
+    # Extract usage and timing data from the final result event
     final = result.final_result_event or {}
-    total_cost_usd = final.get("total_cost_usd")
     usage = final.get("usage", {})
     model_usage = final.get("modelUsage", {})
     stop_reason = final.get("stop_reason")
@@ -460,7 +458,6 @@ def run_variant(
         "num_turns": num_turns,
         "assistant_turns": result.assistant_turns,
         "stop_reason": stop_reason,
-        "total_cost_usd": total_cost_usd,
         "usage_total": usage,
         "model_usage": model_usage,
         "tool_use_counts": dict(result.tool_use_counts),
@@ -480,18 +477,16 @@ def run_variant(
     print_line("")
     print_line(
         f"Finished {slug} status={status} elapsed={elapsed:.2f}s files={file_count} "
-        f"turns={num_turns} delegations={len(result.subagent_invocations)} "
-        f"cost=${format_value(total_cost_usd)}"
+        f"turns={num_turns} delegations={len(result.subagent_invocations)}"
     )
     if model_usage:
         print_line(f"[{slug}] model_usage:")
         for model, u in model_usage.items():
-            cost = u.get("costUSD", 0)
             in_tok = u.get("inputTokens", 0)
             out_tok = u.get("outputTokens", 0)
             cache_read = u.get("cacheReadInputTokens", 0)
             print_line(
-                f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read} cost=${cost:.4f}"
+                f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}"
             )
 
     return payload

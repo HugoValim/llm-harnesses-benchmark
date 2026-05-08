@@ -50,8 +50,8 @@ def build_report(config: dict, results: list[dict]) -> str:
         "",
         "## Summary",
         "",
-        "| Variant | Status | Time | Files | Turns | Delegations | Total Cost |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Variant | Status | Time | Files | Turns | Delegations |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for r in results:
         status = r.get("status", "not_run")
@@ -59,14 +59,12 @@ def build_report(config: dict, results: list[dict]) -> str:
         files = r.get("file_count") or 0
         turns = r.get("num_turns") or 0
         delegations = sum((r.get("subagent_invocation_counts") or {}).values())
-        cost = r.get("total_cost_usd")
-        cost_str = f"${cost:.4f}" if isinstance(cost, (int, float)) else "—"
         lines.append(
-            f"| {r['slug']} | {status} | {elapsed:.0f}s | {files} | {turns} | {delegations} | {cost_str} |"
+            f"| {r['slug']} | {status} | {elapsed:.0f}s | {files} | {turns} | {delegations} |"
         )
 
     lines.extend(["", "## Per-Model Token Usage", ""])
-    lines.append("Extracted from Claude Code's `modelUsage` field. Cost is computed server-side by the SDK.")
+    lines.append("Extracted from Claude Code's `modelUsage` field.")
     lines.append("")
     for r in results:
         mu = r.get("model_usage") or {}
@@ -74,15 +72,14 @@ def build_report(config: dict, results: list[dict]) -> str:
             continue
         lines.append(f"### {r['slug']}")
         lines.append("")
-        lines.append("| Model | Input | Output | Cache Read | Cache Create | Cost |")
-        lines.append("|---|---:|---:|---:|---:|---:|")
+        lines.append("| Model | Input | Output | Cache Read | Cache Create |")
+        lines.append("|---|---:|---:|---:|---:|")
         for model, u in mu.items():
             in_t = u.get("inputTokens", 0)
             out_t = u.get("outputTokens", 0)
             cr = u.get("cacheReadInputTokens", 0)
             cc = u.get("cacheCreationInputTokens", 0)
-            cost = u.get("costUSD", 0)
-            lines.append(f"| {model} | {in_t:,} | {out_t:,} | {cr:,} | {cc:,} | ${cost:.4f} |")
+            lines.append(f"| {model} | {in_t:,} | {out_t:,} | {cr:,} | {cc:,} |")
         lines.append("")
 
     lines.extend(["## Delegation Details", ""])
