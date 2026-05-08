@@ -13,6 +13,7 @@
 # /docs/report.md
 
 # Python
+.pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
