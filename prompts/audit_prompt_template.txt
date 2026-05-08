@@ -1,22 +1,22 @@
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
-## Source of truth for LangChain / Channels / Django API claims
+## Source of truth for LLM / Channels / Django API claims
 
 Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv:
 
-- {project_dir}/.venv/lib/python3.12/site-packages/langchain_anthropic/chat_models.py
-- {project_dir}/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py
+- {project_dir}/.venv/lib/python3.12/site-packages/langchain_ollama/chat_models.py (for ChatOllama)
 - {project_dir}/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
+- {project_dir}/.venv/lib/python3.12/site-packages/ollama/_client.py (for Client / AsyncClient / chat())
 - {project_dir}/.venv/lib/python3.12/site-packages/channels/generic/websocket.py (for AsyncWebsocketConsumer, connect, receive_json, send_json, disconnect)
 - {project_dir}/.venv/lib/python3.12/site-packages/channels/routing.py (for ProtocolTypeRouter, URLRouter)
 
 Key facts about the installed packages (DO NOT guess — grep the source):
 
-- `from langchain_anthropic import ChatAnthropic` is the correct import in langchain 1.x. `from langchain.chat_models import ChatAnthropic` is GONE.
-- `ChatAnthropic(model="...", anthropic_api_key="...", anthropic_api_url="...")` or `ChatAnthropic(model="...", api_key="...", base_url="...")` — verify the exact constructor in chat_models.py.
-- `ChatOpenAI(model="anthropic/claude-sonnet-4-6", openai_api_key="...", openai_api_base="https://openrouter.ai/api/v1")` is also valid for OpenRouter's OpenAI-compatible endpoint.
-- `.invoke(messages)` or `.ainvoke(messages)` returns an `AIMessage` with `.content`. `.predict()`, `.run()`, `.call()` are NOT streaming methods.
-- `.stream(messages)` / `.astream(messages)` are the correct streaming methods; they yield `AIMessageChunk` objects with `.content`.
+- `from langchain_ollama import ChatOllama` is the correct import for LangChain 1.x Ollama chat. `from langchain_community.chat_models import ChatOllama` is deprecated — verify in langchain_ollama vs community if unsure.
+- `ChatOllama(model="...", base_url="...")` — verify the exact constructor parameters in chat_models.py.
+- For the raw client: `from ollama import AsyncClient`; `await client.chat(model=..., messages=..., stream=True)` yields chunks; verify field names (e.g. message content) in _client.py. Synchronous `Client` exists, but Channels streaming should use the async path.
+- `.invoke(messages)` or `.ainvoke(messages)` on `ChatOllama` returns an `AIMessage` with `.content`. `.predict()`, `.run()`, `.call()` are NOT streaming methods.
+- `.stream(messages)` / `.astream(messages)` on `ChatOllama` are the correct streaming methods; they yield `AIMessageChunk` objects with `.content`.
 - `AsyncWebsocketConsumer` is from `channels.generic.websocket`. It has `connect(self)`, `disconnect(self, close_code)`, `receive_json(self, content)`, `send_json(self, content)`.
 - `ProtocolTypeRouter` and `URLRouter` are from `channels.routing`.
 - `LLMChain` is deprecated in langchain 1.x; its presence is a deduction.
@@ -31,11 +31,11 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 4. Tailwind (django-tailwind / PostCSS / tailwind CLI — any one, properly wired)
 5. HTMX + ws ext (or small vanilla JS) for partial DOM updates as tokens stream
 6. Channels AsyncWebsocketConsumer for streaming
-7. OPENROUTER_API_KEY via env, sourced from ~/.config/zsh/secrets
-8. No secrets in source / .env / Dockerfile / compose / README
-9. Latest LangChain + langchain-anthropic, configured for OpenRouter + Claude Sonnet (either ChatAnthropic w/ base_url or ChatOpenAI against OpenRouter's OpenAI-compat endpoint)
+7. OLLAMA_HOST and OLLAMA_MODEL via env (default `http://localhost:11434` / `qwen2.5:7b`); no OpenRouter key required
+8. No secrets in source / .env / Dockerfile / compose / README. OLLAMA_HOST and OLLAMA_MODEL are not secrets but must be configurable from env, not hardcoded only in source
+9. Real, working Ollama integration via either `langchain-ollama` `ChatOllama` or the `ollama` Python client — either is acceptable as long as tokens stream over the WebSocket
 10. Token streaming from model → WebSocket
-11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LangChain wiring (mocked), template rendering
+11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LLM/Ollama wiring (mocked), template rendering
 12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
 13. Dockerfile + docker-compose with ASGI server (daphne or uvicorn)
 14. Real README (not a "this README would normally document…" stub)
@@ -53,14 +53,14 @@ Key facts about the installed packages (DO NOT guess — grep the source):
    - ASGI server (daphne/uvicorn) missing from Dockerfile: -3.
    - DRF / auth / Celery present: -3 each.
 
-2. **LangChain integration correctness** (0-20)
-   - Hallucinated import path (e.g. `from langchain.chat_models import ChatAnthropic`): -10.
-   - Wrong streaming method (`.predict`, `.run`, `.call`): -5.
-   - Deprecated `LLMChain`: -3.
-   - Fabricated callbacks not in `langchain_core.callbacks`: -5.
+2. **LLM integration correctness** (0-20)
+   - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
+   - Wrong streaming method (`.predict`, `.run`, `.call`, or `chat()` without `stream=True` on the ollama client): -5.
+   - Deprecated `langchain_community.chat_models.ChatOllama` instead of `langchain_ollama.ChatOllama`: -3.
+   - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -3.
    - No streaming (returns full response): -7.
    - No multi-turn (one-shot only): -3.
-   - Correct entry + `.astream` / `.stream` + real OpenRouter base_url + tokens piped to WS: full marks.
+   - Correct entry + real streaming + OLLAMA_HOST/OLLAMA_MODEL env wiring + tokens piped to WS: full marks.
 
 3. **Test quality** (0-15)
    - Tests don't exercise LLM path (constants/import smoke only): -10.
@@ -71,7 +71,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
-   - No missing-API-key preflight: -3.
+   - No missing OLLAMA_HOST/OLLAMA_MODEL or unreachable-Ollama preflight: -3.
    - No `disconnect` handling on consumer: -2.
    - No user-visible degraded UI on error: -1.
 
@@ -87,7 +87,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
    - Token-by-token UI updates not visible (only full-message swap): -2.
 
 7. **Architecture** (0-5)
-   - Consumer wires LangChain inline with no service layer: -2.
+   - Consumer wires LLM inline with no service layer: -2.
    - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
    - View doing template + LLM in one function: -1.
 

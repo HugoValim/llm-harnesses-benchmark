@@ -4,7 +4,7 @@ Do not ask for confirmation. Do not stop with a plan. Fulfill the request and fi
 
 This is phase 2 of 2 and a continuation of the existing project in the current working directory. Do not regenerate the app. Do not create a second app. Validate and fix the current codebase in place.
 
-Use environment variables so the LLM client actually works. Source ~/.config/zsh/secrets only to load the required environment, especially OPENROUTER_API_KEY. Do not print secret values, do not copy secret file contents into the repo, and do not commit secrets into files, logs, Dockerfiles, compose files, or README examples.
+Use environment variables so the LLM client actually works. Ensure `OLLAMA_HOST` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `qwen2.5:7b`) are set in the environment for the running app, including in the Dockerfile/compose. Verify the Ollama server is reachable before declaring the app healthy. Do not print secret values, do not copy secret file contents into the repo, and do not commit secrets into files, logs, Dockerfiles, compose files, or README examples.
 
 Validate the project end-to-end in this order:
 - create or reuse a virtualenv, install the project's dependencies, run `python manage.py migrate` if the project's settings require a database, and run the local app under an ASGI server (daphne or uvicorn) in a way that proves it boots and accepts WebSocket connections
