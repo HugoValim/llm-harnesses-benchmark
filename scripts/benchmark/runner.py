@@ -113,13 +113,21 @@ def build_codex_command(
     project_dir: Path,
     reasoning_effort: str | None = None,
     codex_subagent: dict[str, Any] | None = None,
+    command_prefix: list[str] | None = None,
 ) -> list[str]:
-    """Build a codex exec command for a fully autonomous benchmark run."""
-    # Build codex exec arguments. The codex binary may be a shell wrapper
-    # (e.g., `exec npx --yes @openai/codex "$@"`) so we launch through bash
-    # to ensure the full shell environment (mise, node) is available.
-    codex_args = [
-        "codex",
+    """Build a codex exec command for a fully autonomous benchmark run.
+
+    ``command_prefix`` replaces the default ``["codex"]`` leader. When it starts
+    with ``ollama launch``, the model is passed via the shim's ``--model`` and the
+    exec tail is forwarded after ``--`` (no ``-m`` on the inner codex argv), matching
+    :func:`benchmark.claude_code_runner.build_command`.
+    """
+    prefix = command_prefix if command_prefix else ["codex"]
+    is_ollama_launch = (
+        len(prefix) >= 2 and prefix[0] == "ollama" and prefix[1] == "launch"
+    )
+
+    exec_tail: list[str] = [
         "exec",
         "--json",
         "--ephemeral",
@@ -129,19 +137,18 @@ def build_codex_command(
         "danger-full-access",
         "-C",
         str(project_dir.resolve()),
-        "-m",
-        model_id,
     ]
+    if not is_ollama_launch:
+        exec_tail.extend(["-m", model_id])
     if reasoning_effort:
-        codex_args.extend(["-c", f"model_reasoning_effort={reasoning_effort}"])
-    # Multi-agent: register the subagent via -c agents.<name>.config_file=<path>
+        exec_tail.extend(["-c", f"model_reasoning_effort={reasoning_effort}"])
     if codex_subagent:
         sub_name = codex_subagent.get("name", "coder")
         sub_desc = codex_subagent.get(
             "description", f"Delegate coding tasks to {sub_name}"
         )
         toml_path = write_codex_subagent_toml(project_dir, codex_subagent)
-        codex_args.extend(
+        exec_tail.extend(
             [
                 "-c",
                 f'agents.{sub_name}.config_file="{toml_path}"',
@@ -149,10 +156,14 @@ def build_codex_command(
                 f'agents.{sub_name}.description="{sub_desc}"',
             ]
         )
-    codex_args.append("-")  # read prompt from stdin
-    # Wrap in bash -lc to get login shell environment (mise, PATH, etc.)
-    cmd = ["bash", "-lc", " ".join(shlex_quote(a) for a in codex_args)]
-    return cmd
+    exec_tail.append("-")
+
+    if is_ollama_launch:
+        inner = [*prefix, "--model", model_id, "--", *exec_tail]
+    else:
+        inner = [*prefix, *exec_tail]
+
+    return ["bash", "-lc", " ".join(shlex_quote(a) for a in inner)]
 
 
 def export_opencode_session(
@@ -837,6 +848,7 @@ def run_codex_phase(
     result_path: Path | None,
     phase_name: str = "phase1",
     override_min_preview_tps: float | None = ...,  # sentinel
+    command_prefix: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run a single benchmark phase using the Codex CLI."""
     prompt_path.write_text(prompt)
@@ -845,6 +857,7 @@ def run_codex_phase(
         project_dir,
         reasoning_effort=model.get("codex_reasoning_effort"),
         codex_subagent=model.get("codex_subagent"),
+        command_prefix=command_prefix,
     )
     wall_start = time.monotonic()
 
@@ -1095,7 +1108,7 @@ def _ensure_local_model_ready(
 def run_model(
     model: dict[str, Any], bench: BenchmarkConfig, index: int, total: int
 ) -> dict[str, Any]:
-    result_dir = bench.results_dir / model["slug"]
+    result_dir = bench.results_dir / f"{bench.harness}-{model['slug']}"
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "opencode-output.ndjson"
@@ -1196,6 +1209,10 @@ def run_model(
         "result_path": phase1_result_path,
         "phase_name": "phase1",
     }
+    if runner_type == "codex":
+        cp = model.get("command_prefix")
+        if cp:
+            phase1_kwargs["command_prefix"] = cp
     if runner_type != "codex":
         phase1_kwargs["continue_session_id"] = None
     phase1 = _run_phase(**phase1_kwargs)
@@ -1231,6 +1248,10 @@ def run_model(
             "phase_name": "phase2",
             "override_min_preview_tps": None,
         }
+        if runner_type == "codex":
+            cp = model.get("command_prefix")
+            if cp:
+                phase2_kwargs["command_prefix"] = cp
         if runner_type != "codex":
             phase2_kwargs["continue_session_id"] = continued_session_id
         phase2 = _run_phase(**phase2_kwargs)

@@ -32,15 +32,15 @@ It mirrors what the Rails brief does for RubyLLM — picks a library surface tha
 python-benchmark/
 ├── README.md                              # this file
 ├── CLAUDE.md                              # AI agent guidance
-├── config/
-│   └── models.json                        # 5-model curated set
 ├── prompts/
 │   ├── benchmark_prompt.txt               # phase 1: implementation brief
 │   ├── benchmark_followup_prompt.txt      # phase 2: boot + Docker validation
 │   └── audit_prompt_template.txt          # LLM-powered audit rubric
 ├── scripts/
-│   ├── run_benchmark.py                   # main entrypoint (opencode/codex)
-│   ├── run_claude_code_benchmark.py       # entrypoint for Claude Code CLI variants
+│   ├── run_benchmark.py                   # unified entrypoint: --harness opencode|codex|claude
+│   ├── run_ollama_cloud_benchmark.sh      # fan-out Ollama Cloud models: Claude + Codex harnesses
+│   ├── run_ollama_cloud_claude_benchmark.sh  # back-compat: Claude Ollama Cloud only
+│   ├── run_claude_code_benchmark.py       # deprecated (use run_benchmark.py --harness claude)
 │   ├── run_audit_benchmark.py             # entrypoint for LLM-powered code audits
 │   ├── analyze_results_runtime.py         # post-run validator (venv, manage.py, Docker, browser probe)
 │   ├── browser_probe.mjs                  # headless Chromium CDP helper
@@ -48,13 +48,16 @@ python-benchmark/
 ├── config/
 │   ├── models.json                        # opencode/codex model registry
 │   ├── claude_code_models.json            # Claude Code variant registry
+│   ├── claude_code_ollama_cloud_models.json
+│   ├── codex_ollama_cloud_models.json     # Codex + ollama launch codex (pairs with Claude Ollama Cloud set)
 │   └── audit_models.json                  # Auditor model registry
-├── results/<slug>/                        # per-model output (gitignored)
-├── results-claude-code/<slug>/            # Claude Code variant output (gitignored)
+├── results/<harness>-<slug>/              # unified per-run dirs: opencode-*, codex-*, claude-* (gitignored)
 ├── audit-reports/<auditor>/<target>/      # Audit reports (gitignored)
 └── docs/
-    ├── report.md                          # auto-built consolidated report (opencode)
-    └── report.claude-code.md              # auto-built consolidated report (Claude Code)
+    ├── report.md                          # default opencode aggregate (--harness opencode)
+    ├── report.codex.md                    # default codex aggregate (--harness codex)
+    ├── report.claude-code.md              # default Claude aggregate (--harness claude)
+    └── report.ollama-cloud.*.md           # optional reports from run_ollama_cloud_benchmark.sh
 ```
 
 ## Default model set
@@ -78,87 +81,55 @@ Edit `config/models.json` to add/remove models. Each entry needs a `slug`, `id` 
 - An **OpenRouter API key** in `OPENROUTER_API_KEY` if you run **opencode/codex** against cloud models in `config/models.json` (the harness agent uses your home opencode provider config). This is separate from the generated app, which talks to **Ollama** via `OLLAMA_HOST` / `OLLAMA_MODEL`.
 - For **runtime verification** (`analyze_results_runtime.py`), ensure **Ollama** is running locally (or reachable at `OLLAMA_HOST`) with `OLLAMA_MODEL` pulled (e.g. `ollama pull qwen2.5:7b`); the analyzer injects defaults for `OLLAMA_HOST` and `OLLAMA_MODEL` into the subprocess environment when probing the generated project.
 - A working **opencode config** at `~/.config/opencode/opencode.json` with the providers used in `config/models.json`. The runner copies this and writes a benchmark-isolated config at `config/opencode.benchmark.json` on each run.
-- For the **Claude Code** runs (`run_claude_code_benchmark.py`): just `claude` on `$PATH` and a logged-in subscription (`claude login`). No `ANTHROPIC_API_KEY` needed unless you flip `runner.isolate_home` to `true` in `config/claude_code_models.json`.
+- For **`--harness claude`**: `claude` on `$PATH` and a logged-in subscription (`claude login`). No `ANTHROPIC_API_KEY` needed unless you flip `runner.isolate_home` to `true` in `config/claude_code_models.json`.
+- For **Codex** (`--harness codex`): `codex` on `$PATH`. For **`ollama launch codex`** models (`config/codex_ollama_cloud_models.json`), `ollama` must be on `$PATH` instead.
 
 ## Running the benchmark
 
-```bash
-# Phase 1+2 against all five default models (opencode runner)
-python scripts/run_benchmark.py
+You must pass **`--harness opencode`**, **`--harness codex`**, or **`--harness claude`**. Outputs go to **`results/<harness>-<slug>/`** (e.g. `results/opencode-claude_sonnet_4_6/`, `results/claude-kimi_k2_6_ollama_cloud/`).
 
-# Single model
-python scripts/run_benchmark.py --model claude_sonnet_4_6
+```bash
+# Phase 1+2 against default opencode models (config/models.json)
+python scripts/run_benchmark.py --harness opencode
+
+# Single model (opencode)
+python scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
+
+# Codex-only registry (e.g. Ollama Cloud via ollama launch codex)
+python scripts/run_benchmark.py --harness codex --config config/codex_ollama_cloud_models.json
+
+# Claude Code variants (config/claude_code_models.json by default)
+python scripts/run_benchmark.py --harness claude
+python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
+
+# Run the shared Ollama Cloud model matrix on both Claude + Codex back-to-back
+./scripts/run_ollama_cloud_benchmark.sh
 
 # Force re-run (overwrites existing result.json)
-python scripts/run_benchmark.py --model kimi_k2_6 --force
+python scripts/run_benchmark.py --harness opencode --model kimi_k2_6 --force
 
-# Rebuild docs/report.md from existing results without running anything
-python scripts/run_benchmark.py --report-only
+# Rebuild aggregate docs without executing agents
+python scripts/run_benchmark.py --harness opencode --report-only
+python scripts/run_benchmark.py --harness claude --report-only
 ```
 
-### Running through Claude Code instead of opencode
+### Claude Code (`--harness claude`)
 
-`run_benchmark.py` only handles `opencode`/`codex` runners. Claude Code variants (using the `claude` CLI directly) live in `config/claude_code_models.json` and use a separate runner:
+`--jobs/-j N` runs up to N variants concurrently (default `1`). Use `--jobs 0` for one worker per variant. Logs are prefixed with `[<slug>]`.
 
-```bash
-# All variants not marked skip_by_default
-python scripts/run_claude_code_benchmark.py
+Under **`results/claude-<slug>/`**: `project/`, `result.json`, `stream.ndjson`, `stderr.log`, `prompt.txt`.
 
-# Just Sonnet alone
-python scripts/run_claude_code_benchmark.py --variant claude_sonnet_alone
+Aggregate report: **`docs/report.claude-code.md`** (default).
 
-# Two variants in parallel
-python scripts/run_claude_code_benchmark.py \
-    --variant claude_sonnet_alone \
-    --variant kimi_k2_6_ollama_cloud \
-    --jobs 2
-```
+**Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-`--jobs/-j N` runs up to N variants concurrently in a thread pool (default `1` = sequential). Use `--jobs 0` to fan out to one worker per selected variant. Each variant writes to its own result dir and spawns its `claude` subprocess in a new session group, so concurrent runs don't share state. Live log lines are prefixed with `[<slug>]` so the streams stay distinguishable.
+**Ollama Cloud via Claude Code** — variants use `command_prefix: ["ollama","launch","claude"]` and `main_model` tags like `kimi-k2.6:cloud`. See `config/claude_code_ollama_cloud_models.json`. Pair with **`config/codex_ollama_cloud_models.json`** and `./scripts/run_ollama_cloud_benchmark.sh` for cross-harness comparison.
 
-Output lands in `results-claude-code/<slug>/`:
+### Opencode / Codex (`--harness opencode` | `--harness codex`)
 
-- `project/` — generated Django app
-- `result.json` — status, elapsed, turns, tokens, cost, tool-use counts
-- `stream.ndjson` — raw `claude -p --output-format stream-json` events
-- `stderr.log` — stderr from the claude (or `ollama launch claude`) subprocess
-- `prompt.txt` — exact prompt sent
+The runner loads **`models`** from the config and filters by `runner_type` (`opencode` default, or `codex`). Mixed registries are supported; reports only include rows for the active harness.
 
-The aggregate report is rebuilt from every `result.json` on disk (even cached ones not in the current run) and written to `docs/report.claude-code.md`. Requires the `claude` CLI on `$PATH`.
-
-**Auth.** Claude subscription auth (the credentials saved by `claude login`) works out of the box — `runner.isolate_home` in `config/claude_code_models.json` defaults to `false` so the `claude` CLI can read its credentials from your real `~/.claude/`. If you're on API-key auth instead and want strict user-level agent isolation, set `runner.isolate_home: true` in the config and export `ANTHROPIC_API_KEY` — the runner replaces `$HOME` with the per-variant result dir for the duration of the run. (Subscription auth fails under isolation because the credentials file is unreachable.)
-
-**Ollama-served models via Claude Code.** Each variant can declare a `command_prefix` that replaces the leading `["claude"]`. The shipped config wires three Ollama Cloud models through your `ollama launch claude` shim:
-
-| Slug | Ollama tag | Notes |
-|---|---|---|
-| `kimi_k2_6_ollama_cloud` | `kimi-k2.6:cloud` | Recommended — SOTA coding, long-horizon execution, agent swarm |
-| `glm_5_1_ollama_cloud` | `glm-5.1:cloud` | Long-horizon agentic engineering |
-| `qwen3_5_ollama_cloud` | `qwen3.5:cloud` | Reasoning, coding, agentic tool use, vision |
-
-For each, the runner builds (e.g.):
-
-```text
-ollama launch claude --model kimi-k2.6:cloud -- -p --output-format stream-json --dangerously-skip-permissions --verbose <prompt>
-```
-
-`ollama launch claude` consumes its own `--model` flag and forwards everything after `--` to the `claude` CLI, so the model is routed through the shim and the remaining claude args (no `--model` on that side, since the shim configures it) come after the `--` separator. The runner detects the `ollama launch` prefix automatically; the default `["claude"]` path passes `--model` directly to claude.
-
-To run just one:
-
-```bash
-python scripts/run_claude_code_benchmark.py --variant kimi_k2_6_ollama_cloud
-```
-
-To add another Ollama-served model, append a new variant with the right `main_model` (Ollama tag) and `command_prefix: ["ollama","launch","claude"]`.
-
-Per-model output lands in `results/<slug>/`:
-
-- `project/` — the generated workspace
-- `result.json` — normalized metadata (status, elapsed, tokens, phases)
-- `opencode-output.ndjson` / `opencode-stderr.log` — raw phase 1 output
-- `followup-*` — phase 2 continuation output (when `enable_followup` is true)
-- `session-export.json` — opencode session snapshot (when available)
+Typical artifacts under **`results/<harness>-<slug>/`**: `project/`, `result.json`, `opencode-output.ndjson`, `opencode-stderr.log`, optional `followup-*`, `session-export.json` (opencode).
 
 Result statuses: `completed`, `completed_with_errors`, `failed`, `timeout`, `not_run`.
 
@@ -224,13 +195,13 @@ Per project, this:
 8. Runs `docker build .`.
 9. Runs `docker compose up --build -d`, detects the published port, runs the same browser probe, then tears down with `docker compose down -v`.
 
-Per-project artifacts: `results/<slug>/project/_runtime_verification/`. Aggregate summary: `results/runtime_verification_summary.json`.
+Per-project artifacts: `results/<harness>-<slug>/project/_runtime_verification/`. Aggregate summary: `results/runtime_verification_summary.json`.
 
 Useful flags:
 
 ```bash
-# One model only
-python scripts/analyze_results_runtime.py --only claude_sonnet_4_6
+# One run only (--only matches the result directory name, including harness prefix)
+python scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
 
 # Cap projects (handy for sanity checks)
 python scripts/analyze_results_runtime.py --max-projects 1
@@ -253,8 +224,8 @@ Auto-generated `docs/report.md` only shows the harness-level signal (status + to
 
 1. Edit `config/models.json` — append a `models[]` entry. Use a unique `slug`. The `id` must match a model exposed by the providers in your home opencode config (e.g. `openrouter/anthropic/claude-sonnet-4.6`).
 2. If the model is on a provider you haven't wired into your home opencode config yet, add it there first — see the opencode docs.
-3. Run: `python scripts/run_benchmark.py --model <new-slug>`.
-4. Run: `python scripts/analyze_results_runtime.py --only <new-slug>`.
+3. Run: `python scripts/run_benchmark.py --harness opencode --model <new-slug>`.
+4. Run: `python scripts/analyze_results_runtime.py --only opencode-<new-slug>`.
 5. Read the LLM-integration code by hand to decide Tier 1/2/3.
 
 You can also use the automated audit runner instead of manual reading:

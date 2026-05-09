@@ -331,6 +331,8 @@ def run_variant(
     force: bool = False,
     runner_command_prefix: list[str] | None = None,
     isolate_home: bool = False,
+    harness: str = "claude",
+    explicit_result_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Run a single benchmark variant.
 
@@ -343,9 +345,16 @@ def run_variant(
     Claude subscription auth (which reads credentials from the real ~/.claude/).
     Default is False; opt in via runner.isolate_home in the variants config when
     you're using API-key auth and want strict agent isolation.
+
+    explicit_result_dir: when set (e.g. audit harness), use this path directly
+    instead of ``results_dir / f"{harness}-{slug}"``.
     """
     slug = variant["slug"]
-    result_dir = results_dir / slug
+    result_dir = (
+        explicit_result_dir.resolve()
+        if explicit_result_dir is not None
+        else results_dir / f"{harness}-{slug}"
+    )
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "stream.ndjson"

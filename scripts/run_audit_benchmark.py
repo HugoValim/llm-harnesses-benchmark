@@ -34,7 +34,20 @@ AUDIT_CONFIG_PATH = REPO_ROOT / "config" / "audit_models.json"
 BENCHMARK_CONFIG_PATH = REPO_ROOT / "config" / "claude_code_models.json"
 PROMPT_TEMPLATE_PATH = REPO_ROOT / "prompts" / "audit_prompt_template.txt"
 DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
-DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results-claude-code"
+DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
+
+
+def benchmark_variant_project_dir(benchmark_results_dir: Path, slug: str) -> Path:
+    """Resolve generated project dir: prefer ``claude-<slug>/project``, else legacy ``<slug>/project``."""
+    prefixed = benchmark_results_dir / f"claude-{slug}" / "project"
+    if prefixed.is_dir():
+        return prefixed
+    return benchmark_results_dir / slug / "project"
+
+
+def benchmark_variant_has_project(benchmark_results_dir: Path, slug: str) -> bool:
+    """True if a benchmark project exists for this variant slug."""
+    return benchmark_variant_project_dir(benchmark_results_dir, slug).is_dir()
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,7 +77,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--benchmark-results-dir",
         default=str(DEFAULT_BENCHMARK_RESULTS_DIR),
-        help="Directory where benchmark results live (to locate target project dirs).",
+        help=(
+            "Directory where benchmark results live (to locate target project dirs). "
+            "Defaults to results/; prefers results/claude-<slug>/project, falls back to results/<slug>/project."
+        ),
     )
     parser.add_argument(
         "--auditor",
@@ -155,7 +171,7 @@ def resolve_variant_sets(
             targets = [
                 v
                 for v in all_targets
-                if (benchmark_results_dir / v["slug"] / "project").exists()
+                if benchmark_variant_has_project(benchmark_results_dir, v["slug"])
             ]
 
         missing_auditors = (wanted_auditors or set()) - audit_slugs - {"all"}
@@ -204,7 +220,7 @@ def resolve_variant_sets(
     targets = [
         v
         for v in all_targets
-        if (benchmark_results_dir / v["slug"] / "project").exists()
+        if benchmark_variant_has_project(benchmark_results_dir, v["slug"])
     ]
     return all_auditors, targets
 
@@ -348,7 +364,9 @@ def main() -> int:
             result_dir = results_dir / auditor_slug / target_slug
             result_dir.mkdir(parents=True, exist_ok=True)
 
-            project_dir = benchmark_results_dir / target_slug / "project"
+            project_dir = benchmark_variant_project_dir(
+                benchmark_results_dir, target_slug
+            )
             audit_prompt = build_audit_prompt(prompt_template, project_dir, target_slug)
 
             # Write the interpolated prompt for debugging
@@ -358,12 +376,13 @@ def main() -> int:
                 payload = run_variant(
                     variant=auditor,
                     prompt=audit_prompt,
-                    results_dir=results_dir / auditor_slug,  # run_variant appends slug
+                    results_dir=results_dir / auditor_slug,
                     timeout_seconds=timeout_seconds,
                     no_progress_timeout_seconds=no_progress_timeout_seconds,
                     force=args.force,
                     runner_command_prefix=runner_command_prefix,
                     isolate_home=isolate_home,
+                    explicit_result_dir=result_dir,
                 )
                 # The LLM's report is expected in result_dir / "report.md" (it should write it via the Write tool)
                 # If the LLM didn't write report.md, we note it.

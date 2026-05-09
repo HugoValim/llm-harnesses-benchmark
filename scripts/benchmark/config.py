@@ -48,6 +48,7 @@ class BenchmarkConfig:
     runner: dict[str, Any]
     config_path: Path
     results_dir: Path
+    harness: str  # "opencode" | "codex" — prefix for result subdirs: results/<harness>-<slug>/
     opencode_config_path: Path | None
     timeout_seconds: int
     no_progress_timeout_seconds: int

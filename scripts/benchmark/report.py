@@ -12,11 +12,15 @@ def load_results(
     config: dict[str, Any],
     results_dir: Path,
     warmup_payload: dict[str, Any] | None = None,
+    *,
+    harness: str = "opencode",
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     warmup_results = warmup_payload.get("results_by_slug", {}) if warmup_payload else {}
     for model in config["models"]:
-        result_path = results_dir / model["slug"] / "result.json"
+        if model.get("runner_type", "opencode") != harness:
+            continue
+        result_path = results_dir / f"{harness}-{model['slug']}" / "result.json"
         if result_path.exists():
             row = load_json(result_path)
             row["ollama_warmup"] = warmup_results.get(model["slug"])
@@ -77,6 +81,8 @@ def build_report(
     prompt: str,
     warmup_payload: dict[str, Any] | None = None,
     warmup_path: Path | None = None,
+    *,
+    harness: str = "opencode",
 ) -> str:
     lines: list[str] = []
     counts: dict[str, int] = {}
@@ -106,7 +112,16 @@ def build_report(
     lines.append("")
     lines.append("## Runner")
     lines.append("")
-    lines.append("`opencode run --agent build --format json`")
+    if harness == "codex":
+        lines.append(
+            "`codex exec --json --ephemeral ...` "
+            f"(harness `codex` — runs under `results/{harness}-<slug>/`)"
+        )
+    else:
+        lines.append(
+            "`opencode run --agent build --format json` "
+            f"(harness `{harness}` — runs under `results/{harness}-<slug>/`)"
+        )
     lines.append("")
     for note in config["runner"]["notes"]:
         lines.append(f"- {note}")
@@ -114,6 +129,8 @@ def build_report(
     lines.append("## Model Selection")
     lines.append("")
     for model in config["models"]:
+        if model.get("runner_type", "opencode") != harness:
+            continue
         lines.append(
             f"- `{model['slug']}` -> `{model['id']}`: {model['selection_reason']}"
         )
@@ -180,7 +197,7 @@ def build_report(
     lines.append("")
     lines.append("## Per-Run Paths")
     lines.append("")
-    lines.append("Each run writes to `results/<slug>/` with these files:")
+    lines.append(f"Each run writes to `results/{harness}-<slug>/` with these files:")
     lines.append("")
     lines.append("- `project/`: the generated project workspace")
     lines.append("- `prompt.txt`: exact prompt used for the run")
