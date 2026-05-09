@@ -17,11 +17,14 @@ cd "$(dirname "$0")/.."
 python3 scripts/run_benchmark.py --harness claude \
   --config config/claude_code_ollama_cloud_models.json \
   --report docs/report.ollama-cloud.claude.md \
-  --jobs 0 \
   "$@"
 
 python3 scripts/run_benchmark.py --harness codex \
   --config config/codex_ollama_cloud_models.json \
   --report docs/report.ollama-cloud.codex.md \
-  --jobs 0 \
+  "$@"
+
+python3 scripts/run_benchmark.py --harness opencode \
+  --config config/claude_code_ollama_cloud_models.json \
+  --report docs/report.ollama-cloud.claude.md \
   "$@"

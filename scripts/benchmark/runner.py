@@ -7,6 +7,7 @@ import os
 import select
 import signal
 import subprocess
+import threading
 import time
 from shlex import quote as shlex_quote
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from benchmark.config import (
     summarize_project,
 )
 from benchmark.loop_detector import ToolCallLoopDetector
+
+_SKIP_CONFIG_LOCK = threading.Lock()
 from benchmark.util import (
     count_files,
     format_duration,
@@ -1106,8 +1109,23 @@ def _ensure_local_model_ready(
 
 
 def run_model(
-    model: dict[str, Any], bench: BenchmarkConfig, index: int, total: int
+    model: dict[str, Any],
+    bench: BenchmarkConfig,
+    index: int,
+    total: int,
+    *,
+    skip_stale_kill: bool = False,
 ) -> dict[str, Any]:
+    """Execute one harness run for ``model``.
+
+    Args:
+        model: Registry entry including ``slug``, ``runner_type``, etc.
+        bench: Shared benchmark settings (timeouts, prompts, backend, …).
+        index: Position in this batch for progress logs (``[index/total]``).
+        total: Batch size used in progress logs.
+        skip_stale_kill: When True, do not invoke :func:`_kill_stale_opencode_processes`;
+            use once per concurrent opencode batch (see ``run_benchmark``).
+    """
     result_dir = bench.results_dir / f"{bench.harness}-{model['slug']}"
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
@@ -1134,7 +1152,7 @@ def run_model(
 
     runner_type = model.get("runner_type", "opencode")
 
-    if runner_type != "codex":
+    if runner_type != "codex" and not skip_stale_kill:
         _kill_stale_opencode_processes()
 
     started_at = utc_now()
@@ -1272,7 +1290,11 @@ def run_model(
             f"{float(final_phase['preview_output_tokens_per_second_average']):.2f} output tok/s over the first "
             f"{bench.min_preview_samples} steps (< {bench.min_preview_output_tps:.2f})."
         )
-        if mark_model_skip_by_default(bench.config_path, model["slug"], note):
+        with _SKIP_CONFIG_LOCK:
+            wrote = mark_model_skip_by_default(
+                bench.config_path, model["slug"], note
+            )
+        if wrote:
             print_line(
                 f"[{model['slug']}] marked skip_by_default in {bench.config_path}"
             )

@@ -115,7 +115,7 @@ python scripts/run_benchmark.py --harness claude --report-only
 
 ### Claude Code (`--harness claude`)
 
-`--jobs/-j N` runs up to N variants concurrently (default `1`). Use `--jobs 0` for one worker per variant. Logs are prefixed with `[<slug>]`.
+`--jobs/-j N` caps concurrent variants (default: one worker per variant). Pass `--jobs 1` for sequential execution, or `N > 1` for a bounded pool. Logs are prefixed with `[<slug>]`.
 
 Under **`results/claude-<slug>/`**: `project/`, `result.json`, `stream.ndjson`, `stderr.log`, `prompt.txt`.
 
@@ -126,6 +126,8 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 **Ollama Cloud via Claude Code** — variants use `command_prefix: ["ollama","launch","claude"]` and `main_model` tags like `kimi-k2.6:cloud`. See `config/claude_code_ollama_cloud_models.json`. Pair with **`config/codex_ollama_cloud_models.json`** and `./scripts/run_ollama_cloud_benchmark.sh` for cross-harness comparison.
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
+
+`--jobs/-j N` fans out concurrent cloud model runs the same way as Claude (default: one worker per cloud model). Pass `--jobs 1` for sequential execution, or `N > 1` for a bounded pool. Models with `provider: "ollama"` **always run sequentially** to avoid overlapping GPU-backed loads regardless of `--jobs`.
 
 The runner loads **`models`** from the config and filters by `runner_type` (`opencode` default, or `codex`). Mixed registries are supported; reports only include rows for the active harness.
 

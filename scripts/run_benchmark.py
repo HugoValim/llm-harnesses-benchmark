@@ -24,7 +24,7 @@ from benchmark.config import (  # noqa: E402
     write_local_opencode_config,
 )
 from benchmark.report import build_report, load_results  # noqa: E402
-from benchmark.runner import run_model  # noqa: E402
+from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import load_json, print_line  # noqa: E402
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
@@ -191,8 +191,10 @@ def parse_args() -> argparse.Namespace:
         "--jobs",
         "-j",
         type=int,
-        default=1,
-        help="Concurrency for --harness claude (default 1). Use 0 for one worker per variant.",
+        default=0,
+        help="Concurrency across model runs (default: one worker per slug). Pass an integer N "
+        "to cap to N concurrent runs, or 1 to force sequential. Local-served (provider=ollama) "
+        "models always run sequentially regardless of this flag.",
     )
     return parser.parse_args()
 
@@ -213,11 +215,6 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             file=sys.stderr,
         )
         return 1
-
-    if args.jobs != 1:
-        print_line(
-            f"Note: --jobs applies only to --harness claude; ignoring for {harness}."
-        )
 
     config = load_json(config_path)
     prompt = prompt_path.read_text().strip()
@@ -329,13 +326,57 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         )
 
         total_models = len(selected_models)
+        jobs = args.jobs if args.jobs > 0 else total_models
+        jobs = max(1, min(jobs, total_models)) if total_models else 1
+        local_jobs = [
+            (i, m)
+            for i, m in enumerate(selected_models, start=1)
+            if m["provider"] == "ollama"
+        ]
+        cloud_jobs = [
+            (i, m)
+            for i, m in enumerate(selected_models, start=1)
+            if m["provider"] != "ollama"
+        ]
         print_line(
             f"Benchmark run starting ({harness}): models={total_models} "
+            f"jobs={jobs} (cloud={len(cloud_jobs)} local={len(local_jobs)}) "
             f"timeout={bench.timeout_seconds}s "
             f"no_progress_timeout={bench.no_progress_timeout_seconds}s force={bench.force}"
         )
-        for index, model in enumerate(selected_models, start=1):
+
+        for index, model in local_jobs:
             run_model(model, bench, index, total_models)
+
+        cloud_workers = max(1, min(jobs, len(cloud_jobs))) if cloud_jobs else 1
+
+        def _run_cloud_item(item: tuple[int, dict]) -> tuple[str, dict | None, str | None]:
+            index, model = item
+            try:
+                payload = run_model(
+                    model, bench, index, total_models, skip_stale_kill=True
+                )
+                return model["slug"], payload, None
+            except Exception:
+                return model["slug"], None, traceback.format_exc()
+
+        if cloud_workers == 1 or len(cloud_jobs) <= 1:
+            for index, model in cloud_jobs:
+                run_model(model, bench, index, total_models)
+        else:
+            if harness == "opencode":
+                _kill_stale_opencode_processes()
+            with ThreadPoolExecutor(max_workers=cloud_workers) as pool:
+                futures = {
+                    pool.submit(_run_cloud_item, item): item[1]["slug"]
+                    for item in cloud_jobs
+                }
+                for fut in as_completed(futures):
+                    slug, _, err = fut.result()
+                    if err:
+                        print_line(f"[{slug}] ERROR:\n{err}")
+                    else:
+                        print_line(f"[{slug}] worker done")
 
         _cleanup_backends(backend, args.local_api_base)
 
