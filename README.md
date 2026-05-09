@@ -98,6 +98,10 @@ python scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
 # Codex-only registry (e.g. Ollama Cloud via ollama launch codex)
 python scripts/run_benchmark.py --harness codex --config config/codex_ollama_cloud_models.json
 
+# Codex with ChatGPT-linked models (plain codex, `codex login`)
+python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_models.json
+./scripts/run_codex_chatgpt_benchmark.sh
+
 # Claude Code variants (config/claude_code_models.json by default)
 python scripts/run_benchmark.py --harness claude
 python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
