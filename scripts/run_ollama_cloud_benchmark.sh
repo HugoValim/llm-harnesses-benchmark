@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run both Claude Code and Codex benchmarks against the shared Ollama Cloud model set:
+# Run the Claude Code, Codex, and OpenCode benchmarks against the shared
+# Ollama Cloud model set:
 #   - Kimi K2.6, Qwen 3.5, GLM 5.1, MiniMax M2.7, DeepSeek V4 Pro
 #
-# Claude uses `ollama launch claude`; Codex uses `ollama launch codex`.
-# Results land under results/claude-<slug>/ and results/codex-<slug>/.
+# Claude   uses `ollama launch claude`   -> results/claude-<slug>/
+# Codex    uses `ollama launch codex`    -> results/codex-<slug>/
+# OpenCode uses `ollama launch opencode` -> results/opencode-<slug>/
 #
 # Example:
 #   ./scripts/run_ollama_cloud_benchmark.sh
@@ -14,10 +16,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-python3 scripts/run_benchmark.py --harness claude \
-  --config config/claude_code_ollama_cloud_models.json \
-  --report docs/report.ollama-cloud.claude.md \
-  "$@"
+# python3 scripts/run_benchmark.py --harness claude \
+#   --config config/claude_code_ollama_cloud_models.json \
+#   --report docs/report.ollama-cloud.claude.md \
+#   "$@"
 
 python3 scripts/run_benchmark.py --harness codex \
   --config config/codex_ollama_cloud_models.json \
@@ -25,6 +27,6 @@ python3 scripts/run_benchmark.py --harness codex \
   "$@"
 
 python3 scripts/run_benchmark.py --harness opencode \
-  --config config/claude_code_ollama_cloud_models.json \
-  --report docs/report.ollama-cloud.claude.md \
+  --config config/opencode_ollama_cloud_models.json \
+  --report docs/report.ollama-cloud.opencode.md \
   "$@"

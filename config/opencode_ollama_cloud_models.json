@@ -1,0 +1,58 @@
+{
+  "runner": {
+    "command": "opencode",
+    "args": ["run", "--agent", "build", "--format", "json"],
+    "notes": [
+      "Ollama Cloud models invoked via the `ollama launch opencode` shim.",
+      "Uses `opencode run --agent build --format json` with full autonomy.",
+      "Per-model `command_prefix` replaces the default `opencode` leader so the harness routes through Ollama Cloud."
+    ]
+  },
+  "models": [
+    {
+      "slug": "kimi_k2_6_ollama_cloud",
+      "id": "kimi-k2.6:cloud",
+      "label": "Kimi K2.6 (Ollama Cloud) via OpenCode",
+      "provider": "ollama_cloud",
+      "runner_type": "opencode",
+      "command_prefix": ["ollama", "launch", "opencode"],
+      "selection_reason": "Best Kimi model on Ollama Cloud through OpenCode CLI — pairs with the Claude Code and Codex Ollama Cloud harnesses for cross-runner comparison."
+    },
+    {
+      "slug": "qwen3_5_ollama_cloud",
+      "id": "qwen3.5:cloud",
+      "label": "Qwen 3.5 (Ollama Cloud) via OpenCode",
+      "provider": "ollama_cloud",
+      "runner_type": "opencode",
+      "command_prefix": ["ollama", "launch", "opencode"],
+      "selection_reason": "Best Qwen model on Ollama Cloud via OpenCode — reasoning and agentic tool use."
+    },
+    {
+      "slug": "glm_5_1_ollama_cloud",
+      "id": "glm-5.1:cloud",
+      "label": "GLM 5.1 (Ollama Cloud) via OpenCode",
+      "provider": "ollama_cloud",
+      "runner_type": "opencode",
+      "command_prefix": ["ollama", "launch", "opencode"],
+      "selection_reason": "Best GLM model on Ollama Cloud via OpenCode — long-horizon agentic engineering."
+    },
+    {
+      "slug": "minimax_m2_7_ollama_cloud",
+      "id": "minimax-m2.7:cloud",
+      "label": "MiniMax M2.7 (Ollama Cloud) via OpenCode",
+      "provider": "ollama_cloud",
+      "runner_type": "opencode",
+      "command_prefix": ["ollama", "launch", "opencode"],
+      "selection_reason": "Best MiniMax model on Ollama Cloud via OpenCode."
+    },
+    {
+      "slug": "deepseek_v4_pro_ollama_cloud",
+      "id": "deepseek-v4-pro:cloud",
+      "label": "DeepSeek V4 Pro (Ollama Cloud) via OpenCode",
+      "provider": "ollama_cloud",
+      "runner_type": "opencode",
+      "command_prefix": ["ollama", "launch", "opencode"],
+      "selection_reason": "Best DeepSeek model on Ollama Cloud via OpenCode."
+    }
+  ]
+}

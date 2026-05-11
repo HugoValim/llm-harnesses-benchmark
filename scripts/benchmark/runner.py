@@ -78,7 +78,29 @@ def build_opencode_command(
     model_id: str,
     prompt: str,
     continue_session_id: str | None = None,
+    command_prefix: list[str] | None = None,
 ) -> list[str]:
+    """Build an opencode CLI command.
+
+    ``command_prefix`` mirrors the codex path: when set to something like
+    ``["ollama", "launch", "opencode"]`` the model id is forwarded to the
+    shim via ``--model`` and the rest of the opencode argv comes after ``--``.
+    The ``-m`` flag is dropped because the shim injects the model itself.
+    """
+    is_ollama_launch = (
+        command_prefix is not None
+        and len(command_prefix) >= 2
+        and command_prefix[0] == "ollama"
+        and command_prefix[1] == "launch"
+    )
+
+    if is_ollama_launch:
+        inner: list[str] = list(runner["args"])
+        if continue_session_id:
+            inner.extend(["--session", continue_session_id])
+        inner.append(prompt)
+        return [*command_prefix, "--model", model_id, "--", *inner]
+
     command = [runner["command"], *runner["args"]]
     if continue_session_id:
         command.extend(["--session", continue_session_id])
@@ -728,7 +750,11 @@ def run_opencode_phase(
     prompt_path.write_text(prompt)
     _verify_opencode_config(bench.opencode_config_path, model, model_slug, project_dir)
     command = build_opencode_command(
-        bench.runner, model["id"], prompt, continue_session_id=continue_session_id
+        bench.runner,
+        model["id"],
+        prompt,
+        continue_session_id=continue_session_id,
+        command_prefix=model.get("command_prefix"),
     )
     wall_start = time.monotonic()
     process_env = os.environ.copy()
