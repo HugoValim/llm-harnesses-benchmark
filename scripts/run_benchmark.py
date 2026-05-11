@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
         "--jobs",
         "-j",
         type=int,
-        default=0,
+        default=1,
         help="Concurrency across model runs (default: one worker per slug). Pass an integer N "
         "to cap to N concurrent runs, or 1 to force sequential. Local-served (provider=ollama) "
         "models always run sequentially regardless of this flag.",
