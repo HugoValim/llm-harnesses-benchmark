@@ -10,6 +10,9 @@ from typing import Any
 from benchmark.backends import LocalModelBackend
 from benchmark.util import (
     clone_json,
+    count_files,
+    count_files_matching,
+    has_file_matching,
     load_json,
     load_optional_json,
     print_line,
@@ -212,12 +215,9 @@ def load_ollama_warmup_payload(path: Path) -> dict[str, Any] | None:
 
 def summarize_project(project_dir: Path) -> dict[str, Any]:
     checks = {
-        "gemfile": project_dir / "Gemfile",
-        "routes": project_dir / "config" / "routes.rb",
-        "app_dir": project_dir / "app",
-        "views_dir": project_dir / "app" / "views",
-        "javascript_dir": project_dir / "app" / "javascript",
-        "tests_dir": project_dir / "test",
+        "manage_py": project_dir / "manage.py",
+        "requirements_txt": project_dir / "requirements.txt",
+        "pyproject_toml": project_dir / "pyproject.toml",
         "readme_md": project_dir / "README.md",
         "readme_lower": project_dir / "readme.md",
         "dockerfile": project_dir / "Dockerfile",
@@ -227,7 +227,21 @@ def summarize_project(project_dir: Path) -> dict[str, Any]:
         "compose_yaml": project_dir / "compose.yaml",
     }
     present = {name: path.exists() for name, path in checks.items()}
-    files = sum(1 for item in project_dir.rglob("*") if item.is_file())
+
+    # Django/Channels structural markers — search the tree but prune vendored
+    # dirs (handled inside util.has_file_matching / count_files_matching).
+    settings_py_present = has_file_matching(project_dir, "settings.py")
+    asgi_py_present = has_file_matching(project_dir, "asgi.py")
+    tests_present = (
+        count_files_matching(project_dir, "test_*.py", limit=1) > 0
+        or count_files_matching(project_dir, "*_test.py", limit=1) > 0
+        or count_files_matching(project_dir, "tests.py", limit=1) > 0
+    )
+    present["settings_py"] = settings_py_present
+    present["asgi_py"] = asgi_py_present
+    present["tests_present"] = tests_present
+
+    files = count_files(project_dir)
     readme_present = present["readme_md"] or present["readme_lower"]
     compose_present = any(
         present[name]
@@ -238,22 +252,31 @@ def summarize_project(project_dir: Path) -> dict[str, Any]:
             "compose_yaml",
         )
     )
-    rails_present = present["gemfile"] and present["routes"] and present["app_dir"]
-    tests_present = present["tests_dir"]
+    python_present = present["manage_py"] and (
+        present["requirements_txt"] or present["pyproject_toml"]
+    )
+    django_present = python_present and settings_py_present
+    channels_present = asgi_py_present
     docker_present = present["dockerfile"] and compose_present
 
-    if rails_present and readme_present and tests_present and docker_present:
+    if (
+        django_present
+        and channels_present
+        and tests_present
+        and readme_present
+        and docker_present
+    ):
         intended = "yes"
-        note = "Rails app, tests, README, and container files detected."
+        note = "Django + Channels app, tests, README, and container files detected."
     elif files == 0:
         intended = "no"
         note = "Project directory is empty."
-    elif rails_present or readme_present or docker_present or tests_present:
+    elif django_present or readme_present or docker_present or tests_present:
         intended = "partial"
         note = "Some expected benchmark artifacts exist, but the scaffold looks incomplete."
     else:
         intended = "no"
-        note = "Generated files do not resemble the requested Rails project."
+        note = "Generated files do not resemble the requested Django project."
 
     return {
         "file_count": files,

@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+# Directories that contain vendored / generated artifacts rather than
+# project source. Excluded from file counting and structural scaffold
+# detection so phase-2 `.venv` / `node_modules` creation doesn't drown
+# the real project tree.
+_EXCLUDED_DIRS = frozenset(
+    {
+        ".venv",
+        "venv",
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".nox",
+        "_runtime_verification",
+        "staticfiles",
+        ".coverage_html",
+        "htmlcov",
+        "dist",
+        "build",
+        ".next",
+        ".cache",
+    }
+)
 
 
 def utc_now() -> str:
@@ -72,7 +102,45 @@ def format_value(value: Any) -> str:
 
 
 def count_files(path: Path) -> int:
-    return sum(1 for item in path.rglob("*") if item.is_file())
+    """Count regular files under ``path``, skipping vendored/cache trees.
+
+    Pruning ``.venv``, ``node_modules``, caches, etc. keeps the count
+    representative of actual project source even after phase 2 creates
+    a virtualenv. Also called every ~10s by the heartbeat loop, so this
+    must stay cheap — single ``os.walk`` traversal with directory pruning.
+    """
+    if not path.exists():
+        return 0
+    total = 0
+    for _root, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+        total += len(filenames)
+    return total
+
+
+def count_files_matching(path: Path, pattern: str, *, limit: int | None = None) -> int:
+    """Count files under ``path`` whose basename matches ``pattern`` (fnmatch).
+
+    Skips the same vendored/cache directories as :func:`count_files`.
+    Pass ``limit`` to short-circuit once that many matches are found
+    (useful when the caller only needs a presence boolean).
+    """
+    if not path.exists():
+        return 0
+    total = 0
+    for _root, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+        for name in filenames:
+            if fnmatch.fnmatch(name, pattern):
+                total += 1
+                if limit is not None and total >= limit:
+                    return total
+    return total
+
+
+def has_file_matching(path: Path, pattern: str) -> bool:
+    """Return True if at least one file under ``path`` matches ``pattern``."""
+    return count_files_matching(path, pattern, limit=1) > 0
 
 
 def shorten_text(text: str, limit: int = 100) -> str:
