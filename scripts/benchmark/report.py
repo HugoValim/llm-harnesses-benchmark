@@ -5,7 +5,33 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from benchmark.config import summarize_project
 from benchmark.util import format_value, load_json, prompt_sha256, utc_now
+
+
+def _rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str:
+    """Recompute the run status using the fresh project summary.
+
+    Mirrors the logic in :func:`benchmark.runner.run_codex_phase` /
+    ``run_opencode_phase`` so a ``--report-only`` rebuild reflects updated
+    scaffold detection without re-running the benchmark.
+    """
+    if row.get("timed_out"):
+        return "timeout"
+    if row.get("stalled"):
+        return "failed"
+    works = project_summary.get("works_as_intended") == "yes"
+    terminal_stop = row.get("finish_reason") == "stop"
+    if terminal_stop and works:
+        return "completed"
+    if terminal_stop:
+        return "completed_with_errors"
+    exit_code = row.get("exit_code")
+    if exit_code == 0 and works:
+        return "completed"
+    if exit_code == 0:
+        return "completed_with_errors"
+    return "failed"
 
 
 def load_results(
@@ -24,6 +50,18 @@ def load_results(
         if result_path.exists():
             row = load_json(result_path)
             row["ollama_warmup"] = warmup_results.get(model["slug"])
+            # Re-derive project_summary + status from the on-disk project
+            # tree so harness fixes (Django scaffold detection, file-count
+            # exclusions, …) surface on `--report-only` rebuilds without
+            # re-running the benchmark. Fall back to the cached blob when
+            # the project dir is gone (e.g. cleaned up).
+            project_dir_path = (row.get("paths") or {}).get("project_dir")
+            if project_dir_path:
+                project_dir = Path(project_dir_path)
+                if project_dir.is_dir():
+                    fresh = summarize_project(project_dir)
+                    row["project_summary"] = fresh
+                    row["status"] = _rederive_status(row, fresh)
             rows.append(row)
             continue
         rows.append(
