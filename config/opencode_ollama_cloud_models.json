@@ -15,7 +15,7 @@
       "label": "Kimi K2.6 (Ollama Cloud) via OpenCode",
       "provider": "ollama_cloud",
       "runner_type": "opencode",
-      "command_prefix": ["ollama", "launch", "opencode"],
+      "command_prefix": ["ollama", "launch", "--yes", "opencode"],
       "selection_reason": "Best Kimi model on Ollama Cloud through OpenCode CLI — pairs with the Claude Code and Codex Ollama Cloud harnesses for cross-runner comparison."
     },
     {
@@ -24,7 +24,7 @@
       "label": "Qwen 3.5 (Ollama Cloud) via OpenCode",
       "provider": "ollama_cloud",
       "runner_type": "opencode",
-      "command_prefix": ["ollama", "launch", "opencode"],
+      "command_prefix": ["ollama", "launch", "--yes", "opencode"],
       "selection_reason": "Best Qwen model on Ollama Cloud via OpenCode — reasoning and agentic tool use."
     },
     {
@@ -33,7 +33,7 @@
       "label": "GLM 5.1 (Ollama Cloud) via OpenCode",
       "provider": "ollama_cloud",
       "runner_type": "opencode",
-      "command_prefix": ["ollama", "launch", "opencode"],
+      "command_prefix": ["ollama", "launch", "--yes", "opencode"],
       "selection_reason": "Best GLM model on Ollama Cloud via OpenCode — long-horizon agentic engineering."
     },
     {
@@ -42,7 +42,7 @@
       "label": "MiniMax M2.7 (Ollama Cloud) via OpenCode",
       "provider": "ollama_cloud",
       "runner_type": "opencode",
-      "command_prefix": ["ollama", "launch", "opencode"],
+      "command_prefix": ["ollama", "launch", "--yes", "opencode"],
       "selection_reason": "Best MiniMax model on Ollama Cloud via OpenCode."
     },
     {
@@ -51,7 +51,7 @@
       "label": "DeepSeek V4 Pro (Ollama Cloud) via OpenCode",
       "provider": "ollama_cloud",
       "runner_type": "opencode",
-      "command_prefix": ["ollama", "launch", "opencode"],
+      "command_prefix": ["ollama", "launch", "--yes", "opencode"],
       "selection_reason": "Best DeepSeek model on Ollama Cloud via OpenCode."
     }
   ]

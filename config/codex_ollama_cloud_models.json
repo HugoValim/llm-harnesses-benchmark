@@ -4,7 +4,8 @@
     "notes": [
       "Ollama Cloud models invoked via the `ollama launch codex` shim.",
       "Uses `codex exec --json --ephemeral` with full autonomy flags.",
-      "Per-model `command_prefix` replaces the default `codex` leader so the harness routes through Ollama Cloud."
+      "Per-model `command_prefix` replaces the default `codex` leader so the harness routes through Ollama Cloud.",
+      "Codex context overflow on long agentic runs is a known issue for `:cloud` models through `ollama launch codex`: codex can't read context metadata from Ollama's `/v1` endpoint (openai/codex#14757), and pinning `model_context_window` triggers `fill_to_context_window` prompt-padding (openai/codex#16068). Setting `model_auto_compact_token_limit` alone has also been observed to make things worse. Prefer the claude or opencode harness for these models when long-horizon runs matter."
     ]
   },
   "models": [
@@ -13,7 +14,7 @@
       "id": "kimi-k2.6:cloud",
       "label": "Kimi K2.6 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "codex",
+      "runner_type": "ollama",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best Kimi model on Ollama Cloud through Codex CLI — pairs with the Claude Code Ollama Cloud harness for cross-runner comparison."
     },
@@ -22,7 +23,7 @@
       "id": "qwen3.5:cloud",
       "label": "Qwen 3.5 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "codex",
+      "runner_type": "ollama",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best Qwen model on Ollama Cloud via Codex — reasoning and agentic tool use."
     },
@@ -31,7 +32,7 @@
       "id": "glm-5.1:cloud",
       "label": "GLM 5.1 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "codex",
+      "runner_type": "ollama",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best GLM model on Ollama Cloud via Codex — long-horizon agentic engineering."
     },
@@ -40,7 +41,7 @@
       "id": "minimax-m2.7:cloud",
       "label": "MiniMax M2.7 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "codex",
+      "runner_type": "ollama",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best MiniMax model on Ollama Cloud via Codex."
     },
@@ -49,7 +50,7 @@
       "id": "deepseek-v4-pro:cloud",
       "label": "DeepSeek V4 Pro (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "codex",
+      "runner_type": "ollama",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best DeepSeek model on Ollama Cloud via Codex."
     }
