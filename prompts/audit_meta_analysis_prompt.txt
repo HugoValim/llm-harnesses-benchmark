@@ -9,16 +9,20 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 ## Inputs (read these with the Read / Glob tools)
 
-- Audit-reports root: {audit_reports_dir}
-- Comparison table (raw, regex-parsed): {comparison_table_path}
-- Statistical summary (auto-computed harness/model/dimension rollups): {statistical_summary_path}
-- Per-target reports (one per audited project):
-  - Glob: {audit_reports_dir}/*/*/report.md
-  - Each path is shaped `<auditor>/<harness>-<model_slug>/report.md`
-  - Inside, the rubric layout is sections A-I (see prompts/audit_prompt_template.txt for the schema)
-- Rubric schema reference: prompts/audit_prompt_template.txt (for dimension max points, tier thresholds, auto-critical-failure types)
+- Auditor-scoped reports directories (one or more — each is one auditor's full grid of `report.md` files):
+
+{audit_input_dirs}
+
+  - Glob `*/report.md` under EACH directory above; do not look outside these directories for input.
+  - Each report path is shaped `<auditor_dir>/<harness>-<model_slug>/report.md`. The directory name immediately above `report.md`'s parent IS the auditor identity.
+  - Inside, the rubric layout is sections A-I (see prompts/audit_prompt_template.txt for the schema).
+- Rubric schema reference: prompts/audit_prompt_template.txt (for dimension max points, tier thresholds, auto-critical-failure types).
+
+No pre-aggregated comparison table or statistical summary is provided. You must extract per-dimension and total scores from the report.md files yourself.
 
 The harness prefixes are: `claude`, `codex`, `opencode`. Strip the prefix to get the underlying target model slug. Targets with the same model slug under different harness prefixes are paired comparisons (same model, different agent harness).
+
+When more than one auditor directory is listed, the same `(harness, model_slug)` cell may have multiple `report.md` files (one per auditor). Treat each as an independent sample for that cell. When ranking models or harnesses, AVERAGE the totals across auditors for that cell and report the cross-auditor std-dev so auditor disagreement is visible. Keep `auditor` as an extra column wherever per-cell data is shown.
 
 ## What you are testing
 
@@ -29,8 +33,8 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 ## Workflow
 
-1. Read the comparison table and statistical summary first — they are pre-aggregated context.
-2. Glob all `report.md` files. For EACH report extract:
+1. For each directory listed in "Inputs" above, glob `*/report.md` ONCE. Do not re-Glob. Do not re-Read the same report file.
+2. For EACH report extract (read each file at most once):
    - Per-dimension scores from section B (`D1..D8`, each `score/max`)
    - Total from section C (`X/100`); record `null` if absent or malformed
    - Tier from section D (A/B/C/D)
@@ -41,6 +45,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D8 + total).
 5. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
 6. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
+7. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
 
 ## Required output
 
@@ -151,9 +156,9 @@ If FAIL or WARN: recommend a Prompt-Version bump for `prompts/audit_prompt_templ
 ### 9. Headline findings (4-6 bullets)
 
 Each bullet:
-- Cites specific report paths (e.g. `audit-reports/<auditor>/codex-glm_5_1_ollama_cloud/report.md:NN`)
+- Cites specific report paths under one of the listed auditor directories (e.g. `<auditor_dir>/codex-glm_5_1_ollama_cloud/report.md:NN`)
 - States the pattern in one sentence
-- Names the affected harnesses/models
+- Names the affected harnesses/models (and the auditor, when the finding is auditor-attributable)
 
 ### 10. Recommendations
 
@@ -167,16 +172,16 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 
 ### 11. Appendix: data inputs
 
-- Comparison table path and its line count
-- Statistical summary path and its line count
-- Number of `report.md` files globbed
-- Number of reports successfully parsed (with a non-null total)
-- List of reports where total was absent (excluded from averages)
-- List of reports where section H was malformed or missing (excluded from cost/performance analysis)
-- List of "single-harness models" (model slugs that appear under only 1 harness — excluded from section 4)
-- Full dimension score matrix (target × D1..D8 + total) — one row per report, including those with `n/a` totals
-- Per-harness std dev table for each dimension (D1..D8) — extends statistical summary
-- Tier distribution histogram across the whole cohort
+- The full list of auditor-scoped reports directories globbed (echo the input list from the top of this prompt).
+- Per-directory count of `report.md` files globbed.
+- Total number of reports successfully parsed (with a non-null total).
+- List of reports where total was absent (excluded from averages).
+- List of reports where section H was malformed or missing (excluded from cost/performance analysis).
+- List of "single-harness models" (model slugs that appear under only 1 harness — excluded from section 4).
+- Full dimension score matrix (auditor × harness × model × D1..D8 + total) — one row per report, including those with `n/a` totals.
+- Per-harness std dev table for each dimension (D1..D8).
+- Cross-auditor disagreement: for every `(harness, model_slug)` cell audited by >=2 auditors, the per-auditor totals + std-dev. Flag any cell where std-dev exceeds 10 as a calibration concern.
+- Tier distribution histogram across the whole cohort.
 
 ## Guardrails
 
