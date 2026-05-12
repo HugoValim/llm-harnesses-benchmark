@@ -38,7 +38,8 @@ python-benchmark/
 │   └── audit_prompt_template.txt          # LLM-powered audit rubric
 ├── scripts/
 │   ├── run_benchmark.py                   # unified entrypoint: --harness opencode|codex|claude
-│   ├── run_ollama_cloud_benchmark.sh      # fan-out Ollama Cloud models: Claude + Codex harnesses
+│   ├── run_ollama_cloud_audit.sh          # audit phase only: scores every Ollama Cloud project
+│   ├── run_ollama_cloud_meta_analysis.sh  # meta phase only: cross-auditor synthesis
 │   ├── run_ollama_cloud_claude_benchmark.sh  # back-compat: Claude Ollama Cloud only
 │   ├── run_claude_code_benchmark.py       # deprecated (use run_benchmark.py --harness claude)
 │   ├── run_audit_benchmark.py             # entrypoint for LLM-powered code audits
@@ -57,7 +58,7 @@ python-benchmark/
     ├── report.md                          # default opencode aggregate (--harness opencode)
     ├── report.codex.md                    # default codex aggregate (--harness codex)
     ├── report.claude-code.md              # default Claude aggregate (--harness claude)
-    └── report.ollama-cloud.*.md           # optional reports from run_ollama_cloud_benchmark.sh
+    └── report.ollama-cloud.*.md           # optional reports from the Ollama Cloud wrappers
 ```
 
 ## Default model set
@@ -106,8 +107,11 @@ python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_mo
 python scripts/run_benchmark.py --harness claude
 python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
 
-# Run the shared Ollama Cloud model matrix on both Claude + Codex back-to-back
-./scripts/run_ollama_cloud_benchmark.sh
+# Audit the shared Ollama Cloud results set across all auditors (skips meta-analysis)
+./scripts/run_ollama_cloud_audit.sh
+
+# Cross-auditor meta-analysis only (assumes audits already ran)
+./scripts/run_ollama_cloud_meta_analysis.sh
 
 # Force re-run (overwrites existing result.json)
 python scripts/run_benchmark.py --harness opencode --model kimi_k2_6 --force
@@ -127,7 +131,7 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 
 **Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-**Ollama Cloud via Claude Code** — variants use `command_prefix: ["ollama","launch","claude"]` and `main_model` tags like `kimi-k2.6:cloud`. See `config/claude_code_ollama_cloud_models.json`. Pair with **`config/codex_ollama_cloud_models.json`** and `./scripts/run_ollama_cloud_benchmark.sh` for cross-harness comparison.
+**Ollama Cloud via Claude Code** — variants use `command_prefix: ["ollama","launch","claude"]` and `main_model` tags like `kimi-k2.6:cloud`. See `config/claude_code_ollama_cloud_models.json`. Pair with **`config/codex_ollama_cloud_models.json`** and the split audit/meta wrappers (`./scripts/run_ollama_cloud_audit.sh` + `./scripts/run_ollama_cloud_meta_analysis.sh`) for cross-harness comparison.
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
 

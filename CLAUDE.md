@@ -35,21 +35,33 @@ Run a specific Claude Code variant:
 python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
 ```
 
-Run Claude + Codex against the shared Ollama Cloud model list:
+Run the per-target audits over the shared Ollama Cloud results set (skips meta-analysis):
 ```bash
-./scripts/run_ollama_cloud_benchmark.sh
+./scripts/run_ollama_cloud_audit.sh
 ```
 
-Run the automated code audit (dispatches an LLM auditor against generated projects):
+Run only the cross-auditor meta-analysis (assumes audits already ran):
 ```bash
-python scripts/run_audit_benchmark.py
+./scripts/run_ollama_cloud_meta_analysis.sh
 ```
+
+Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair):
+```bash
+python scripts/run_audit.py
+```
+
+Run the cross-auditor AI meta-analysis (Role 2 — reads every `audit-reports/<auditor>/<target>/report.md` and writes `audit-reports/meta-analysis.md` with best-harness / best-model / cost / dimension verdicts):
+```bash
+python scripts/run_meta_analysis.py
+```
+
+The legacy `scripts/run_audit_benchmark.py` is a deprecation shim that points at the two new entry points above.
 
 Rebuild reports without re-running:
 ```bash
 python scripts/run_benchmark.py --harness opencode --report-only
 python scripts/run_benchmark.py --harness claude --report-only
-python scripts/run_audit_benchmark.py --report-only
+python scripts/run_audit.py --report-only
 ```
 
 Validate generated apps boot correctly (venv, migrate, runserver, browser probe, Docker):
@@ -94,7 +106,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 - `config/models.json` — opencode/codex model registry. Each model has `slug`, `id`, `provider`, `selection_reason`, optional `runner_type` (`opencode` default | `codex`), `command_prefix` (for `ollama launch codex`), and optional flags like `enable_followup`, `skip_by_default`, `ollama_model_name`, `llama_swap_model`, `opencode_subagent`.
 - `config/codex_ollama_cloud_models.json` — Codex + `ollama launch codex` registry mirroring the Claude Ollama Cloud set (for cross-harness comparison).
 - `config/claude_code_models.json` — Claude Code variant registry. Each variant has `slug`, `main_model`, optional `subagent`, `command_prefix`, and `env_overrides`.
-- `config/audit_models.json` — Auditor registry for `run_audit_benchmark.py`. Same schema as `claude_code_models.json`.
+- `config/audit_models.json` — Auditor registry for `run_audit.py` and `run_meta_analysis.py`. Same schema as `claude_code_models.json`.
 - `config/opencode.benchmark.json` — Auto-generated on every opencode run from the home opencode config. Do not edit by hand.
 
 ### Prompts
