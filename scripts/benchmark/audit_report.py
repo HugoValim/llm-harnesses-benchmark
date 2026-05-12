@@ -25,7 +25,7 @@ from statistics import mean
 from typing import Iterable
 
 NUM_DIMENSIONS = 8
-HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "opencode")
+HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "ollama", "opencode")
 TIERS: tuple[str, ...] = ("A", "B", "C", "D")
 
 # Default dimension labels, used as fallback when a report's B-section is
@@ -470,13 +470,14 @@ def resolve_meta_variant(
     """Look up a meta-analysis variant from a meta-models config.
 
     The config schema mirrors ``config/audit_models.json``:
-    ``{"variants": [{"slug": ..., "main_model": ..., "harness": ...,
+    ``{"variants": [{"slug": ..., "main_model": ..., "runner_type": ...,
                      "command_prefix": [...]}]}``.
 
     Selection rules:
     1. If ``model_slug`` is given, must match a variant's slug exactly.
-    2. Variant's ``harness`` field (if present) must equal ``harness``.
-    3. Otherwise the first non-skipped variant with matching harness wins.
+    2. Variant's ``runner_type`` field (default ``"claude"``) must equal
+       ``harness``.
+    3. Otherwise the first non-skipped variant with matching runner_type wins.
 
     Raises ``ValueError`` with a descriptive message on mismatch.
     """
@@ -484,15 +485,15 @@ def resolve_meta_variant(
         v for v in meta_config.get("variants", []) if not v.get("skip_by_default")
     ]
     matches_harness = [
-        v for v in variants if v.get("harness", "claude") == harness
+        v for v in variants if v.get("runner_type", "claude") == harness
     ]
     if not matches_harness:
         available = ", ".join(
-            sorted({v.get("harness", "claude") for v in variants})
+            sorted({v.get("runner_type", "claude") for v in variants})
         ) or "(none)"
         raise ValueError(
-            f"No meta-analysis variant with harness={harness!r}. "
-            f"Available harnesses in config: {available}."
+            f"No meta-analysis variant with runner_type={harness!r}. "
+            f"Available runner_types in config: {available}."
         )
     if model_slug is None:
         return matches_harness[0]
@@ -501,26 +502,65 @@ def resolve_meta_variant(
             return v
     slugs = ", ".join(v["slug"] for v in matches_harness)
     raise ValueError(
-        f"No meta-analysis variant with slug={model_slug!r} under harness={harness!r}. "
-        f"Available slugs: {slugs}."
+        f"No meta-analysis variant with slug={model_slug!r} under "
+        f"runner_type={harness!r}. Available slugs: {slugs}."
     )
+
+
+def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
+    """Return the auditor subdirs under ``reports_dir`` that contain reports.
+
+    An auditor subdir is a direct child directory of ``reports_dir`` that:
+    - does not start with ``_`` (skips ``_meta-analysis-runs/``),
+    - does not start with one of the harness prefixes (``claude-``,
+      ``codex-``, ``opencode-``) — those are stray target outputs that
+      ended up at the wrong nesting level and should not be globbed,
+    - contains at least one ``*/report.md`` file (one report per audited target).
+
+    Returns paths sorted by name. Empty list when ``reports_dir`` does
+    not exist or contains no auditor-shaped subdirs.
+    """
+    if not reports_dir.is_dir():
+        return []
+    found: list[Path] = []
+    for child in sorted(reports_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        name = child.name
+        if name.startswith("_"):
+            continue
+        if any(name.startswith(f"{p}-") for p in HARNESS_PREFIXES):
+            continue
+        if not any(child.glob("*/report.md")):
+            continue
+        found.append(child)
+    return found
+
+
+def _render_audit_input_dirs(dirs: list[Path]) -> str:
+    """Render a list of auditor subdirs as a markdown bullet list of absolute paths."""
+    return "\n".join(f"- {p.resolve()}" for p in dirs)
 
 
 def build_meta_prompt(
     template: str,
     *,
-    audit_reports_dir: Path,
-    comparison_table_path: Path,
-    statistical_summary_path: Path,
+    audit_input_dirs: list[Path],
     output_path: Path,
 ) -> str:
-    """Interpolate the meta-analysis prompt template's placeholders."""
+    """Interpolate the meta-analysis prompt template's placeholders.
+
+    The template exposes ``{audit_input_dirs}`` (rendered as a markdown
+    bullet list of auditor-scoped directories the meta-analyst must glob
+    ``report.md`` files under) and ``{output_path}`` (where it must
+    write ``meta-analysis.md``). Pre-aggregated inputs (comparison
+    table, statistical summary) are not passed — the LLM is expected
+    to inspect the raw reports itself.
+    """
+    if not audit_input_dirs:
+        raise ValueError("audit_input_dirs must be non-empty")
     return (
-        template.replace("{audit_reports_dir}", str(audit_reports_dir.resolve()))
-        .replace("{comparison_table_path}", str(comparison_table_path.resolve()))
-        .replace(
-            "{statistical_summary_path}", str(statistical_summary_path.resolve())
-        )
+        template.replace("{audit_input_dirs}", _render_audit_input_dirs(audit_input_dirs))
         .replace("{output_path}", str(output_path.resolve()))
     )
 
@@ -528,6 +568,7 @@ def build_meta_prompt(
 def run_ai_meta_analysis(
     *,
     reports_dir: Path,
+    audit_input_dirs: list[Path],
     prompt_template: str,
     variant: dict,
     harness: str,
@@ -541,49 +582,72 @@ def run_ai_meta_analysis(
 
     The LLM (selected by ``variant`` + ``harness``) is invoked via the
     Claude Code runner. It receives:
-    - The comparison table path (already on disk before this is called).
-    - The statistical summary path (written by this function as a sidecar
-      input file so the LLM can ``Read`` it directly).
+    - ``audit_input_dirs``: one or more auditor subdirs the LLM must
+      glob ``*/report.md`` under. When multiple are given, each report
+      is an independent sample for its (harness, model) cell; the
+      auditor name (parent dir) is an extra axis the LLM can use to
+      surface auditor disagreement.
     - The output path it must write to.
 
-    Returns the ``run_variant`` payload. Side effects:
-    - Writes ``meta-analysis-input.md`` next to the result dir for traceability.
-    - The LLM writes ``meta-analysis.md`` to ``reports_dir``.
+    Returns the ``run_variant`` payload. Side effect: the LLM writes
+    ``meta-analysis.md`` to ``reports_dir``. No pre-aggregated input file
+    is written — the LLM reads the raw audit reports directly.
 
-    Currently only ``harness="claude"`` is supported (which routes to
-    ``claude_code_runner.run_variant`` and natively handles
-    ``ollama launch claude`` shims via the variant's ``command_prefix``).
-    Other harnesses raise ``NotImplementedError`` until a one-shot runner
-    is added for them.
+    Supported harnesses:
+
+    - ``"claude"``: routes to ``claude_code_runner.run_variant``. Natively
+      handles ``ollama launch claude`` shims via the variant's
+      ``command_prefix``.
+    - ``"codex"``: routes to ``benchmark.runner.run_codex_variant`` with the
+      Codex CLI.
+    - ``"ollama"``: routes to ``run_codex_variant`` and auto-injects
+      ``["ollama","launch","codex"]`` as the command prefix.
     """
-    if harness != "claude":
+    if harness not in {"claude", "codex", "ollama"}:
         raise NotImplementedError(
-            f"meta-analysis harness={harness!r} not yet wired; "
-            "only 'claude' is supported (use command_prefix in the variant "
-            "config to route to non-Anthropic models via 'ollama launch claude')."
+            f"meta-analysis harness={harness!r} not supported; "
+            "expected one of 'claude', 'codex', 'ollama'."
         )
-
-    from benchmark.claude_code_runner import run_variant  # noqa: PLC0415
 
     reports_dir = reports_dir.resolve()
     reports_dir.mkdir(parents=True, exist_ok=True)
-    comparison_path = reports_dir / "comparison.md"
-    summary_path = reports_dir / "meta-analysis-input.md"
+    resolved_inputs: list[Path] = []
+    for d in audit_input_dirs:
+        rd = d.resolve()
+        if not rd.is_dir():
+            raise FileNotFoundError(
+                f"audit input dir does not exist or is not a directory: {rd}"
+            )
+        resolved_inputs.append(rd)
+    if not resolved_inputs:
+        raise ValueError("audit_input_dirs must be non-empty")
     output_path = reports_dir / "meta-analysis.md"
-
-    summary_path.write_text(build_statistical_summary(reports_dir))
 
     prompt = build_meta_prompt(
         prompt_template,
-        audit_reports_dir=reports_dir,
-        comparison_table_path=comparison_path,
-        statistical_summary_path=summary_path,
+        audit_input_dirs=resolved_inputs,
         output_path=output_path,
     )
 
     meta_run_dir = reports_dir / "_meta-analysis-runs" / variant["slug"]
     meta_run_dir.mkdir(parents=True, exist_ok=True)
     (meta_run_dir / "prompt.txt").write_text(prompt)
+
+    if harness in {"codex", "ollama"}:
+        from benchmark.runner import run_codex_variant  # noqa: PLC0415
+
+        return run_codex_variant(
+            variant=variant,
+            prompt=prompt,
+            results_dir=meta_run_dir.parent,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            force=force,
+            harness=harness,
+            explicit_result_dir=meta_run_dir,
+        )
+
+    from benchmark.claude_code_runner import run_variant  # noqa: PLC0415
 
     return run_variant(
         variant=variant,
