@@ -1,15 +1,15 @@
 # Benchmark Report
 
-Generated at: 2026-05-09T05:11:51+00:00
+Generated at: 2026-05-12T11:29:25+00:00
 Prompt SHA256: `b5d9e80245fd8603224b59d6cdd6356a5c3907a002137532c27b390cd53de69d`
 
 ## Progress
 
-- `completed`: 0
+- `completed`: 4
 - `completed_with_errors`: 0
 - `failed`: 0
-- `timeout`: 0
-- `not_run`: 5
+- `timeout`: 1
+- `not_run`: 0
 
 ## Runner
 
@@ -18,6 +18,7 @@ Prompt SHA256: `b5d9e80245fd8603224b59d6cdd6356a5c3907a002137532c27b390cd53de69d
 - Ollama Cloud models invoked via the `ollama launch codex` shim.
 - Uses `codex exec --json --ephemeral` with full autonomy flags.
 - Per-model `command_prefix` replaces the default `codex` leader so the harness routes through Ollama Cloud.
+- Codex context overflow on long agentic runs is a known issue for `:cloud` models through `ollama launch codex`: codex can't read context metadata from Ollama's `/v1` endpoint (openai/codex#14757), and pinning `model_context_window` triggers `fill_to_context_window` prompt-padding (openai/codex#16068). Setting `model_auto_compact_token_limit` alone has also been observed to make things worse. Prefer the claude or opencode harness for these models when long-horizon runs matter.
 
 ## Model Selection
 
@@ -31,11 +32,11 @@ Prompt SHA256: `b5d9e80245fd8603224b59d6cdd6356a5c3907a002137532c27b390cd53de69d
 
 | Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
-| Kimi K2.6 (Ollama Cloud) via Codex | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Qwen 3.5 (Ollama Cloud) via Codex | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| GLM 5.1 (Ollama Cloud) via Codex | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| MiniMax M2.7 (Ollama Cloud) via Codex | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| DeepSeek V4 Pro (Ollama Cloud) via Codex | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Kimi K2.6 (Ollama Cloud) via Codex | ollama_cloud | - | completed | 2250.22 | 2623984 | 2367.23 | yes | 39 | Django + Channels app, tests, README, and container files detected. |
+| Qwen 3.5 (Ollama Cloud) via Codex | ollama_cloud | - | completed | 2938.39 | 3958166 | 2705.72 | yes | 31 | Django + Channels app, tests, README, and container files detected. |
+| GLM 5.1 (Ollama Cloud) via Codex | ollama_cloud | - | completed | 2226.65 | 827571 | 1184.80 | yes | 40 | Django + Channels app, tests, README, and container files detected. |
+| MiniMax M2.7 (Ollama Cloud) via Codex | ollama_cloud | - | timeout | 7374.67 | 0 | - | yes | 38 | Timed out. Django + Channels app, tests, README, and container files detected. |
+| DeepSeek V4 Pro (Ollama Cloud) via Codex | ollama_cloud | - | completed | 3113.66 | 2492971 | 1444.51 | yes | 40 | Django + Channels app, tests, README, and container files detected. |
 
 ## Per-Run Paths
 
