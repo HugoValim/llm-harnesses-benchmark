@@ -28,6 +28,8 @@ from benchmark.config import (
 from benchmark.loop_detector import ToolCallLoopDetector
 
 _SKIP_CONFIG_LOCK = threading.Lock()
+
+_CODEX_RUNNERS: frozenset[str] = frozenset({"codex", "ollama"})
 from benchmark.util import (
     count_files,
     format_duration,
@@ -139,6 +141,7 @@ def build_codex_command(
     reasoning_effort: str | None = None,
     codex_subagent: dict[str, Any] | None = None,
     command_prefix: list[str] | None = None,
+    auto_compact_token_limit: int | None = None,
 ) -> list[str]:
     """Build a codex exec command for a fully autonomous benchmark run.
 
@@ -146,6 +149,19 @@ def build_codex_command(
     with ``ollama launch``, the model is passed via the shim's ``--model`` and the
     exec tail is forwarded after ``--`` (no ``-m`` on the inner codex argv), matching
     :func:`benchmark.claude_code_runner.build_command`.
+
+    ``auto_compact_token_limit`` pins codex's undocumented
+    ``model_auto_compact_token_limit`` config override. Strictly opt-in: when
+    ``None`` (the default) we skip the flag entirely — for ``:cloud`` models
+    routed through ``ollama launch codex`` this knob has been observed to make
+    things worse (phase1 overflow on turn 2). Pass a positive int to enable.
+
+    Neither ``model_auto_compact_token_limit`` nor ``model_context_window``
+    appears to reliably prevent context overflow when codex is routed through
+    ``ollama launch codex``. Setting ``model_context_window`` triggers codex's
+    ``fill_to_context_window`` padding (openai/codex#16068) which can blow the
+    prompt past the real ceiling on turn 1. For long agentic Ollama Cloud runs
+    prefer the claude or opencode harness instead.
     """
     prefix = command_prefix if command_prefix else ["codex"]
     is_ollama_launch = (
@@ -167,6 +183,10 @@ def build_codex_command(
         exec_tail.extend(["-m", model_id])
     if reasoning_effort:
         exec_tail.extend(["-c", f"model_reasoning_effort={reasoning_effort}"])
+    if auto_compact_token_limit is not None and auto_compact_token_limit > 0:
+        exec_tail.extend(
+            ["-c", f"model_auto_compact_token_limit={auto_compact_token_limit}"]
+        )
     if codex_subagent:
         sub_name = codex_subagent.get("name", "coder")
         sub_desc = codex_subagent.get(
@@ -887,6 +907,7 @@ def run_codex_phase(
         reasoning_effort=model.get("codex_reasoning_effort"),
         codex_subagent=model.get("codex_subagent"),
         command_prefix=command_prefix,
+        auto_compact_token_limit=model.get("codex_auto_compact_token_limit"),
     )
     wall_start = time.monotonic()
 
@@ -998,6 +1019,147 @@ def run_codex_phase(
     if result_path is not None:
         save_json(result_path, payload)
     return payload
+
+
+def run_codex_variant(
+    *,
+    variant: dict[str, Any],
+    prompt: str,
+    results_dir: Path,
+    timeout_seconds: int = 5400,
+    no_progress_timeout_seconds: int = 360,
+    force: bool = False,
+    harness: str = "codex",
+    explicit_result_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Run a single one-shot variant through the Codex CLI.
+
+    Mirrors :func:`benchmark.claude_code_runner.run_variant` so audit and
+    meta-analysis scripts can dispatch through codex/ollama harnesses the
+    same way they dispatch through Claude Code.
+
+    ``variant`` schema is intentionally permissive: it accepts both
+    ``id`` (build-style ``models.json`` entries) and ``main_model`` (audit-
+    style entries) for the model identifier. ``runner_type`` controls the
+    codex command-prefix shim:
+
+    - ``"codex"`` (default): plain ``codex exec ...``.
+    - ``"ollama"``: auto-injects ``["ollama","launch","codex"]`` as the
+      command prefix unless the variant already sets ``command_prefix``.
+
+    ``explicit_result_dir`` takes the same role it does in ``run_variant`` —
+    audit harness uses it to land outputs in
+    ``audit-reports/<auditor>/<target>/`` rather than the default
+    ``results/<harness>-<slug>/`` layout.
+    """
+    slug = variant["slug"]
+    model_id = variant.get("id") or variant.get("main_model")
+    if not model_id:
+        raise ValueError(
+            f"variant {slug!r} is missing both 'id' and 'main_model' fields"
+        )
+
+    runner_type = variant.get("runner_type", "codex")
+    if runner_type not in _CODEX_RUNNERS:
+        raise ValueError(
+            f"run_codex_variant requires runner_type in {sorted(_CODEX_RUNNERS)}, "
+            f"got {runner_type!r}"
+        )
+
+    command_prefix = variant.get("command_prefix")
+    if not command_prefix and runner_type == "ollama":
+        command_prefix = ["ollama", "launch", "codex"]
+
+    result_dir = (
+        explicit_result_dir.resolve()
+        if explicit_result_dir is not None
+        else results_dir / f"{harness}-{slug}"
+    )
+    result_dir.mkdir(parents=True, exist_ok=True)
+    project_dir = result_dir
+    prompt_path = result_dir / "prompt.txt"
+    stdout_path = result_dir / "stream.ndjson"
+    stderr_path = result_dir / "stderr.log"
+    result_path = result_dir / "result.json"
+
+    if not force and result_path.exists():
+        try:
+            cached = json.loads(result_path.read_text())
+            if cached.get("status") in (
+                "completed",
+                "completed_with_errors",
+                "failed",
+                "timeout",
+            ):
+                print_line(
+                    f"[{slug}] cached result status={cached['status']}; "
+                    "skipping (use --force to rerun)"
+                )
+                return cached
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    bench = BenchmarkConfig(
+        runner={},
+        config_path=Path(),
+        results_dir=results_dir,
+        harness=harness,
+        opencode_config_path=None,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+        min_preview_output_tps=None,
+        min_preview_samples=0,
+        auto_skip_slow_preview=False,
+        force=force,
+        backend=None,
+        selected_models=[],
+        prompt=prompt,
+        followup_prompt=None,
+    )
+
+    codex_model = {
+        "slug": slug,
+        "id": model_id,
+        "label": variant.get("label", slug),
+        "provider": variant.get("provider", "ollama_cloud" if runner_type == "ollama" else "codex"),
+        "runner_type": runner_type,
+    }
+    for opt in (
+        "codex_reasoning_effort",
+        "codex_subagent",
+        "codex_auto_compact_token_limit",
+    ):
+        if opt in variant:
+            codex_model[opt] = variant[opt]
+
+    print_line("")
+    print_line(
+        f"Starting codex-variant {slug} -> {model_id} (runner={runner_type})"
+    )
+    print_line(f"[{slug}] results_dir={result_dir}")
+    print_line(
+        f"[{slug}] timeout={timeout_seconds}s "
+        f"no_progress_timeout={no_progress_timeout_seconds}s"
+    )
+    if command_prefix:
+        print_line(f"[{slug}] command_prefix={command_prefix}")
+
+    started_at = utc_now()
+    return run_codex_phase(
+        bench=bench,
+        model=codex_model,
+        model_slug=slug,
+        prompt=prompt,
+        started_at=started_at,
+        project_dir=project_dir,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        result_path=result_path,
+        phase_name="phase1",
+        override_min_preview_tps=None,
+        command_prefix=command_prefix,
+    )
 
 
 def _kill_stale_opencode_processes() -> None:
@@ -1178,7 +1340,7 @@ def run_model(
 
     runner_type = model.get("runner_type", "opencode")
 
-    if runner_type != "codex" and not skip_stale_kill:
+    if runner_type not in _CODEX_RUNNERS and not skip_stale_kill:
         _kill_stale_opencode_processes()
 
     started_at = utc_now()
@@ -1188,7 +1350,7 @@ def run_model(
     )
     print_line(f"[{model['slug']}] results_dir={result_dir}")
     print_line(f"[{model['slug']}] timeout={bench.timeout_seconds}s")
-    if runner_type != "codex" and bench.opencode_config_path is not None:
+    if runner_type not in _CODEX_RUNNERS and bench.opencode_config_path is not None:
         print_line(f"[{model['slug']}] opencode_config={bench.opencode_config_path}")
     print_line(
         f"[{model['slug']}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
@@ -1239,7 +1401,9 @@ def run_model(
             )
             return payload
 
-    _run_phase = run_codex_phase if runner_type == "codex" else run_opencode_phase
+    _run_phase = (
+        run_codex_phase if runner_type in _CODEX_RUNNERS else run_opencode_phase
+    )
     phase1_kwargs: dict[str, Any] = {
         "bench": bench,
         "model": model,
@@ -1253,11 +1417,13 @@ def run_model(
         "result_path": phase1_result_path,
         "phase_name": "phase1",
     }
-    if runner_type == "codex":
+    if runner_type in _CODEX_RUNNERS:
         cp = model.get("command_prefix")
+        if not cp and runner_type == "ollama":
+            cp = ["ollama", "launch", "codex"]
         if cp:
             phase1_kwargs["command_prefix"] = cp
-    if runner_type != "codex":
+    if runner_type not in _CODEX_RUNNERS:
         phase1_kwargs["continue_session_id"] = None
     phase1 = _run_phase(**phase1_kwargs)
 
@@ -1271,7 +1437,9 @@ def run_model(
         and not phase1.get("stalled")
     ):
         continued_session_id = (
-            phase1.get("opencode_session_id") if runner_type != "codex" else None
+            phase1.get("opencode_session_id")
+            if runner_type not in _CODEX_RUNNERS
+            else None
         )
         print_line(
             f"[{model['slug']}] primary phase complete; continuing with follow-up prompt"
@@ -1292,11 +1460,13 @@ def run_model(
             "phase_name": "phase2",
             "override_min_preview_tps": None,
         }
-        if runner_type == "codex":
+        if runner_type in _CODEX_RUNNERS:
             cp = model.get("command_prefix")
+            if not cp and runner_type == "ollama":
+                cp = ["ollama", "launch", "codex"]
             if cp:
                 phase2_kwargs["command_prefix"] = cp
-        if runner_type != "codex":
+        if runner_type not in _CODEX_RUNNERS:
             phase2_kwargs["continue_session_id"] = continued_session_id
         phase2 = _run_phase(**phase2_kwargs)
         phases.append(phase2)
@@ -1329,7 +1499,7 @@ def run_model(
         "opencode_session_id"
     )
     exported_session = None
-    if runner_type != "codex":
+    if runner_type not in _CODEX_RUNNERS:
         process_env = os.environ.copy()
         if bench.opencode_config_path is not None:
             process_env["OPENCODE_CONFIG"] = str(bench.opencode_config_path.resolve())

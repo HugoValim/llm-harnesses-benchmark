@@ -28,7 +28,7 @@ from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: 
 from benchmark.util import load_json, print_line  # noqa: E402
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
-HARNESS_CHOICES = frozenset({"opencode", "codex", "claude"})
+HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "ollama"})
 
 
 def _cleanup_backends(
@@ -56,6 +56,8 @@ def _cleanup_backends(
 def _default_config_path(harness: str) -> Path:
     if harness == "claude":
         return REPO_ROOT / "config" / "claude_code_models.json"
+    if harness == "ollama":
+        return REPO_ROOT / "config" / "codex_ollama_cloud_models.json"
     return REPO_ROOT / "config" / "models.json"
 
 
@@ -64,13 +66,19 @@ def _default_report_path(harness: str) -> Path:
         return REPO_ROOT / "docs" / "report.claude-code.md"
     if harness == "codex":
         return REPO_ROOT / "docs" / "report.codex.md"
+    if harness == "ollama":
+        return REPO_ROOT / "docs" / "report.ollama.md"
     return REPO_ROOT / "docs" / "report.md"
 
 
 def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
     for m in models:
         cp = m.get("command_prefix") or []
-        if len(cp) >= 2 and cp[0] == "ollama" and cp[1] == "launch":
+        runner_type = m.get("runner_type", "opencode")
+        uses_ollama_launch = (
+            len(cp) >= 2 and cp[0] == "ollama" and cp[1] == "launch"
+        ) or (runner_type == "ollama" and not cp)
+        if uses_ollama_launch:
             if shutil.which("ollama") is None:
                 return False, "ollama is not available on PATH (needed for ollama launch codex)"
         elif shutil.which("codex") is None:
@@ -280,7 +288,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         if harness == "opencode" and shutil.which("opencode") is None:
             print("opencode is not available on PATH", file=sys.stderr)
             return 1
-        if harness == "codex":
+        if harness in {"codex", "ollama"}:
             ok, err = _verify_codex_binaries(selected_models)
             if not ok:
                 print(err, file=sys.stderr)
@@ -512,7 +520,7 @@ def main() -> int:
     if args.report is None:
         args.report = str(_default_report_path(harness))
 
-    if harness in {"opencode", "codex"}:
+    if harness in {"opencode", "codex", "ollama"}:
         return _run_model_harness(args, harness)
     if harness == "claude":
         return _run_claude_harness(args)

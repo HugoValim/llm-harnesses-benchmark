@@ -150,10 +150,10 @@ def build_report(
     lines.append("")
     lines.append("## Runner")
     lines.append("")
-    if harness == "codex":
+    if harness in {"codex", "ollama"}:
         lines.append(
             "`codex exec --json --ephemeral ...` "
-            f"(harness `codex` — runs under `results/{harness}-<slug>/`)"
+            f"(harness `{harness}` — runs under `results/{harness}-<slug>/`)"
         )
     else:
         lines.append(
