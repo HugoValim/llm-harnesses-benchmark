@@ -1,14 +1,18 @@
+Prompt-Version: v2.0
+
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
 ## Source of truth for LLM / Channels / Django API claims
 
-Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv:
+Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv. The Python minor version is not pinned (the spec asks for the newest Python from mise), so use a glob:
 
-- {project_dir}/.venv/lib/python3.12/site-packages/langchain_ollama/chat_models.py (for ChatOllama)
-- {project_dir}/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
-- {project_dir}/.venv/lib/python3.12/site-packages/ollama/_client.py (for Client / AsyncClient / chat())
-- {project_dir}/.venv/lib/python3.12/site-packages/channels/generic/websocket.py (for AsyncWebsocketConsumer, connect, receive_json, send_json, disconnect)
-- {project_dir}/.venv/lib/python3.12/site-packages/channels/routing.py (for ProtocolTypeRouter, URLRouter)
+- {project_dir}/.venv/lib/python3.*/site-packages/langchain_ollama/chat_models.py (for ChatOllama)
+- {project_dir}/.venv/lib/python3.*/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
+- {project_dir}/.venv/lib/python3.*/site-packages/ollama/_client.py (for Client / AsyncClient / chat())
+- {project_dir}/.venv/lib/python3.*/site-packages/channels/generic/websocket.py (for AsyncWebsocketConsumer, connect, receive_json, send_json, disconnect)
+- {project_dir}/.venv/lib/python3.*/site-packages/channels/routing.py (for ProtocolTypeRouter, URLRouter)
+
+Use the first match from each glob; if the venv does not exist at all, note it under U1 preflight evidence and treat package-source verification as "unverified" for this run.
 
 Key facts about the installed packages (DO NOT guess — grep the source):
 
@@ -40,6 +44,15 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 13. Dockerfile + docker-compose with ASGI server (daphne or uvicorn)
 14. Real README (not a "this README would normally document…" stub)
 15. Stay in workspace root, no nested chat_app/ subdir
+16. `.env.example` (or equivalent) documenting OLLAMA_HOST and OLLAMA_MODEL with their defaults
+
+## Universal blind spots in scope for this benchmark
+
+All U1-U8 rows from the benchmark-ai-code REFERENCE apply to this audit. Opt-outs:
+
+- None. U1-U8 are all applicable: the spec requires Docker (U7), env-var configuration (U6), a WebSocket disconnect path (U2), real-time Ollama integration (U1, U3), a service-layer split between consumer and LLM client (U4), structured logging (U5), and a clean dependency manifest (U8).
+
+The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric.
 
 ## Audit dimensions — score each per its weight, total 100
 
@@ -52,6 +65,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
    - Tailwind claimed but not wired (CDN only when django-tailwind/PostCSS was the approach): -2.
    - ASGI server (daphne/uvicorn) missing from Dockerfile: -3.
    - DRF / auth / Celery present: -3 each.
+   - Unused dependency declared in requirements.txt / pyproject.toml but not imported in source (U8): -2.
 
 2. **LLM integration correctness** (0-20)
    - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
@@ -71,9 +85,9 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
-   - No missing OLLAMA_HOST/OLLAMA_MODEL or unreachable-Ollama preflight: -3.
-   - No `disconnect` handling on consumer: -2.
-   - No user-visible degraded UI on error: -1.
+   - Missing OLLAMA_HOST/OLLAMA_MODEL env check or no unreachable-Ollama preflight guard (U1): -3.
+   - No `disconnect` handler, or bare-`pass` disconnect (U2): -3.
+   - No user-visible degraded UI on Ollama failure (U3): -3.
 
 5. **Persistence / multi-turn state** (0-10)
    - In-memory per-consumer (per-tab) history is OK per brief — full marks if turns accumulate.
@@ -87,7 +101,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
    - Token-by-token UI updates not visible (only full-message swap): -2.
 
 7. **Architecture** (0-5)
-   - Consumer wires LLM inline with no service layer: -2.
+   - Consumer wires LLM client inline with no service layer (U4): -3.
    - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
    - View doing template + LLM in one function: -1.
 
@@ -97,18 +111,62 @@ Key facts about the installed packages (DO NOT guess — grep the source):
    - `|safe` on raw LLM output (XSS): -2.
    - `DEBUG=True` hardcoded: -1.
    - `ASGI_APPLICATION` missing: -2.
+   - No structured logging configured (print-only, no `logging` setup) (U5): -2.
+   - No `.env.example` (or equivalent) documenting OLLAMA_HOST / OLLAMA_MODEL (U6): -2.
+   - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -2.
+
+## Auto-critical-failure classification
+
+The items below are **always critical failures**, regardless of how this rubric's per-dimension deduction triggers describe them. The auditor cannot downgrade them to minor deductions. Multiple matches → multiple critical failures (each gets its own ledger row and its own mapped trigger deduction).
+
+| # | Trigger | Primary dimension | Evidence to cite |
+|---|---------|-------------------|------------------|
+| 1 | Any hardcoded secret in source / Dockerfile / compose / README / `.env` (including "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`). Django `SECRET_KEY` literals count. | D8 Production readiness | `file:line` of the literal |
+| 2 | A spec hard-requirement deliverable is entirely absent OR loaded-but-unused (e.g. spec requires HTMX with WebSocket extension and the submission either omits it or imports it without wiring it to the streaming consumer) | D6 Frontend / D1 Deliverable completeness | `file:line` showing absence or unused import |
+| 3 | A spec functional behavior is broken by an anti-pattern (e.g. spec requires real-time token streaming and the consumer buffers via `list(.astream(...))`, `[chunk async for chunk in ...]` collected before send, or `await asyncio.to_thread(lambda: list(...))`) | D2 LLM integration | `file:line` of the buffering pattern |
+| 4 | Missing framework-default security middleware that the spec's stack assumes (CSRF, security middleware, `SecurityMiddleware`) | D8 Production readiness | `file:line` of `MIDDLEWARE` list, with the missing entry called out |
+| 5 | Missing dependency declarations: spec-required tools (pytest, pytest-django, pytest-asyncio, ruff, mypy, bandit, coverage, pip-audit) absent from `requirements*.txt` / `pyproject.toml` such that the dev environment cannot be reproduced | D1 Deliverable completeness | `requirements.txt:1-N` or `pyproject.toml:[tool.*]` |
+| 6 | Tooling claimed by README/spec but unconfigured (no `[tool.ruff]`, no `[tool.mypy]`, no `.bandit` / `[tool.bandit]`, no `[tool.coverage]`, no pip-audit invocation) | D1 Deliverable completeness | absence of config block / file |
+| 7 | Hallucinated entry class / method that does not exist in the library source (verified by grep against `{project_dir}/.venv/lib/python3.*/site-packages/...`) | D2 LLM integration | grep result from library source proving absence |
+| 8 | Spec required env-driven input but submission hardcodes the value (e.g. OLLAMA_HOST / OLLAMA_MODEL only readable from Python source, never from env) | D2 LLM integration / D7 Architecture | `file:line` of the hardcoded value |
+| 9 | Tests pass against an anti-pattern (e.g. tests assert buffered output instead of streaming chunks, or mock a hallucinated API surface) — tests give a false-green | D3 Test quality | `test_*.py:line` showing the wrong assertion shape |
+| 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Production readiness | `settings.py:line` or `.env*` showing the default |
+
+Operating rules:
+- D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
+- Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
 
 ## Required output sections
 
-A. **Quick summary line** (1 sentence).
-B. **Scores** per dimension with 1-line justification each (exact file:line refs when claiming bugs).
-C. **Total score / 100**.
-D. **Practical tier**:
-   - **A (80-100)**: ship as-is or with trivial (<30 min) patches.
-   - **B (60-79)**: 1-2 hours to ship. Architecture is sound, minor gaps.
-   - **C (40-59)**: major rework needed. Core bugs or missing deliverables.
-   - **D (0-39)**: throw away or use only for architectural inspiration.
-E. **Verification section** — for every API call you claim is hallucinated, show the grep result from the installed package source that proves it. If you can't prove it, call it "unverified, likely correct."
-F. **One killer strength** + **one killer weakness**.
+Target: under 800 words total. No speculation — code excerpts and package-source grep only.
 
-Under 800 words. No speculation — code excerpts + package source grep only.
+A. **Quick summary line** (1 sentence: did the submission meet the spec?).
+
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table: `# | Dimension | Score / Max | Justification (file:line)`.
+
+C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
+
+D. **Practical tier** (default 20-point bands):
+   - **A (81-100)**: ship as-is or with trivial (<30 min) patches.
+   - **B (61-80)**: 1-2 hours to ship. Architecture is sound, minor gaps.
+   - **C (41-60)**: major rework needed. Core bugs or missing deliverables.
+   - **D (0-40)**: throw away or use only for architectural inspiration.
+
+E. **Verification section** — for every API call you claim is hallucinated, show the grep result from the installed package source that proves it. If you can't prove it, call it "unverified, likely correct."
+
+F. **Critical Failures** — bullet list, each with `file:line` evidence and a 1-sentence summary. Omit the section if there are none.
+
+G. **Critical-failure ledger** — for every item in section F, one row of the form: `<file:line>` → mapped rubric trigger (cite the trigger text) → mandatory deduction (the point loss the trigger states). If no rubric trigger fits, write "no trigger; -5 from <closest dimension>" and justify in one clause. Omit the section if section F is omitted.
+
+H. **Submission metadata & generation metrics** — one block, `n/a` for any unavailable field:
+   - Model
+   - Harness (e.g. claude-code, opencode, codex)
+   - Generation-Time (wall-clock, from `results/<harness>-<slug>/result.json` when present)
+   - Input-Tokens / Output-Tokens / Total-Tokens (from harness run artifact)
+   - Estimated-Cost-USD — **compute** from token counts × the model's row in the benchmark-ai-code skill's `PRICING.md`; never copy a harness-reported cost
+   - Pricing-Source (default `PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
+   - Date (YYYY-MM-DD of audit)
+   - Prompt-Version (MUST equal `v2.0` — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Source (path under `results/`, git hash, or chat link)
+
+I. **Killer strength** (one sentence) + **Killer weakness** (one sentence).
