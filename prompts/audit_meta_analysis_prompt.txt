@@ -1,6 +1,11 @@
-Prompt-Version: meta-v1.0
+Prompt-Version: meta-v2.0
 
-You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and surface harness- vs model-attributable signal.
+You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
+
+1. **Which agent harness produces the best Phase-1 output on the same brief?** (best harness overall)
+2. **Which target model produces the best Phase-1 output regardless of harness?** (best model overall)
+
+Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 ## Inputs (read these with the Read / Glob tools)
 
@@ -11,78 +16,178 @@ You are running a META-ANALYSIS over a set of code-audit reports that already ex
   - Glob: {audit_reports_dir}/*/*/report.md
   - Each path is shaped `<auditor>/<harness>-<model_slug>/report.md`
   - Inside, the rubric layout is sections A-I (see prompts/audit_prompt_template.txt for the schema)
+- Rubric schema reference: prompts/audit_prompt_template.txt (for dimension max points, tier thresholds, auto-critical-failure types)
 
 The harness prefixes are: `claude`, `codex`, `opencode`. Strip the prefix to get the underlying target model slug. Targets with the same model slug under different harness prefixes are paired comparisons (same model, different agent harness).
 
 ## What you are testing
 
-The PRIMARY question is: **which agent harness produces better Phase-1 output on the same brief?** Secondary question: are there model-attributable patterns that show up regardless of harness?
+PRIMARY: best harness overall + best model overall. Both must be answered.
+SECONDARY: harness-attributable patterns vs model-attributable patterns vs universal blind spots (prompt/rubric-level).
 
 You are NOT testing the auditor model. Treat the audit scores as ground truth for this analysis; do not re-grade.
 
 ## Workflow
 
 1. Read the comparison table and statistical summary first — they are pre-aggregated context.
-2. Glob all `report.md` files. Read every one. Skim quickly when the report is short; read closely when it diverges from the cohort average.
-3. Cross-tabulate by harness (rows) × dimension (columns) using the per-report scores; this is your evidence base, NOT a single global average.
-4. For every model slug that appears under multiple harnesses, build a side-by-side comparison and identify which dimensions moved.
-5. Identify dimensions where every harness scores poorly — those are universal blind spots (prompt-level or model-family-level issues, not harness issues).
-6. Identify dimensions where one harness uniquely fails — those are harness-attributable.
+2. Glob all `report.md` files. For EACH report extract:
+   - Per-dimension scores from section B (`D1..D8`, each `score/max`)
+   - Total from section C (`X/100`); record `null` if absent or malformed
+   - Tier from section D (A/B/C/D)
+   - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 10 auto-CF rows)
+   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`
+   - Record `n/a` for any missing field; never invent values
+3. Build the per-model cross-harness table (group by model slug; avg/std-dev of total across harnesses).
+4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D8 + total).
+5. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
+6. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
 
 ## Required output
 
 Write a single markdown file to: **{output_path}**
 
-Use the Write tool with that exact absolute path. The file MUST contain these sections, in order:
+Use the Write tool with that exact absolute path. The file MUST contain these sections, in order. Prose stays tight; tables are unlimited and preferred for numeric data. No document-level word cap.
 
-### 1. Executive summary (2-4 sentences)
+### 1. Executive summary (4-6 sentences)
 
-Which harness wins on average and by how much. Single most important harness-attributable pattern. Single most important universal blind spot.
+State the verdict explicitly:
+- **Best harness overall**: `<name>` with avg total X.X/100 (N runs, std dev S.S). One-sentence why.
+- **Best model overall**: `<model_slug>` with avg total X.X/100 across N harnesses. One-sentence why.
+- Single most important harness-attributable pattern (cite a report:line).
+- Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
+- Calibration verdict in one clause (PASS / WARN / FAIL — defined in section 8).
 
-### 2. Harness ranking
+### 2. Best model overall
 
-| Rank | Harness | Avg Total | n Runs | Tier distribution | Headline |
-|---|---|---:|---:|---|---|
+| Rank | Model slug | Harnesses seen | Avg total | Std dev | Best total | Worst total | Tier majority | Verdict |
+|---:|---|---:|---:|---:|---:|---:|---|---|
 
-The headline column is a one-sentence summary of that harness's behavior across the cohort, citing one specific report:line as evidence.
+Rules:
+- Sort by avg total descending.
+- "Harnesses seen" = count of harness prefixes where the model has a valid total.
+- "Verdict" is one of: `consistent` (std dev <= 5), `harness-sensitive` (std dev > 10), `mixed` (5 < std dev <= 10), `insufficient-data` (only 1 valid total).
+- **Suppress the best-model claim** for any model with `insufficient-data` — note them but do not crown them.
+- Below the table, one sentence naming the winner and citing the report:line that best illustrates its strength.
 
-### 3. Cross-harness model pairings
+### 3. Harness ranking
+
+| Rank | Harness | N Runs | Avg Total | Median | Std dev | Tier distribution (A/B/C/D) | Critical-failure count | Headline (report:line) |
+|---:|---|---:|---:|---:|---:|---|---:|---|
+
+Rules:
+- Tier distribution as `A/B/C/D` counts (e.g. `3/2/0/0`).
+- Critical-failure count = sum of section-F failures across all runs of that harness.
+- Headline is one sentence summarizing harness behavior, citing one specific `report.md:line` as evidence.
+- Below the table: one-line sample-size caveat (e.g. "N=5 per harness; a single outlier swings avg by ~3 points — treat margins under 3 as ties").
+
+### 4. Cross-harness model pairings
 
 For every model that appears under >=2 harnesses, one subsection:
 
 #### `<model_slug>`
 
-- harness A: total/100, dimensions that scored lower than the model's median under other harnesses
-- harness B: total/100, dimensions that scored higher than the model's median under other harnesses
-- 1-sentence explanation of where the harness moved the needle, citing report:line
+| Harness | Total | Tier | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | Δ vs model median |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 
-If a model only appears under one harness, do NOT include it here.
+- "Δ vs model median" is the delta of this run's total from the median total of this model across its harnesses.
+- One sentence after the table: which dimension moved the needle most, citing report:line.
 
-### 4. Dimension-level signal
+If a model only appears under one harness, list it in the appendix's "Single-harness models" entry and do NOT include it here.
+
+### 5. Dimension-level signal
 
 For each of the 8 rubric dimensions (D1-D8), one line:
 
-- **D<n> — <label>** (max <max>): universal-avg X.X; per-harness avg claude=Y.Y / codex=Z.Z / opencode=W.W. Classify as **universal blind spot** (all harnesses within 1 point of each other AND below 70% of max) or **harness-attributable** (any harness deviates by >=2 points from another) or **clean** (everyone scored at/near max).
+- **D<n> — <label>** (max <max>): universal-avg X.X; per-harness avg claude=Y.Y / codex=Z.Z / opencode=W.W. Classify as:
+  - **universal blind spot** — all harnesses within 1 point of each other AND below 70% of max
+  - **harness-attributable** — any harness deviates by >=2 points from another
+  - **saturated** — >=80% of all targets scored full marks (not a discriminator; flag for rubric tightening)
+  - **clean** — everyone scored at/near max but <80% saturation
 
-### 5. Headline findings (3-5 bullets)
+### 6. Performance & cost
+
+| Target (harness-model) | Gen-time | Total-tokens | Cost-USD | Total score | Quality per $ | Quality per minute |
+|---|---:|---:|---:|---:|---:|---:|
+
+Rules:
+- "Quality per $" = `total_score / cost_usd`; emit `n/a` when cost is `n/a` or `0`.
+- "Quality per minute" = `total_score / generation_minutes`; emit `n/a` when generation-time is `n/a`.
+- Sort by total score descending; ties broken by cost ascending.
+- Below the table, in <=4 bullets:
+  - Cheapest Tier-A run (target + cost).
+  - Fastest Tier-A run (target + gen-time).
+  - Cost outlier (highest spend vs score earned).
+  - Time outlier (longest gen-time vs score earned).
+
+### 7. Critical failure inventory
+
+| CF type # | Trigger summary (from audit_prompt_template.txt) | Count | Affected targets | Classification |
+|---:|---|---:|---|---|
+
+Rules:
+- One row per CF type (#1..#10) that appears at least once across the cohort. Omit types with zero hits.
+- "Affected targets" lists `<harness>-<model_slug>` entries (space-separated; truncate with `…` after 6 entries and put the full list in the appendix).
+- Classification:
+  - **universal** — every harness has at least one target hitting this CF type
+  - **harness-attributable** — only one harness has targets hitting it (name it)
+  - **mixed** — two of three harnesses have hits
+
+### 8. Calibration check (rubric fitness, non-blocking)
+
+Run all four checks and record the verdict per check, then an overall verdict:
+
+- **Check 1 — Cohort median**: median total across all valid runs. PASS if <= 80; WARN if 80 < median <= 85; FAIL if > 85 (rubric too lenient).
+- **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
+- **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/5 for every target).
+- **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
+
+Overall verdict:
+- **PASS** — all four checks pass
+- **WARN** — one or more WARNs, no FAILs
+- **FAIL** — one or more FAILs
+
+If FAIL or WARN: recommend a Prompt-Version bump for `prompts/audit_prompt_template.txt` and name the specific deduction triggers to tighten or split. Do NOT re-grade.
+
+### 9. Headline findings (4-6 bullets)
 
 Each bullet:
-- Cites specific report paths (e.g. `audit-reports/<auditor>/codex-glm_5_1_ollama_cloud/report.md` line N)
+- Cites specific report paths (e.g. `audit-reports/<auditor>/codex-glm_5_1_ollama_cloud/report.md:NN`)
 - States the pattern in one sentence
 - Names the affected harnesses/models
 
-### 6. Recommendations
+### 10. Recommendations
 
-3-5 concrete, actionable recommendations for the benchmark owner. Each one says either "to improve the harness" or "to improve the prompt" or "to retry the model under X harness". No vague advice.
+3-6 concrete, actionable recommendations for the benchmark owner. Each one is tagged:
+- `[harness]` — change to a specific agent harness (e.g. opencode config, claude-code env)
+- `[prompt]` — change to `prompts/benchmark_prompt.txt` (the brief sent to the agent)
+- `[rubric]` — change to `prompts/audit_prompt_template.txt` (auditor deduction triggers)
+- `[retry]` — re-run a specific (model, harness) cell with explained reason
 
-### 7. Appendix: data inputs
+No vague advice ("be more thorough"). Each recommendation must say what to change and why, citing evidence from above sections.
 
-List the comparison table path, statistical summary path, and the number of per-target reports you actually read. If any report.md was empty or malformed (e.g. the auditor stalled before writing it), name it here.
+### 11. Appendix: data inputs
+
+- Comparison table path and its line count
+- Statistical summary path and its line count
+- Number of `report.md` files globbed
+- Number of reports successfully parsed (with a non-null total)
+- List of reports where total was absent (excluded from averages)
+- List of reports where section H was malformed or missing (excluded from cost/performance analysis)
+- List of "single-harness models" (model slugs that appear under only 1 harness — excluded from section 4)
+- Full dimension score matrix (target × D1..D8 + total) — one row per report, including those with `n/a` totals
+- Per-harness std dev table for each dimension (D1..D8) — extends statistical summary
+- Tier distribution histogram across the whole cohort
 
 ## Guardrails
 
-- **Be evidence-driven**: every claim cites a file path and ideally a line range. No vibes.
+- **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
-- **Tier definitions are fixed** (from audit_prompt_template.txt): A=81-100, B=61-80, C=41-60, D=0-40.
-- **Stay under ~2000 words total** for the output file. Tables count cheap; prose budget is tight.
+- **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
+- **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
+- **Suppression rules**:
+  - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.
+  - Best-harness claim requires the chosen harness to have >=2 model slugs with valid totals. If no harness qualifies, state "insufficient cross-model coverage — harness verdict suppressed".
+  - When two contenders sit within 3 points of each other on a small sample (N<=5), call it a tie and explain.
+- **Calibration check is non-blocking**: record the verdict, recommend rubric changes, and continue. Do NOT refuse to publish on FAIL.
+- **Prose tight, tables unlimited**: keep prose between tables to <=2 sentences each. No document-level word cap; the appendix in particular should be comprehensive.
 - **Write the output file with the Write tool to the exact path above**. Do not echo the contents into your final message — only write them to disk. End your turn after the Write succeeds with a single line of acknowledgement.
