@@ -5,7 +5,7 @@ target) pair under ``audit-reports/<auditor>/<target>/report.md``. The
 report follows the rubric layout in ``prompts/audit_prompt_template.txt``
 (sections A-I). This module produces three artifacts from those reports:
 
-- ``build_comparison_table``: side-by-side ``Auditor | Target | D1..D8 |
+- ``build_comparison_table``: side-by-side ``Auditor | Target | D1..D9 |
   Total | Tier`` table. Replaces the broken inline parser previously baked
   into ``run_audit_benchmark.py``.
 - ``build_statistical_summary``: regex-derived harness / model / dimension
@@ -24,7 +24,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Iterable
 
-NUM_DIMENSIONS = 8
+NUM_DIMENSIONS = 9
 HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "ollama", "opencode")
 TIERS: tuple[str, ...] = ("A", "B", "C", "D")
 
@@ -36,9 +36,10 @@ DEFAULT_DIMENSION_LABELS: tuple[str, ...] = (
     "Test quality",
     "Error handling",
     "Persistence / multi-turn",
-    "Frontend",
+    "Streaming & frontend",
     "Architecture",
-    "Production readiness",
+    "Secrets & config hygiene",
+    "Production hardening",
 )
 
 
@@ -202,7 +203,7 @@ def _fmt(value: float | int | None, *, decimals: int = 1) -> str:
 
 
 def build_comparison_table(reports_dir: Path) -> str:
-    """Build the side-by-side ``Auditor | Target | D1..D8 | Total | Tier`` table.
+    """Build the side-by-side ``Auditor | Target | D1..D9 | Total | Tier`` table.
 
     Replaces the broken inline parser in ``run_audit_benchmark.py``. Returns
     a complete markdown document (with H1 heading) so callers can write it
