@@ -29,6 +29,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Phase 2/3: must match ``slug`` in config/audit_models.json for this pipeline.
+OLLAMA_CLOUD_AUDITOR_SLUG=deepseek_v4_pro_ollama_codex_auditor
+
 # Phase 1 - Build ------------------------------------------------------------
 
 # python3 scripts/run_benchmark.py --harness claude \
@@ -51,15 +54,17 @@ cd "$(dirname "$0")/.."
 # -j 3 mirrors run_ollama_cloud_audit.sh.
 
 python3 scripts/run_audit.py \
-  --auditor deepseek_v4_pro_ollama_codex_auditor \
+  --auditor "$OLLAMA_CLOUD_AUDITOR_SLUG" \
   --target all \
   -j 3
 
 # Phase 3 - Meta-analysis (Role 2) -------------------------------------------
-# DeepSeek V4 Pro via `ollama launch codex` reads every
-# audit-reports/deepseek_v4_pro_ollama_codex_auditor/*/report.md and writes
-# audit-reports/meta-analysis.md (best-harness, best-model, cost verdicts).
+# DeepSeek V4 Pro via `ollama launch codex` reads reports under
+# audit-reports/$OLLAMA_CLOUD_AUDITOR_SLUG/ (``--meta-input-dir`` avoids
+# discover skipping that tree when no ``*/report.md`` exists yet) and writes
+# audit-reports/meta-analysis.md.
 
 python3 scripts/run_meta_analysis.py \
   --meta-harness ollama \
-  --meta-model deepseek_v4_pro_ollama_codex_auditor
+  --meta-model "$OLLAMA_CLOUD_AUDITOR_SLUG" \
+  --meta-input-dir "$OLLAMA_CLOUD_AUDITOR_SLUG"
