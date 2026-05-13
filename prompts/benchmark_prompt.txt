@@ -1,10 +1,28 @@
 I want you to build a Python web application using Django and Django Channels. Use the newest Python available in mise here; you have access to mise. First make a short implementation plan for yourself, then go ahead with the implementation without asking for confirmation. Do not stop to ask what to do next, do not answer with only a plan, and do not ask whether you should start creating files.
 
+Required deliverables (all must be present — maps to the audit rubric):
+1. Django + Django Channels (no DRF, no auth, no Celery)
+2. Newest Python from mise
+3. ChatGPT-style SPA, not an API service
+4. Tailwind (django-tailwind / PostCSS / Tailwind CLI — one approach, properly wired)
+5. HTMX with WebSocket extension (or a small amount of vanilla JS) for partial DOM updates as tokens stream
+6. Channels `AsyncWebsocketConsumer` for streaming model output over WebSocket
+7. `OLLAMA_HOST` and `OLLAMA_MODEL` read from the environment (defaults `http://localhost:11434` / `qwen2.5:7b`); wire app and Docker/compose to pass them through
+8. No secrets in source, `.env`, Dockerfile, compose, logs, or README examples; `OLLAMA_HOST` / `OLLAMA_MODEL` are not secrets but must remain env-driven, not only hardcoded in Python
+9. Real Ollama integration via `langchain-ollama` `ChatOllama` or official `ollama` Python client — not a stub; stream tokens into the consumer
+10. Token streaming from model → WebSocket so the UI updates as the response arrives
+11. pytest (+ pytest-django, pytest-asyncio): views, consumers, LLM/Ollama path (mocked), template rendering
+12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured for the project
+13. Dockerfile + docker compose with an ASGI server (daphne or uvicorn)
+14. Real README (setup, run locally, Ollama pull note)
+15. Stay in workspace root — no nested `chat_app/` subdir unless the current tree is unusable
+16. **`.env.example` documenting `OLLAMA_HOST` and `OLLAMA_MODEL` with their defaults** (do not skip — auditors treat this as a hard deliverable)
+
 Use only the tools available in this runtime. Do not call apply_patch. For file changes, use edit for existing files and write for new files. If a tool call fails, recover and continue implementing instead of stopping.
 
 Use the Django startproject and startapp generators to scaffold the project. This is a chat SPA, not an API service: do not install Django REST Framework, do not add authentication, do not add Celery or background workers. Configure only the apps actually needed for the chat UI plus Django Channels for the WebSocket layer. The chat history can live in memory (per session or per consumer); a database is not required for the chat itself, but accept whatever Django's defaults need to boot (sqlite is fine if `manage.py migrate` is required for sessions). You will make a very simple SPA mimicking a minimal ChatGPT-like web interface. Use Tailwind for CSS (any of django-tailwind, tailwind via PostCSS, or the official Tailwind CLI is fine — pick one and wire it properly). Use Channels WebSocket consumers for streaming model output, and HTMX with the WebSocket extension (or a small amount of vanilla JS) for partial DOM updates as tokens arrive. Avoid duplications, avoid putting everything in a single template or a single CSS/JS file, and properly componentize with Django template partials/includes and normal Django best practices.
 
-You must use environment variables so the LLM client actually works. Read `OLLAMA_HOST` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `qwen2.5:7b`) from the environment; wire the app and Docker/compose so these are passed through. A local Ollama server has no API key — do not require or hardcode secrets. Do not print secret values, do not copy secret file contents into the repo, and do not commit secrets into source files, .env files, Dockerfiles, compose files, logs, or README examples.
+You must use environment variables so the LLM client actually works. Read `OLLAMA_HOST` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `qwen2.5:7b`) from the environment; wire the app and Docker/compose so these are passed through. A local Ollama server has no API key — do not require or hardcode secrets. Django `SECRET_KEY` must be read from the environment with **no hardcoded fallback** — generate a value in docker-compose (e.g. `openssl rand -hex 32` into an env var) or require `DJANGO_SECRET_KEY` / `SECRET_KEY` at container start; never use `os.environ.get("DJANGO_SECRET_KEY", "django-insecure-…")` or similar placeholder literals in source, compose, or Dockerfiles. Do not print secret values, do not copy secret file contents into the repo, and do not commit secrets into source files, .env files, Dockerfiles, compose files, logs, or README examples.
 
 Wire the chat engine to a local Ollama server. You may use either `langchain-ollama`'s `ChatOllama` (with `model` from `OLLAMA_MODEL`, `base_url` from `OLLAMA_HOST`) and stream via `.astream(...)`, or the official `ollama` Python client (`AsyncClient(host=...)`, `chat(..., stream=True)`). Whichever you pick, it must be a real, working integration, not a stub. Stream tokens from the model into the WebSocket consumer so the UI updates as the response arrives. Document in the README that the user must have an Ollama server reachable at `OLLAMA_HOST` with `OLLAMA_MODEL` already pulled (e.g. `ollama pull qwen2.5:7b`).
 
