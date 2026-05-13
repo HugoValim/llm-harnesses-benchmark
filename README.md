@@ -101,7 +101,6 @@ python scripts/run_benchmark.py --harness codex --config config/codex_ollama_clo
 
 # Codex with ChatGPT-linked models (plain codex, `codex login`)
 python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_models.json
-./scripts/run_codex_chatgpt_benchmark.sh
 
 # Claude Code variants (config/claude_code_models.json by default)
 python scripts/run_benchmark.py --harness claude
