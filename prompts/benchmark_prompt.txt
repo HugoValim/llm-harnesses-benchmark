@@ -15,7 +15,7 @@ Required deliverables (all must be present — maps to the audit rubric):
 12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured for the project
 13. Dockerfile + docker compose with an ASGI server (daphne or uvicorn)
 14. Real README (setup, run locally, Ollama pull note)
-15. Stay in workspace root — no nested `chat_app/` subdir unless the current tree is unusable
+15. Build inside the current working directory (`.`) — do **not** navigate to parent directories (no `cd ..`, no `git rev-parse --show-toplevel` traversal). All project files must be created in `.`. No nested `chat_app/` subdir unless the current directory is already a Django project.
 16. **`.env.example` documenting `OLLAMA_HOST` and `OLLAMA_MODEL` with their defaults** (do not skip — auditors treat this as a hard deliverable)
 
 Use only the tools available in this runtime. Do not call apply_patch. For file changes, use edit for existing files and write for new files. If a tool call fails, recover and continue implementing instead of stopping.
@@ -32,4 +32,4 @@ This app will not have authentication. It is really a simple webpage for the Oll
 
 This is phase 1 of 2. Focus on implementation, tests, and project structure. Do not spend time on full runtime validation beyond what is needed to keep implementation moving.
 
-Stay inside the current workspace and modify the current project only. Do not create a second Django app unless the current one is clearly unusable.
+Work exclusively inside `.` (the current working directory). Do not create files outside of `.`. Do not create a second Django app unless the current one is clearly unusable.
