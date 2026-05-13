@@ -17,6 +17,7 @@ from benchmark.util import (
     count_files,
     format_duration,
     format_value,
+    init_project_git,
     print_line,
     prompt_sha256,
     save_json,
@@ -363,6 +364,7 @@ def run_variant(
 
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir.mkdir(parents=True, exist_ok=True)
+    init_project_git(project_dir)
 
     if not force and result_path.exists():
         try:

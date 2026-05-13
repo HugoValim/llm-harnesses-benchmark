@@ -34,6 +34,7 @@ from benchmark.util import (
     count_files,
     format_duration,
     format_value,
+    init_project_git,
     print_line,
     prompt_sha256,
     save_json,
@@ -1076,6 +1077,7 @@ def run_codex_variant(
     )
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir = result_dir
+    init_project_git(project_dir)
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "stream.ndjson"
     stderr_path = result_dir / "stderr.log"
@@ -1327,6 +1329,7 @@ def run_model(
     result_path = result_dir / "result.json"
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir.mkdir(parents=True, exist_ok=True)
+    init_project_git(project_dir)
 
     if not bench.force:
         cached = existing_terminal_result(result_path)

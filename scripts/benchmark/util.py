@@ -39,6 +39,42 @@ _EXCLUDED_DIRS = frozenset(
 )
 
 
+def init_project_git(project_dir: Path) -> None:
+    """Initialize an isolated git repo in ``project_dir``.
+
+    Prevents git traversal from reaching the harness repo root when a
+    generated project runs ``git rev-parse --show-toplevel``. Without this,
+    ``project_dir`` lives inside the harness checkout and git would return
+    the harness root — causing models to write files there.
+
+    Idempotent: no-op if ``.git`` already exists.
+
+    Example:
+        >>> from pathlib import Path
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as tmp:
+        ...     p = Path(tmp) / "project"
+        ...     p.mkdir()
+        ...     init_project_git(p)
+        ...     assert (p / ".git").is_dir()
+    """
+    import subprocess as _sp
+
+    if (project_dir / ".git").exists():
+        return
+    completed = _sp.run(
+        ["git", "init", str(project_dir)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        raise RuntimeError(
+            f"git init failed in {project_dir!s} (exit {completed.returncode}); stderr={stderr!r}"
+        )
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
