@@ -30,36 +30,38 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Phase 2/3: must match ``slug`` in config/audit_models.json for this pipeline.
-OLLAMA_CLOUD_AUDITOR_SLUG=deepseek_v4_pro_ollama_codex_auditor
+# OLLAMA_CLOUD_AUDITOR_SLUG=deepseek_v4_pro_ollama_codex_auditor  # DeepSeek V4 Pro via `ollama launch codex`
+OLLAMA_CLOUD_AUDITOR_SLUG=kimi_k2_6_ollama_codex_auditor
 
 # Phase 1 - Build ------------------------------------------------------------
 
-# python3 scripts/run_benchmark.py --harness claude \
-#   --config config/claude_code_ollama_cloud_models.json \
-#   --report docs/report.ollama-cloud.claude.md \
-#   "$@"
+python3 scripts/run_benchmark.py --harness claude \
+  --config config/claude_code_ollama_cloud_models.json \
+  --report docs/report.ollama-cloud.claude.md \
+  "$@"
 
-# python3 scripts/run_benchmark.py --harness ollama \
-#   --report docs/report.ollama-cloud.codex.md \
-#   "$@"
+python3 scripts/run_benchmark.py --harness codex \
+  --report docs/report.ollama-cloud.codex.md \
+  "$@"
 
-# python3 scripts/run_benchmark.py --harness opencode \
-#   --config config/opencode_ollama_cloud_models.json \
-#   --report docs/report.ollama-cloud.opencode.md \
-#   "$@"
+python3 scripts/run_benchmark.py --harness opencode \
+  --config config/opencode_ollama_cloud_models.json \
+  --report docs/report.ollama-cloud.opencode.md \
+  "$@"
 
 # Phase 2 - Audit (Role 1) ---------------------------------------------------
-# DeepSeek V4 Pro via `ollama launch codex` audits every discovered
-# results/<harness>-<slug>/project against prompts/audit_prompt_template.txt.
-# -j 3 mirrors run_ollama_cloud_audit.sh.
+# Auditor from $OLLAMA_CLOUD_AUDITOR_SLUG (see config/audit_models.json) runs
+# every discovered results/<harness>-<slug>/project against
+# prompts/audit_prompt_template.txt. -j 3 mirrors run_ollama_cloud_audit.sh.
 
 python3 scripts/run_audit.py \
   --auditor "$OLLAMA_CLOUD_AUDITOR_SLUG" \
   --target all \
   -j 3
 
+
 # Phase 3 - Meta-analysis (Role 2) -------------------------------------------
-# DeepSeek V4 Pro via `ollama launch codex` reads reports under
+# Same harness/model as the auditor reads reports under
 # audit-reports/$OLLAMA_CLOUD_AUDITOR_SLUG/ (``--meta-input-dir`` avoids
 # discover skipping that tree when no ``*/report.md`` exists yet) and writes
 # audit-reports/meta-analysis.md.
