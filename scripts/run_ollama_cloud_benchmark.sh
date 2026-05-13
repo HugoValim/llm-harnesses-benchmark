@@ -4,8 +4,9 @@ set -euo pipefail
 # End-to-end Ollama Cloud benchmark + audit pipeline.
 #
 # Phase 1 - Build: run the Claude Code, Codex, and OpenCode benchmarks against
-# the shared Ollama Cloud model set (Kimi K2.6, Qwen 3.5, GLM 5.1,
-# MiniMax M2.7, DeepSeek V4 Pro). Outputs land under:
+# the shared Ollama Cloud model set in config/ollama_cloud_models.json (Kimi K2.6,
+# Qwen 3.5, GLM 5.1, MiniMax M2.7, DeepSeek V4 Pro, DeepSeek V4 Flash, Gemma 4,
+# Nemotron 3 Super, Gemini 3 Flash preview). Outputs land under:
 #   Claude   uses `ollama launch claude`   -> results/claude-<slug>/
 #   Codex    uses `ollama launch codex`    -> results/codex-<slug>/
 #   OpenCode uses `ollama launch opencode` -> results/opencode-<slug>/
@@ -36,16 +37,17 @@ OLLAMA_CLOUD_AUDITOR_SLUG=kimi_k2_6_ollama_codex_auditor
 # Phase 1 - Build ------------------------------------------------------------
 
 python3 scripts/run_benchmark.py --harness claude \
-  --config config/claude_code_ollama_cloud_models.json \
+  --config config/ollama_cloud_models.json \
   --report docs/report.ollama-cloud.claude.md \
   "$@"
 
 python3 scripts/run_benchmark.py --harness codex \
+  --config config/ollama_cloud_models.json \
   --report docs/report.ollama-cloud.codex.md \
   "$@"
 
 python3 scripts/run_benchmark.py --harness opencode \
-  --config config/opencode_ollama_cloud_models.json \
+  --config config/ollama_cloud_models.json \
   --report docs/report.ollama-cloud.opencode.md \
   "$@"
 
