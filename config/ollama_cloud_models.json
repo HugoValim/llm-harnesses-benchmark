@@ -72,9 +72,9 @@
     },
     {
       "slug": "gemma4_ollama_cloud",
-      "id": "gemma4:cloud",
-      "label": "Gemma 4 (Ollama Cloud)",
-      "selection_reason": "Google Gemma 4 on Ollama Cloud — cross-vendor baseline on the Django + Channels brief."
+      "id": "gemma4:31b-cloud",
+      "label": "Gemma 4 31B (Ollama Cloud)",
+      "selection_reason": "Google Gemma 4 on Ollama Cloud (`gemma4:31b-cloud`; `gemma4:cloud` is not published on the registry) — cross-vendor baseline on the Django + Channels brief."
     },
     {
       "slug": "nemotron_3_super_ollama_cloud",
