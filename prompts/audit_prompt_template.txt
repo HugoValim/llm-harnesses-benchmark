@@ -170,3 +170,8 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Source (path under `results/`, git hash, or chat link)
 
 I. **Killer strength** (one sentence) + **Killer weakness** (one sentence).
+
+## Output instruction
+
+When you have finished writing all sections above, write your **complete** audit report
+(sections A–I) to the file `{output_path}` using a file write tool. Do not truncate.

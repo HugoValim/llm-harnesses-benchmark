@@ -315,15 +315,26 @@ def resolve_auditors_and_targets(
     return all_auditors, discovered
 
 
-def build_audit_prompt(template: str, project_dir: Path, model_slug: str) -> str:
+def build_audit_prompt(
+    template: str,
+    project_dir: Path,
+    model_slug: str,
+    output_path: Path | None = None,
+) -> str:
     """Interpolate placeholders into the audit prompt template."""
     prompt = template.replace("{project_dir}", str(project_dir.resolve()))
     prompt = prompt.replace("{model_slug}", model_slug)
+    if output_path is not None:
+        prompt = prompt.replace("{output_path}", str(output_path.resolve()))
     return prompt
 
 
 def _extract_final_report(stream_path: Path, report_path: Path) -> None:
-    """Best-effort: extract the last assistant text block from NDJSON as report."""
+    """Best-effort: extract assistant text from NDJSON as report.
+
+    Supports Claude Code ``type == "assistant"`` events and Codex
+    ``type == "item.completed"`` with ``item.type == "agent_message"``.
+    """
     chunks: list[str] = []
     try:
         with stream_path.open() as f:
@@ -342,6 +353,12 @@ def _extract_final_report(stream_path: Path, report_path: Path) -> None:
                             text = part.get("text", "")
                             if text.strip():
                                 chunks.append(text)
+                elif event.get("type") == "item.completed":
+                    item = event.get("item", {})
+                    if item.get("type") == "agent_message":
+                        text = item.get("text", "")
+                        if isinstance(text, str) and text.strip():
+                            chunks.append(text)
         if chunks:
             report_path.write_text("\n\n".join(chunks))
     except OSError:
@@ -414,7 +431,10 @@ def main() -> int:
             project_dir = target["project_dir"]
             model_slug_for_prompt = target.get("model_slug", target_slug)
             audit_prompt = build_audit_prompt(
-                prompt_template, project_dir, model_slug_for_prompt
+                prompt_template,
+                project_dir,
+                model_slug_for_prompt,
+                output_path=result_dir / "report.md",
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)
