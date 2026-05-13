@@ -45,6 +45,7 @@
       "opencode_model_options": {
         "reasoning": false
       },
+      "known_issues": "OpenCode runs for this slug can under-ship D1/D5 vs Codex on the same Django+Channels brief (checklist scaffolding, tool configs). The benchmark runner does not build a system prompt—that is owned by OpenCode's agent; harness-side knobs are YOLO permissions, generated opencode config, and per-model opencode_model_options (reasoning=false here may reduce planning depth). Treat as model + harness sensitivity; benchmark prompt v2.1 adds an explicit deliverables checklist and SECRET_KEY guidance to reduce misses.",
       "selection_reason": "DeepSeek V4 Pro via OpenRouter. Phase 2 follow-up is disabled because opencode's ai-sdk strips reasoning_content but the DeepSeek API requires it echoed back, breaking multi-turn at turn 2. Phase 1 still runs end-to-end; the Python runtime analyzer (analyze_results_runtime_python.py) provides the boot/docker validation that phase 2 would otherwise do. reasoning=false tells opencode to treat it as a non-reasoning model so it does not extract/pass back reasoning_content."
     },
     {
