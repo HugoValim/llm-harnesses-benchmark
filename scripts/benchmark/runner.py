@@ -481,6 +481,7 @@ def stream_process_output(
                                     event.get("part", {}).get("error")
                                     or event.get("part", {}).get("message")
                                     or event.get("error")
+                                    or event.get("message")
                                     or "unknown"
                                 )
                                 if isinstance(error_detail, dict):
@@ -506,9 +507,7 @@ def stream_process_output(
                                     )
                                     print_line(f"[{model_slug}] {stall_reason}")
                                     return _make_result(False, True, stall_reason)
-                                # Don't refresh last_activity for error events —
-                                # let the no-progress timeout catch lingering errors
-                                # that stay below the loop threshold.
+                                last_activity = now
                             else:
                                 last_activity = now
                                 consecutive_error_events = 0
