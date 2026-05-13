@@ -43,6 +43,101 @@ OPENCODE_YOLO_PERMISSION = {
 
 TERMINAL_STATUSES = {"completed", "completed_with_errors", "failed", "timeout"}
 
+_OLLAMA_CLOUD_EXPAND_HARNESSES = frozenset({"claude", "codex", "opencode", "ollama"})
+
+
+def expand_ollama_cloud_config(
+    config: dict[str, Any], harness: str
+) -> dict[str, Any]:
+    """Expand ``config/ollama_cloud_models.json`` into a normal harness config dict.
+
+    Unified rows list ``slug``, ``id`` (Ollama tag), ``label`` (without ``via …``),
+    and ``selection_reason``; runner metadata lives under ``runner_configs``.
+    """
+    if not config.get("ollama_cloud"):
+        return config
+    if harness not in _OLLAMA_CLOUD_EXPAND_HARNESSES:
+        raise ValueError(
+            "expand_ollama_cloud_config: harness must be one of "
+            f"{sorted(_OLLAMA_CLOUD_EXPAND_HARNESSES)}, got {harness!r}"
+        )
+    runner_configs = config.get("runner_configs")
+    shared_models = config.get("models")
+    if not isinstance(runner_configs, dict):
+        raise ValueError(
+            "ollama_cloud config expects object runner_configs, "
+            f"got {type(runner_configs).__name__}"
+        )
+    if not isinstance(shared_models, list):
+        raise ValueError(
+            "ollama_cloud config expects array models, "
+            f"got {type(shared_models).__name__}"
+        )
+
+    harness_key = "codex" if harness == "ollama" else harness
+    rc = runner_configs.get(harness_key)
+    if not isinstance(rc, dict):
+        raise ValueError(
+            f"ollama_cloud runner_configs missing key {harness_key!r} "
+            f"(requested harness={harness!r})."
+        )
+
+    command_prefix = rc.get("command_prefix")
+    if not isinstance(command_prefix, list) or not command_prefix:
+        raise ValueError(
+            f"runner_configs[{harness_key!r}] needs non-empty list command_prefix, "
+            f"got {command_prefix!r}"
+        )
+
+    runner = {k: v for k, v in rc.items() if k != "command_prefix"}
+
+    if harness == "claude":
+        variants: list[dict[str, Any]] = []
+        for entry in shared_models:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    "ollama_cloud models entries must be objects, "
+                    f"got {type(entry).__name__}"
+                )
+            slug = entry["slug"]
+            base_label = entry["label"]
+            model_id = entry["id"]
+            variants.append(
+                {
+                    "slug": slug,
+                    "label": f"{base_label} via Claude Code",
+                    "main_model": model_id,
+                    "subagent": None,
+                    "command_prefix": list(command_prefix),
+                    "selection_reason": str(entry.get("selection_reason", "")),
+                }
+            )
+        return {"runner": runner, "variants": variants}
+
+    runner_type = harness
+    via = "OpenCode" if harness == "opencode" else "Codex"
+    models_out: list[dict[str, Any]] = []
+    for entry in shared_models:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                "ollama_cloud models entries must be objects, "
+                f"got {type(entry).__name__}"
+            )
+        slug = entry["slug"]
+        base_label = entry["label"]
+        models_out.append(
+            {
+                "slug": slug,
+                "id": entry["id"],
+                "label": f"{base_label} via {via}",
+                "provider": "ollama_cloud",
+                "runner_type": runner_type,
+                "command_prefix": list(command_prefix),
+                "selection_reason": str(entry.get("selection_reason", "")),
+            }
+        )
+    return {"runner": runner, "models": models_out}
+
 
 @dataclass
 class BenchmarkConfig:

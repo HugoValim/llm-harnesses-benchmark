@@ -18,6 +18,7 @@ from benchmark.claude_code_report import build_variant_report, load_variant_resu
 from benchmark.claude_code_runner import run_variant  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
+    expand_ollama_cloud_config,
     load_ollama_warmup_payload,
     load_opencode_ollama_api_base,
     print_local_opencode_config_summary,
@@ -57,7 +58,7 @@ def _default_config_path(harness: str) -> Path:
     if harness == "claude":
         return REPO_ROOT / "config" / "claude_code_models.json"
     if harness == "ollama":
-        return REPO_ROOT / "config" / "codex_ollama_cloud_models.json"
+        return REPO_ROOT / "config" / "ollama_cloud_models.json"
     return REPO_ROOT / "config" / "models.json"
 
 
@@ -225,6 +226,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         return 1
 
     config = load_json(config_path)
+    config = expand_ollama_cloud_config(config, harness)
     prompt = prompt_path.read_text().strip()
     followup_prompt = None
     if not args.no_followup and followup_prompt_path.exists():
@@ -419,6 +421,7 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
         return 1
 
     config = load_json(config_path)
+    config = expand_ollama_cloud_config(config, "claude")
     if "variants" not in config:
         print(f"Config {config_path} has no 'variants' key (expected Claude variants).", file=sys.stderr)
         return 1
