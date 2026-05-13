@@ -75,6 +75,47 @@ def init_project_git(project_dir: Path) -> None:
         )
 
 
+_WORKSPACE_CLAUDE_MD = """\
+# Project workspace
+
+This directory is your **complete, isolated workspace**. Build the entire
+application here.
+
+## Hard constraints
+
+- Do NOT run `cd ..` or navigate to any parent directory.
+- Do NOT use absolute paths that point outside this directory.
+- Do NOT treat this as a subdirectory of a larger project.
+- `pwd` returns your workspace root. All output must land inside it.
+
+The directory is intentionally empty at the start of the session.
+"""
+
+
+def write_project_context(project_dir: Path) -> None:
+    """Write CLAUDE.md and AGENTS.md to ``project_dir``.
+
+    Claude Code reads CLAUDE.md from all parent directories. Without a
+    project-level CLAUDE.md the harness CLAUDE.md (one level up) is the
+    innermost match and tells the model it is inside a benchmark harness,
+    causing it to navigate up to the harness root.
+
+    Idempotent: overwrites on every run so content stays canonical.
+
+    Example:
+        >>> from pathlib import Path
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as tmp:
+        ...     p = Path(tmp) / "project"
+        ...     p.mkdir()
+        ...     write_project_context(p)
+        ...     assert "Hard constraints" in (p / "CLAUDE.md").read_text()
+    """
+    text = _WORKSPACE_CLAUDE_MD
+    (project_dir / "CLAUDE.md").write_text(text)
+    (project_dir / "AGENTS.md").write_text(text)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
