@@ -14,7 +14,7 @@
       "id": "kimi-k2.6:cloud",
       "label": "Kimi K2.6 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "ollama",
+      "runner_type": "codex",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best Kimi model on Ollama Cloud through Codex CLI — pairs with the Claude Code Ollama Cloud harness for cross-runner comparison."
     },
@@ -23,7 +23,7 @@
       "id": "qwen3.5:cloud",
       "label": "Qwen 3.5 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "ollama",
+      "runner_type": "codex",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best Qwen model on Ollama Cloud via Codex — reasoning and agentic tool use."
     },
@@ -32,7 +32,7 @@
       "id": "glm-5.1:cloud",
       "label": "GLM 5.1 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "ollama",
+      "runner_type": "codex",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best GLM model on Ollama Cloud via Codex — long-horizon agentic engineering."
     },
@@ -41,7 +41,7 @@
       "id": "minimax-m2.7:cloud",
       "label": "MiniMax M2.7 (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "ollama",
+      "runner_type": "codex",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best MiniMax model on Ollama Cloud via Codex."
     },
@@ -50,7 +50,7 @@
       "id": "deepseek-v4-pro:cloud",
       "label": "DeepSeek V4 Pro (Ollama Cloud) via Codex",
       "provider": "ollama_cloud",
-      "runner_type": "ollama",
+      "runner_type": "codex",
       "command_prefix": ["ollama", "launch", "codex"],
       "selection_reason": "Best DeepSeek model on Ollama Cloud via Codex."
     }

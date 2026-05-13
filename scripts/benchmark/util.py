@@ -76,6 +76,40 @@ def prompt_sha256(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
+def uses_ollama_launch_codex(model: dict[str, Any]) -> bool:
+    """True when the model is routed through ``ollama launch codex``."""
+    cp = model.get("command_prefix") or []
+    return (
+        len(cp) >= 3
+        and cp[0] == "ollama"
+        and cp[1] == "launch"
+        and cp[2] == "codex"
+    )
+
+
+def model_matches_harness(model: dict[str, Any], harness: str) -> bool:
+    """Whether a ``models`` registry entry is in scope for ``--harness``.
+
+    Ollama Cloud rows use ``command_prefix: [\"ollama\", \"launch\", \"codex\"]``
+    and may declare ``runner_type`` as ``\"codex\"`` (canonical) or ``\"ollama\"``
+    (legacy). Both match ``--harness codex`` and ``--harness ollama`` so results
+    can live under either ``results/codex-<slug>/`` or ``results/ollama-<slug>/``.
+    Plain ``runner_type: \"codex\"`` without that prefix only matches codex.
+    """
+    rt = model.get("runner_type", "opencode")
+    if harness == "opencode":
+        return rt == "opencode"
+    if harness == "codex":
+        if rt == "codex":
+            return True
+        return bool(rt == "ollama" and uses_ollama_launch_codex(model))
+    if harness == "ollama":
+        if rt == "ollama":
+            return True
+        return bool(rt == "codex" and uses_ollama_launch_codex(model))
+    return False
+
+
 def clone_json(value: Any) -> Any:
     return json.loads(json.dumps(value))
 

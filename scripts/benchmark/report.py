@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.config import summarize_project
-from benchmark.util import format_value, load_json, prompt_sha256, utc_now
+from benchmark.util import (
+    format_value,
+    load_json,
+    model_matches_harness,
+    prompt_sha256,
+    utc_now,
+)
 
 
 def _rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str:
@@ -44,7 +50,7 @@ def load_results(
     rows: list[dict[str, Any]] = []
     warmup_results = warmup_payload.get("results_by_slug", {}) if warmup_payload else {}
     for model in config["models"]:
-        if model.get("runner_type", "opencode") != harness:
+        if not model_matches_harness(model, harness):
             continue
         result_path = results_dir / f"{harness}-{model['slug']}" / "result.json"
         if result_path.exists():
@@ -167,7 +173,7 @@ def build_report(
     lines.append("## Model Selection")
     lines.append("")
     for model in config["models"]:
-        if model.get("runner_type", "opencode") != harness:
+        if not model_matches_harness(model, harness):
             continue
         lines.append(
             f"- `{model['slug']}` -> `{model['id']}`: {model['selection_reason']}"

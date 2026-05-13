@@ -25,7 +25,7 @@ from benchmark.config import (  # noqa: E402
 )
 from benchmark.report import build_report, load_results  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
-from benchmark.util import load_json, print_line  # noqa: E402
+from benchmark.util import load_json, model_matches_harness, print_line  # noqa: E402
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
 HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "ollama"})
@@ -236,9 +236,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         m for m in config["models"] if not m.get("skip_by_default")
     ]
     selected_models = [
-        m
-        for m in selected_models
-        if m.get("runner_type", "opencode") == harness
+        m for m in selected_models if model_matches_harness(m, harness)
     ]
 
     slug_filter: set[str] = set()
@@ -252,7 +250,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             if s not in by_slug:
                 print(f"Unknown model slug: {s}", file=sys.stderr)
                 return 1
-            if by_slug[s].get("runner_type", "opencode") != harness:
+            if not model_matches_harness(by_slug[s], harness):
                 print(
                     f"Slug `{s}` is not a {harness} model (check runner_type in config).",
                     file=sys.stderr,
