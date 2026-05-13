@@ -17,7 +17,7 @@ python scripts/run_benchmark.py --harness opencode
 
 Run the full codex benchmark (models with `"runner_type": "codex"` in the same registry, or a codex-only JSON):
 ```bash
-python scripts/run_benchmark.py --harness codex --config config/codex_ollama_cloud_models.json
+python scripts/run_benchmark.py --harness codex --config config/ollama_cloud_models.json
 ```
 
 Run a single model (opencode/codex):
@@ -95,7 +95,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 - `backends.py` — Local model backend abstraction (`OllamaBackend`, `LlamaSwapBackend`). Handles preflight (unload/load models), GPU eviction between backends, and health checks.
 - `runner.py` — Process management for opencode/codex. Spawns subprocesses, streams NDJSON stdout/stderr, detects stalls/timeouts/error loops, measures preview TPS, and kills process groups. Also handles session export and stale opencode process cleanup.
 - `claude_code_runner.py` — Process management for Claude Code CLI. Similar streaming/heartbeat/stall detection but parses Claude's `stream-json` format instead of opencode's. Handles `command_prefix` for Ollama shims and `isolate_home` for agent isolation.
-- `config.py` — Config loading and opencode config generation. Reads `~/.config/opencode/opencode.json`, produces a benchmark-isolated config at `config/opencode.benchmark.json` with yolo permissions and local model context overrides. Also handles multi-agent subagent registration.
+- `config.py` — Config loading and opencode config generation; `expand_ollama_cloud_config` flattens `ollama_cloud_models.json` for the active harness. Reads `~/.config/opencode/opencode.json`, produces a benchmark-isolated config at `config/opencode.benchmark.json` with yolo permissions and local model context overrides. Also handles multi-agent subagent registration.
 - `report.py` — Markdown report generation from `result.json` files (opencode/codex).
 - `claude_code_report.py` — Markdown report for Claude Code variant runs.
 - `util.py` — Shared JSON I/O, SHA256, file counting, formatting helpers.
@@ -104,7 +104,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 ### Config hierarchy
 
 - `config/models.json` — opencode/codex model registry. Each model has `slug`, `id`, `provider`, `selection_reason`, optional `runner_type` (`opencode` default | `codex`), `command_prefix` (for `ollama launch codex`), and optional flags like `enable_followup`, `skip_by_default`, `ollama_model_name`, `llama_swap_model`, `opencode_subagent`.
-- `config/codex_ollama_cloud_models.json` — Codex + `ollama launch codex` registry mirroring the Claude Ollama Cloud set (for cross-harness comparison).
+- `config/ollama_cloud_models.json` — unified Ollama Cloud model list + per-harness runner metadata; expanded at load time into `variants` (Claude) or `models` (opencode/codex/`ollama` harness).
 - `config/claude_code_models.json` — Claude Code variant registry. Each variant has `slug`, `main_model`, optional `subagent`, `command_prefix`, and `env_overrides`.
 - `config/audit_models.json` — Auditor registry for `run_audit.py` and `run_meta_analysis.py`. Same schema as `claude_code_models.json`.
 - `config/opencode.benchmark.json` — Auto-generated on every opencode run from the home opencode config. Do not edit by hand.

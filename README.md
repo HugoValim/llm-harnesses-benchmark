@@ -49,8 +49,7 @@ python-benchmark/
 ├── config/
 │   ├── models.json                        # opencode/codex model registry
 │   ├── claude_code_models.json            # Claude Code variant registry
-│   ├── claude_code_ollama_cloud_models.json
-│   ├── codex_ollama_cloud_models.json     # Codex + ollama launch codex (pairs with Claude Ollama Cloud set)
+│   ├── ollama_cloud_models.json           # unified Ollama Cloud tags (expanded per harness at load time)
 │   └── audit_models.json                  # Auditor model registry
 ├── results/<harness>-<slug>/              # unified per-run dirs: opencode-*, codex-*, claude-* (gitignored)
 ├── audit-reports/<auditor>/<target>/      # Audit reports (gitignored)
@@ -83,7 +82,7 @@ Edit `config/models.json` to add/remove models. Each entry needs a `slug`, `id` 
 - For **runtime verification** (`analyze_results_runtime.py`), ensure **Ollama** is running locally (or reachable at `OLLAMA_HOST`) with `OLLAMA_MODEL` pulled (e.g. `ollama pull qwen2.5:7b`); the analyzer injects defaults for `OLLAMA_HOST` and `OLLAMA_MODEL` into the subprocess environment when probing the generated project.
 - A working **opencode config** at `~/.config/opencode/opencode.json` with the providers used in `config/models.json`. The runner copies this and writes a benchmark-isolated config at `config/opencode.benchmark.json` on each run.
 - For **`--harness claude`**: `claude` on `$PATH` and a logged-in subscription (`claude login`). No `ANTHROPIC_API_KEY` needed unless you flip `runner.isolate_home` to `true` in `config/claude_code_models.json`.
-- For **Codex** (`--harness codex`): `codex` on `$PATH`. For **`ollama launch codex`** models (`config/codex_ollama_cloud_models.json`), `ollama` must be on `$PATH` instead.
+- For **Codex** (`--harness codex`): `codex` on `$PATH`. For **`ollama launch codex`** models (`config/ollama_cloud_models.json`), `ollama` must be on `$PATH` instead.
 
 ## Running the benchmark
 
@@ -97,7 +96,7 @@ python scripts/run_benchmark.py --harness opencode
 python scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
 
 # Codex-only registry (e.g. Ollama Cloud via ollama launch codex)
-python scripts/run_benchmark.py --harness codex --config config/codex_ollama_cloud_models.json
+python scripts/run_benchmark.py --harness codex --config config/ollama_cloud_models.json
 
 # Codex with ChatGPT-linked models (plain codex, `codex login`)
 python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_models.json
@@ -130,7 +129,7 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 
 **Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-**Ollama Cloud via Claude Code** — variants use `command_prefix: ["ollama","launch","claude"]` and `main_model` tags like `kimi-k2.6:cloud`. See `config/claude_code_ollama_cloud_models.json`. Pair with **`config/codex_ollama_cloud_models.json`** and the split audit/meta wrappers (`./scripts/run_ollama_cloud_audit.sh` + `./scripts/run_ollama_cloud_meta_analysis.sh`) for cross-harness comparison.
+**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Pair with the split audit/meta wrappers (`./scripts/run_ollama_cloud_audit.sh` + `./scripts/run_ollama_cloud_meta_analysis.sh`) for cross-harness comparison.
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
 
