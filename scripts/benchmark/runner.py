@@ -25,8 +25,8 @@ from benchmark.config import (
     resolve_ollama_model_name,
     summarize_project,
 )
-from benchmark.loop_detector import ToolCallLoopDetector
 from benchmark.phase_result import build_phase_payload
+from benchmark.stream_state import ActionKind, EventStreamState
 
 _SKIP_CONFIG_LOCK = threading.Lock()
 
@@ -487,23 +487,22 @@ def stream_process_output(
     stdout_buffer = ""
     stderr_buffer = ""
     last_event_message: str | None = None
-    session_id: str | None = None
     last_heartbeat = 0.0
     heartbeat_interval = 10.0
     started = time.monotonic()
     last_activity = started
     last_activity_detail = "process started"
     last_file_count = count_files(project_dir)
-    current_step_started_at: int | None = None
-    latest_preview_output_tps: float | None = None
-    preview_average_output_tps: float | None = None
-    preview_output_tps_samples: list[float] = []
-    preview_gate_decided = False
-    terminal_stop_seen_at: float | None = None
     terminal_stop_grace_seconds = 5.0
-    consecutive_error_events = 0
     error_loop_threshold = 5
-    tool_call_loop_detector = ToolCallLoopDetector(threshold=5)
+
+    event_state = EventStreamState(
+        model_slug=model_slug,
+        min_preview_output_tps=min_preview_output_tps,
+        min_preview_samples=min_preview_samples,
+        error_loop_threshold=error_loop_threshold,
+        tool_loop_threshold=5,
+    )
 
     def _make_result(
         timed_out: bool, stalled: bool, stall_reason: str | None
@@ -514,8 +513,8 @@ def stream_process_output(
             timed_out=timed_out,
             stalled=stalled,
             stall_reason=stall_reason,
-            latest_preview_output_tps=latest_preview_output_tps,
-            preview_average_output_tps=preview_average_output_tps,
+            latest_preview_output_tps=event_state.latest_preview_output_tps,
+            preview_average_output_tps=event_state.preview_average_output_tps,
         )
 
     with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
@@ -552,160 +551,46 @@ def stream_process_output(
                             event = json.loads(stripped)
                         except json.JSONDecodeError:
                             last_activity = now
-                            consecutive_error_events = 0
                             last_event_message = f"stdout: {shorten_text(stripped)}"
                             last_activity_detail = last_event_message
                         else:
-                            is_error_event = (
-                                event.get("part", {}).get("type") == "error"
-                                or event.get("type") == "error"
-                                or event.get("type") == "turn.failed"
-                            )
-                            if is_error_event:
-                                consecutive_error_events += 1
-                                error_detail = (
-                                    event.get("part", {}).get("error")
-                                    or event.get("part", {}).get("message")
-                                    or event.get("error")
-                                    or event.get("message")
-                                    or "unknown"
-                                )
-                                if isinstance(error_detail, dict):
-                                    error_detail = error_detail.get(
-                                        "message", str(error_detail)
-                                    )
-                                description = (
-                                    f"error: {shorten_text(str(error_detail))}"
-                                )
+                            prev_tps_count = event_state.tps_sample_count
+                            action = event_state.process_event(event)
+
+                            if event_state.is_error_event:
+                                count = event_state.consecutive_error_events
+                                description = event_state.last_description or ""
                                 last_event_message = description
                                 last_activity_detail = description
-                                if consecutive_error_events <= 2:
+                                if count <= 2:
                                     print_line(f"[{model_slug}] {description}")
-                                elif consecutive_error_events == error_loop_threshold:
+                                elif count == error_loop_threshold:
                                     print_line(
-                                        f"[{model_slug}] {consecutive_error_events} consecutive error events, suppressing further output"
+                                        f"[{model_slug}] {count} consecutive error events, suppressing further output"
                                     )
-                                if consecutive_error_events >= error_loop_threshold:
-                                    kill_process_group(process)
-                                    stall_reason = (
-                                        f"error loop: {consecutive_error_events} consecutive error events; "
-                                        f"last error: {shorten_text(str(error_detail), 200)}"
-                                    )
-                                    print_line(f"[{model_slug}] {stall_reason}")
-                                    return _make_result(False, True, stall_reason)
                                 last_activity = now
                             else:
                                 last_activity = now
-                                consecutive_error_events = 0
 
-                            session_id = session_id or event.get("sessionID")
-                            if event.get("type") == "step_start":
-                                terminal_stop_seen_at = None
-                                timestamp = event.get("timestamp")
-                                if isinstance(timestamp, int):
-                                    current_step_started_at = timestamp
-                            elif event.get("type") == "step_finish":
-                                reason = event.get("part", {}).get("reason")
-                                if reason == "stop":
-                                    terminal_stop_seen_at = now
-                                timestamp = event.get("timestamp")
-                                output_tokens = (
-                                    event.get("part", {})
-                                    .get("tokens", {})
-                                    .get("output")
+                            if event_state.tps_sample_count > prev_tps_count:
+                                tps = event_state.latest_preview_output_tps
+                                print_line(
+                                    f"[{model_slug}] preview output_tps={tps:.2f}"
                                 )
-                                if (
-                                    current_step_started_at is not None
-                                    and isinstance(timestamp, int)
-                                    and isinstance(output_tokens, int)
-                                    and timestamp > current_step_started_at
-                                ):
-                                    duration_seconds = (
-                                        timestamp - current_step_started_at
-                                    ) / 1000
-                                    latest_preview_output_tps = round(
-                                        output_tokens / duration_seconds, 2
-                                    )
-                                    preview_output_tps_samples.append(
-                                        latest_preview_output_tps
-                                    )
+                                avg = event_state.preview_average_output_tps
+                                if avg is not None and event_state.tps_sample_count == min_preview_samples:
                                     print_line(
-                                        f"[{model_slug}] preview output_tps={latest_preview_output_tps:.2f}"
+                                        f"[{model_slug}] preview average output_tps="
+                                        f"{avg:.2f} over first {min_preview_samples} steps"
                                     )
-                                    if (
-                                        not preview_gate_decided
-                                        and len(preview_output_tps_samples)
-                                        >= min_preview_samples
-                                    ):
-                                        preview_gate_decided = True
-                                        preview_average_output_tps = round(
-                                            sum(
-                                                preview_output_tps_samples[
-                                                    :min_preview_samples
-                                                ]
-                                            )
-                                            / min_preview_samples,
-                                            2,
-                                        )
-                                        print_line(
-                                            f"[{model_slug}] preview average output_tps="
-                                            f"{preview_average_output_tps:.2f} over first {min_preview_samples} steps"
-                                        )
-                                        if (
-                                            min_preview_output_tps is not None
-                                            and preview_average_output_tps
-                                            < min_preview_output_tps
-                                        ):
-                                            kill_process_group(process)
-                                            slow_reason = (
-                                                f"preview average output_tps {preview_average_output_tps:.2f} "
-                                                f"over first {min_preview_samples} steps "
-                                                f"below threshold {min_preview_output_tps:.2f}"
-                                            )
-                                            print_line(f"[{model_slug}] {slow_reason}")
-                                            return _make_result(
-                                                False, True, slow_reason
-                                            )
 
-                            # Codex: turn.completed is the terminal stop equivalent
-                            if event.get("type") == "turn.completed":
-                                terminal_stop_seen_at = now
+                            if action.kind in (ActionKind.STALL, ActionKind.TPS_GATE_FAIL):
+                                assert action.reason is not None
+                                kill_process_group(process)
+                                print_line(f"[{model_slug}] {action.reason}")
+                                return _make_result(False, True, action.reason)
 
-                            # Tool-call loop detection (Gemini CLI style)
-                            if event.get("type") == "tool_use":
-                                part = event.get("part", {})
-                                tool_name = part.get("tool", "")
-                                tool_input = part.get("state", {}).get("input", {})
-                                if tool_name and tool_call_loop_detector.record(
-                                    tool_name, tool_input
-                                ):
-                                    kill_process_group(process)
-                                    stall_reason = (
-                                        tool_call_loop_detector.loop_description(
-                                            tool_name
-                                        )
-                                    )
-                                    print_line(f"[{model_slug}] {stall_reason}")
-                                    return _make_result(False, True, stall_reason)
-
-                            # Codex: command_execution loop detection
-                            if event.get("type") == "item.completed":
-                                item = event.get("item", {})
-                                if item.get("type") == "command_execution":
-                                    cmd = item.get("command", "")
-                                    if cmd and tool_call_loop_detector.record(
-                                        "command_execution", {"command": cmd}
-                                    ):
-                                        kill_process_group(process)
-                                        stall_reason = (
-                                            tool_call_loop_detector.loop_description(
-                                                "command_execution"
-                                            )
-                                        )
-                                        print_line(f"[{model_slug}] {stall_reason}")
-                                        return _make_result(False, True, stall_reason)
-
-                            if not is_error_event:
+                            if not event_state.is_error_event:
                                 _describer = event_describer or describe_event
                                 description = _describer(event)
                                 if description:
@@ -723,10 +608,10 @@ def stream_process_output(
                         last_activity_detail = last_event_message
                         print_line(f"[{model_slug}] {last_event_message}")
 
-            if (
-                terminal_stop_seen_at is not None
-                and now - terminal_stop_seen_at >= terminal_stop_grace_seconds
-            ):
+            grace_action = event_state.check_terminal_grace(
+                now=now, grace_seconds=terminal_stop_grace_seconds
+            )
+            if grace_action.kind == ActionKind.GRACEFUL_STOP:
                 if process.poll() is None:
                     kill_process_group(process)
                     try:
@@ -744,7 +629,7 @@ def stream_process_output(
                     last_file_count = file_count
                     last_activity = now
                     last_activity_detail = f"project file count changed to {file_count}"
-                session_hint = session_id if session_id else "-"
+                session_hint = event_state.session_id if event_state.session_id else "-"
                 detail = (
                     last_event_message if last_event_message else "waiting for output"
                 )
@@ -756,11 +641,16 @@ def stream_process_output(
                 last_heartbeat = now
 
             idle_seconds = now - last_activity
-            if idle_seconds >= no_progress_timeout_seconds:
+            idle_action = event_state.check_idle(
+                idle_seconds=idle_seconds,
+                no_progress_timeout_seconds=no_progress_timeout_seconds,
+                last_activity_detail=last_activity_detail,
+            )
+            if idle_action.kind == ActionKind.STALL:
+                assert idle_action.reason is not None
                 kill_process_group(process)
-                stall_reason = f"no progress for {format_duration(idle_seconds)}; last activity: {last_activity_detail}"
-                print_line(f"[{model_slug}] {stall_reason}")
-                return _make_result(False, True, stall_reason)
+                print_line(f"[{model_slug}] {idle_action.reason}")
+                return _make_result(False, True, idle_action.reason)
 
             if process.poll() is not None and not ready_streams:
                 if stdout_buffer:
