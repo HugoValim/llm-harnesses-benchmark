@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 import re
-import signal
 import socket
 import subprocess
 import time
@@ -15,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmark.util import load_json, save_json, utc_now
+from benchmark.util import load_json, save_json, terminate_process_group, utc_now
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -190,12 +189,7 @@ def run_command(
             ok = exit_code == 0
             note = None
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
+            terminate_process_group(process)
             exit_code = None
             ok = False
             note = f"timed out after {timeout_seconds}s"
@@ -461,14 +455,7 @@ def local_attempt(
                 "error": "server never became ready",
             }
     finally:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=10)
-        except Exception:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except Exception:
-                pass
+        terminate_process_group(process)
 
     result["server_stdout_excerpt"] = summarize_file(server_stdout, 25)
     result["server_stderr_excerpt"] = summarize_file(server_stderr, 25)
