@@ -38,11 +38,10 @@ python-benchmark/
 │   └── audit_prompt_template.txt          # LLM-powered audit rubric
 ├── scripts/
 │   ├── run_benchmark.py                   # unified entrypoint: --harness opencode|codex|claude
-│   ├── run_ollama_cloud_audit.sh          # audit phase only: scores every Ollama Cloud project
-│   ├── run_ollama_cloud_meta_analysis.sh  # meta phase only: cross-auditor synthesis
-│   ├── run_ollama_cloud_claude_benchmark.sh  # back-compat: Claude Ollama Cloud only
-│   ├── run_claude_code_benchmark.py       # deprecated (use run_benchmark.py --harness claude)
-│   ├── run_audit_benchmark.py             # entrypoint for LLM-powered code audits
+│   ├── run_ollama_cloud_benchmark.sh      # Ollama Cloud matrix + subscription baselines + audit + meta
+│   ├── run_audit.py                       # Role 1: per-project LLM audits (rubric reports)
+│   ├── run_meta_analysis.py               # Role 2: cross-auditor meta-analysis
+│   ├── run_audit_benchmark.py             # deprecated shim → run_audit.py + run_meta_analysis.py
 │   ├── analyze_results_runtime.py         # post-run validator (venv, manage.py, Docker, browser probe)
 │   ├── browser_probe.mjs                  # headless Chromium CDP helper
 │   └── benchmark/                         # harness package (backends, runner, config, report, claude_code_runner)
@@ -103,13 +102,16 @@ python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_mo
 
 # Claude Code variants (config/claude_code_models.json by default)
 python scripts/run_benchmark.py --harness claude
-python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
+python scripts/run_benchmark.py --harness claude --variant claude_sonnet_4_6
 
-# Audit the shared Ollama Cloud results set across all auditors (skips meta-analysis)
-./scripts/run_ollama_cloud_audit.sh
+# End-to-end Ollama Cloud builds + audit + meta-analysis (see script header for phases)
+./scripts/run_ollama_cloud_benchmark.sh
 
-# Cross-auditor meta-analysis only (assumes audits already ran)
-./scripts/run_ollama_cloud_meta_analysis.sh
+# Audit only: all `results/*/project` with chosen auditor slug from config/audit_models.json
+python scripts/run_audit.py --auditor kimi_k2_6_ollama_codex --target all -j 3
+
+# Meta-analysis only (reads audit-reports/; see scripts/run_meta_analysis.py --help)
+python scripts/run_meta_analysis.py
 
 # Force re-run (overwrites existing result.json)
 python scripts/run_benchmark.py --harness opencode --model kimi_k2_6 --force
@@ -129,7 +131,7 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 
 **Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Pair with the split audit/meta wrappers (`./scripts/run_ollama_cloud_audit.sh` + `./scripts/run_ollama_cloud_meta_analysis.sh`) for cross-harness comparison.
+**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Use **`./scripts/run_ollama_cloud_benchmark.sh`** for the full build + audit + meta pipeline, or run `run_benchmark.py` / `run_audit.py` / `run_meta_analysis.py` separately.
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
 
@@ -145,35 +147,35 @@ Result statuses: `completed`, `completed_with_errors`, `failed`, `timeout`, `not
 
 The auto-generated reports (`docs/report.md`, `docs/report.claude-code.md`) only give harness-level signal (status, cost, turns, tokens). The Tier 1/2/3 classification and the detailed 8-dimension rubric score must be done by reading the generated code.
 
-`scripts/run_audit_benchmark.py` automates this by dispatching an LLM auditor against the generated project:
+`scripts/run_audit.py` dispatches an LLM auditor against each generated project:
 
 ```bash
-# Audit all benchmark variants with the default auditor (Claude Opus 4.7)
-python scripts/run_audit_benchmark.py
+# Audit every discovered results/<harness>-<slug>/project with every auditor in config/audit_models.json
+python scripts/run_audit.py
 
-# Use Sonnet as the auditor instead
-python scripts/run_audit_benchmark.py --variant claude_sonnet_4_6
+# Use Sonnet as the auditor only (slug matches config/audit_models.json)
+python scripts/run_audit.py --auditor claude_sonnet_4_6
 
-# Use Kimi (via Ollama Cloud) as the auditor
-python scripts/run_audit_benchmark.py --variant kimi_k2_6_auditor
+# Kimi K2.6 via `ollama launch codex` (runner_type ollama in audit_models.json)
+python scripts/run_audit.py --auditor kimi_k2_6_ollama_codex
 
-# Audit only the Sonnet-built project
-python scripts/run_audit_benchmark.py --variant claude_sonnet_alone
+# Audit only the Sonnet subscription build (target = results dirname)
+python scripts/run_audit.py --auditor claude_opus_4_7 --target claude-claude_sonnet_4_6
 
-# Run two auditors in parallel against two targets
-python scripts/run_audit_benchmark.py \
-    --variant claude_opus_4_7 \
-    --variant kimi_k2_6_auditor \
-    --variant claude_sonnet_alone \
-    --variant kimi_k2_6_ollama_cloud \
+# Two auditors × two targets in parallel
+python scripts/run_audit.py \
+    --auditor claude_opus_4_7 \
+    --auditor kimi_k2_6_ollama_cloud \
+    --target claude-claude_sonnet_4_6 \
+    --target claude-kimi_k2_6_ollama_cloud \
     --jobs 4
 ```
 
 How it works:
-- `--variant` resolves slugs against `config/audit_models.json` first (auditors), then `config/claude_code_models.json` (targets).
-- The default auditor registry (`config/audit_models.json`) ships with Claude Opus 4.7, Sonnet 4.6, Haiku 4.5, and Kimi K2.6 (Ollama Cloud).
-- For Anthropic models, the script runs `claude -p` with Claude subscription auth.
-- For non-Anthropic models, it runs `ollama launch claude --model <tag>`.
+- `--auditor` selects variant slugs from `config/audit_models.json` (repeatable).
+- `--target` selects benchmark outputs by full dirname under `results/` (e.g. `claude-kimi_k2_6_ollama_cloud`) or pass `all` (default when omitted).
+- The default auditor registry (`config/audit_models.json`) includes Claude Opus 4.7, Sonnet 4.6, Kimi / DeepSeek over Ollama Cloud (Claude harness and Codex harness variants).
+- Dispatch follows each auditor's `runner_type` and optional `command_prefix`: native `claude` / `codex`, or `ollama launch codex` when `runner_type` is `ollama` or the prefix routes through Ollama Cloud.
 - The prompt is `prompts/audit_prompt_template.txt`, with `{project_dir}` and `{model_slug}` interpolated to point at the target's generated project.
 - Each (auditor, target) pair writes to `audit-reports/<auditor_slug>/<target_slug>/`:
   - `report.md` — the LLM's markdown audit report (dimension scores, tier, verification)
@@ -181,7 +183,7 @@ How it works:
   - `stream.ndjson` / `stderr.log` — raw subprocess output
 - After all runs, `audit-reports/comparison.md` aggregates side-by-side scores.
 
-**Cost warning:** Auditing a full project with Opus is expensive. Start with `--variant claude_sonnet_alone --variant claude_opus_4_7` (one target, one auditor) to estimate cost before running a full matrix.
+**Cost warning:** Auditing a full project with Opus is expensive. Start with `--auditor claude_sonnet_4_6 --target claude-claude_sonnet_4_6` (one target, one auditor) to estimate cost before running a full matrix.
 
 ## Runtime verification
 
@@ -239,8 +241,8 @@ Auto-generated `docs/report.md` only shows the harness-level signal (status + to
 You can also use the automated audit runner instead of manual reading:
 
 ```bash
-# Run the default auditor (Claude Opus 4.7) against the new model's output
-python scripts/run_audit_benchmark.py --variant <new-slug>
+# Run Claude Opus 4.7 (auditor slug in config/audit_models.json) against the new model's output dir
+python scripts/run_audit.py --auditor claude_opus_4_7 --target <harness>-<new-slug>
 ```
 
 ## Secrets handling

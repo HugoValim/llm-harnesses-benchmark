@@ -32,7 +32,7 @@ python scripts/run_benchmark.py --harness claude
 
 Run a specific Claude Code variant:
 ```bash
-python scripts/run_benchmark.py --harness claude --variant claude_sonnet_alone
+python scripts/run_benchmark.py --harness claude --variant claude_sonnet_4_6
 ```
 
 Run the per-target audits over the shared Ollama Cloud results set (skips meta-analysis):

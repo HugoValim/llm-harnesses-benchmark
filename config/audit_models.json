@@ -28,15 +28,7 @@
       "selection_reason": "Mid-tier auditor. Good code reading, faster turnaround. Will likely match Opus on obvious API calls but may miss edge cases."
     },
     {
-      "slug": "claude_haiku_4_5",
-      "label": "Claude Haiku 4.5 auditor",
-      "main_model": "claude-haiku-4-5",
-      "runner_type": "claude",
-      "subagent": null,
-      "selection_reason": "Cheapest, fastest. Risk of shallow reads on multi-file audits — better suited to a single-file pass or a first-pass screen."
-    },
-    {
-      "slug": "kimi_k2_6_auditor",
+      "slug": "kimi_k2_6_ollama_cloud",
       "label": "Kimi K2.6 (Ollama Cloud) auditor",
       "main_model": "kimi-k2.6:cloud",
       "runner_type": "claude",
@@ -44,7 +36,7 @@
       "selection_reason": "Alternative auditor via Ollama Cloud. Tests whether the same model that built the project can audit it (or a different model under the same harness)."
     },
     {
-      "slug": "deepseek_v4_pro_auditor",
+      "slug": "deepseek_v4_pro_ollama_cloud",
       "label": "DeepSeek V4 Pro (Ollama Cloud) auditor",
       "main_model": "deepseek-v4-pro:cloud",
       "runner_type": "claude",
@@ -52,14 +44,14 @@
       "selection_reason": "DeepSeek V4 Pro via Ollama Cloud + Claude Code harness. Cross-checks Anthropic auditors with a different model family while keeping the same runner."
     },
     {
-      "slug": "kimi_k2_6_ollama_codex_auditor",
+      "slug": "kimi_k2_6_ollama_codex",
       "label": "Kimi K2.6 (Ollama Cloud) auditor via Codex",
       "main_model": "kimi-k2.6:cloud",
       "runner_type": "ollama",
       "selection_reason": "Kimi K2.6 audit via `ollama launch codex` — cross-checks the claude-harness Kimi auditor with the codex harness for runner-attributable bias."
     },
     {
-      "slug": "deepseek_v4_pro_ollama_codex_auditor",
+      "slug": "deepseek_v4_pro_ollama_codex",
       "label": "DeepSeek V4 Pro (Ollama Cloud) auditor via Codex",
       "main_model": "deepseek-v4-pro:cloud",
       "runner_type": "ollama",

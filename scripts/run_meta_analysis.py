@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Auditor subdir(s) whose report.md files the meta-analyst reads. "
             "Repeatable. Accepts an absolute path or a name relative to the "
-            "results dir (e.g. 'kimi_k2_6_auditor'). Default: every auditor-"
+            "results dir (e.g. 'kimi_k2_6_ollama_codex'). Default: every auditor-"
             "shaped subdir auto-discovered under --results-dir."
         ),
     )
