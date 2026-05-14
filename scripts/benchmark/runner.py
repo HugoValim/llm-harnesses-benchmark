@@ -1083,7 +1083,7 @@ def run_codex_variant(
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
-        else results_dir / f"{harness}-{slug}"
+        else (results_dir / f"{harness}-{slug}").resolve()
     )
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir = result_dir
@@ -1327,7 +1327,7 @@ def run_model(
         skip_stale_kill: When True, do not invoke :func:`_kill_stale_opencode_processes`;
             use once per concurrent opencode batch (see ``run_benchmark``).
     """
-    result_dir = bench.results_dir / f"{bench.harness}-{model['slug']}"
+    result_dir = (bench.results_dir / f"{bench.harness}-{model['slug']}").resolve()
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "opencode-output.ndjson"

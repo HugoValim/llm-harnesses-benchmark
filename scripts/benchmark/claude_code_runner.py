@@ -356,7 +356,7 @@ def run_variant(
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
-        else results_dir / f"{harness}-{slug}"
+        else (results_dir / f"{harness}-{slug}").resolve()
     )
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"

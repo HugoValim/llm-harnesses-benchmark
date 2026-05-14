@@ -72,6 +72,33 @@ def _default_report_path(harness: str) -> Path:
     return REPO_ROOT / "docs" / "report.md"
 
 
+def _resolve_repo_path(path_value: str) -> Path:
+    path = Path(path_value)
+    if path.is_absolute():
+        return path.resolve()
+    return (REPO_ROOT / path).resolve()
+
+
+def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
+    """Resolve CLI filesystem paths before runner dispatch.
+
+    Example:
+        ``--results-dir results`` becomes ``<repo>/results``.
+    """
+    path_fields = (
+        "config",
+        "followup_prompt",
+        "ollama_warmup_results",
+        "opencode_config",
+        "prompt",
+        "report",
+        "results_dir",
+    )
+    for field in path_fields:
+        setattr(args, field, str(_resolve_repo_path(getattr(args, field))))
+    return args
+
+
 def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
     for m in models:
         cp = m.get("command_prefix") or []
@@ -520,6 +547,8 @@ def main() -> int:
         args.config = str(_default_config_path(harness))
     if args.report is None:
         args.report = str(_default_report_path(harness))
+
+    args = normalize_benchmark_paths(args)
 
     if harness in {"opencode", "codex", "ollama"}:
         return _run_model_harness(args, harness)
