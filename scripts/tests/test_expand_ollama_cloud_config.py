@@ -44,6 +44,27 @@ class TestExpandOllamaCloudConfig(unittest.TestCase):
         self.assertEqual(opencode["models"][0]["runner_type"], "opencode")
         self.assertTrue(opencode["models"][0]["label"].endswith(" via OpenCode"))
 
+    def test_model_entry_validation_reports_missing_required_key(self) -> None:
+        cfg = {
+            "ollama_cloud": True,
+            "runner_configs": {
+                "codex": {"command_prefix": ["ollama", "launch", "codex"]}
+            },
+            "models": [
+                {
+                    "slug": "missing_id",
+                    "label": "Missing ID",
+                    "selection_reason": "Regression fixture.",
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"ollama_cloud models\[0\] missing required string key 'id'.*missing_id",
+        ):
+            expand_ollama_cloud_config(cfg, "codex")
+
 
 if __name__ == "__main__":
     unittest.main()

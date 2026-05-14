@@ -46,6 +46,125 @@ TERMINAL_STATUSES = {"completed", "completed_with_errors", "failed", "timeout"}
 _OLLAMA_CLOUD_EXPAND_HARNESSES = frozenset({"claude", "codex", "opencode", "ollama"})
 
 
+def _validate_ollama_cloud_harness(harness: str) -> None:
+    if harness in _OLLAMA_CLOUD_EXPAND_HARNESSES:
+        return
+    raise ValueError(
+        "expand_ollama_cloud_config: harness must be one of "
+        f"{sorted(_OLLAMA_CLOUD_EXPAND_HARNESSES)}, got {harness!r}"
+    )
+
+
+def _require_ollama_cloud_object(config: dict[str, Any], key: str) -> dict[str, Any]:
+    value = config.get(key)
+    if isinstance(value, dict):
+        return value
+    raise ValueError(
+        f"ollama_cloud config expects object {key}, got {type(value).__name__}"
+    )
+
+
+def _require_ollama_cloud_models(config: dict[str, Any]) -> list[dict[str, Any]]:
+    value = config.get("models")
+    if not isinstance(value, list):
+        raise ValueError(
+            "ollama_cloud config expects array models, "
+            f"got {type(value).__name__}"
+        )
+    return [
+        _validate_ollama_cloud_model_entry(i, entry)
+        for i, entry in enumerate(value)
+    ]
+
+
+def _require_ollama_cloud_string(
+    entry: dict[str, Any], index: int, key: str
+) -> str:
+    value = entry.get(key)
+    if isinstance(value, str) and value:
+        return value
+    raise ValueError(
+        f"ollama_cloud models[{index}] missing required string key {key!r}; "
+        f"entry={entry!r}"
+    )
+
+
+def _validate_ollama_cloud_model_entry(index: int, entry: Any) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        raise ValueError(
+            f"ollama_cloud models[{index}] must be object, "
+            f"got {type(entry).__name__}: {entry!r}"
+        )
+    _require_ollama_cloud_string(entry, index, "slug")
+    _require_ollama_cloud_string(entry, index, "id")
+    _require_ollama_cloud_string(entry, index, "label")
+    return entry
+
+
+def _ollama_cloud_harness_key(harness: str) -> str:
+    return "codex" if harness == "ollama" else harness
+
+
+def _validate_ollama_cloud_runner_config(
+    runner_configs: dict[str, Any], harness: str
+) -> tuple[dict[str, Any], list[Any]]:
+    harness_key = _ollama_cloud_harness_key(harness)
+    rc = runner_configs.get(harness_key)
+    if not isinstance(rc, dict):
+        raise ValueError(
+            f"ollama_cloud runner_configs missing key {harness_key!r} "
+            f"(requested harness={harness!r})."
+        )
+    command_prefix = rc.get("command_prefix")
+    if isinstance(command_prefix, list) and command_prefix:
+        return rc, command_prefix
+    raise ValueError(
+        f"runner_configs[{harness_key!r}] needs non-empty list command_prefix, "
+        f"got {command_prefix!r}"
+    )
+
+
+def _expand_ollama_cloud_claude_config(
+    runner: dict[str, Any],
+    command_prefix: list[Any],
+    shared_models: list[dict[str, Any]],
+) -> dict[str, Any]:
+    variants = [
+        {
+            "slug": entry["slug"],
+            "label": f"{entry['label']} via Claude Code",
+            "main_model": entry["id"],
+            "subagent": None,
+            "command_prefix": list(command_prefix),
+            "selection_reason": str(entry.get("selection_reason", "")),
+        }
+        for entry in shared_models
+    ]
+    return {"runner": runner, "variants": variants}
+
+
+def _expand_ollama_cloud_models_config(
+    runner: dict[str, Any],
+    command_prefix: list[Any],
+    shared_models: list[dict[str, Any]],
+    harness: str,
+) -> dict[str, Any]:
+    via = "OpenCode" if harness == "opencode" else "Codex"
+    models_out = [
+        {
+            "slug": entry["slug"],
+            "id": entry["id"],
+            "label": f"{entry['label']} via {via}",
+            "provider": "ollama_cloud",
+            "runner_type": harness,
+            "command_prefix": list(command_prefix),
+            "selection_reason": str(entry.get("selection_reason", "")),
+        }
+        for entry in shared_models
+    ]
+    return {"runner": runner, "models": models_out}
+
+
 def expand_ollama_cloud_config(
     config: dict[str, Any], harness: str
 ) -> dict[str, Any]:
@@ -56,87 +175,18 @@ def expand_ollama_cloud_config(
     """
     if not config.get("ollama_cloud"):
         return config
-    if harness not in _OLLAMA_CLOUD_EXPAND_HARNESSES:
-        raise ValueError(
-            "expand_ollama_cloud_config: harness must be one of "
-            f"{sorted(_OLLAMA_CLOUD_EXPAND_HARNESSES)}, got {harness!r}"
-        )
-    runner_configs = config.get("runner_configs")
-    shared_models = config.get("models")
-    if not isinstance(runner_configs, dict):
-        raise ValueError(
-            "ollama_cloud config expects object runner_configs, "
-            f"got {type(runner_configs).__name__}"
-        )
-    if not isinstance(shared_models, list):
-        raise ValueError(
-            "ollama_cloud config expects array models, "
-            f"got {type(shared_models).__name__}"
-        )
-
-    harness_key = "codex" if harness == "ollama" else harness
-    rc = runner_configs.get(harness_key)
-    if not isinstance(rc, dict):
-        raise ValueError(
-            f"ollama_cloud runner_configs missing key {harness_key!r} "
-            f"(requested harness={harness!r})."
-        )
-
-    command_prefix = rc.get("command_prefix")
-    if not isinstance(command_prefix, list) or not command_prefix:
-        raise ValueError(
-            f"runner_configs[{harness_key!r}] needs non-empty list command_prefix, "
-            f"got {command_prefix!r}"
-        )
-
+    _validate_ollama_cloud_harness(harness)
+    runner_configs = _require_ollama_cloud_object(config, "runner_configs")
+    shared_models = _require_ollama_cloud_models(config)
+    rc, command_prefix = _validate_ollama_cloud_runner_config(runner_configs, harness)
     runner = {k: v for k, v in rc.items() if k != "command_prefix"}
-
     if harness == "claude":
-        variants: list[dict[str, Any]] = []
-        for entry in shared_models:
-            if not isinstance(entry, dict):
-                raise ValueError(
-                    "ollama_cloud models entries must be objects, "
-                    f"got {type(entry).__name__}"
-                )
-            slug = entry["slug"]
-            base_label = entry["label"]
-            model_id = entry["id"]
-            variants.append(
-                {
-                    "slug": slug,
-                    "label": f"{base_label} via Claude Code",
-                    "main_model": model_id,
-                    "subagent": None,
-                    "command_prefix": list(command_prefix),
-                    "selection_reason": str(entry.get("selection_reason", "")),
-                }
-            )
-        return {"runner": runner, "variants": variants}
-
-    runner_type = harness
-    via = "OpenCode" if harness == "opencode" else "Codex"
-    models_out: list[dict[str, Any]] = []
-    for entry in shared_models:
-        if not isinstance(entry, dict):
-            raise ValueError(
-                "ollama_cloud models entries must be objects, "
-                f"got {type(entry).__name__}"
-            )
-        slug = entry["slug"]
-        base_label = entry["label"]
-        models_out.append(
-            {
-                "slug": slug,
-                "id": entry["id"],
-                "label": f"{base_label} via {via}",
-                "provider": "ollama_cloud",
-                "runner_type": runner_type,
-                "command_prefix": list(command_prefix),
-                "selection_reason": str(entry.get("selection_reason", "")),
-            }
+        return _expand_ollama_cloud_claude_config(
+            runner, command_prefix, shared_models
         )
-    return {"runner": runner, "models": models_out}
+    return _expand_ollama_cloud_models_config(
+        runner, command_prefix, shared_models, harness
+    )
 
 
 @dataclass
