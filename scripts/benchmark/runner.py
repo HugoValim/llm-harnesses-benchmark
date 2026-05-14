@@ -30,6 +30,26 @@ from benchmark.loop_detector import ToolCallLoopDetector
 _SKIP_CONFIG_LOCK = threading.Lock()
 
 _CODEX_RUNNERS: frozenset[str] = frozenset({"codex", "ollama"})
+_ROOT_WORKSPACE_ESCAPE_MARKERS: frozenset[str] = frozenset(
+    {
+        "manage.py",
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "bun.lock",
+        "bun.lockb",
+        "requirements.txt",
+        "pyproject.toml",
+        "chat",
+        "templates",
+    }
+)
 from benchmark.util import (
     count_files,
     format_duration,
@@ -49,6 +69,41 @@ def _opencode_args_with_dir(args: list[str], project_dir: Path) -> list[str]:
     command_args = list(args)
     command_args[1:1] = ["--dir", str(project_dir.resolve())]
     return command_args
+
+
+def snapshot_root_generated_markers(root_dir: Path, results_dir: Path) -> frozenset[str]:
+    """Return root-level generated app markers, excluding the benchmark results tree."""
+    if not root_dir.exists():
+        return frozenset()
+    results_name = results_dir.resolve().name
+    return frozenset(
+        child.name
+        for child in root_dir.iterdir()
+        if child.name != results_name and child.name in _ROOT_WORKSPACE_ESCAPE_MARKERS
+    )
+
+
+def detect_workspace_escape(
+    payload: dict[str, Any],
+    *,
+    root_dir: Path,
+    results_dir: Path,
+    project_dir: Path,
+    before_markers: frozenset[str],
+) -> dict[str, Any]:
+    """Mark phase payload failed when new root markers appear and project output is incomplete."""
+    project_summary = payload.get("project_summary")
+    if not isinstance(project_summary, dict):
+        project_summary = summarize_project(project_dir)
+    current_markers = snapshot_root_generated_markers(root_dir, results_dir)
+    unexpected_paths = sorted(current_markers - before_markers)
+    if not unexpected_paths or project_summary.get("works_as_intended") == "yes":
+        return payload
+    checked = dict(payload)
+    checked["status"] = "failed"
+    checked["workspace_escape_detected"] = True
+    checked["workspace_escape_paths"] = unexpected_paths
+    return checked
 
 
 @dataclass
@@ -776,6 +831,8 @@ def run_opencode_phase(
     phase_name: str = "phase1",
     override_min_preview_tps: float | None = ...,  # sentinel
 ) -> dict[str, Any]:
+    root_dir = bench.results_dir.resolve().parent
+    before_markers = snapshot_root_generated_markers(root_dir, bench.results_dir)
     prompt_path.write_text(prompt)
     _verify_opencode_config(bench.opencode_config_path, model, model_slug, project_dir)
     command = build_opencode_command(
@@ -888,6 +945,13 @@ def run_opencode_phase(
             else None
         ),
     }
+    payload = detect_workspace_escape(
+        payload,
+        root_dir=root_dir,
+        results_dir=bench.results_dir,
+        project_dir=project_dir,
+        before_markers=before_markers,
+    )
     if result_path is not None:
         save_json(result_path, payload)
     return payload
@@ -910,6 +974,8 @@ def run_codex_phase(
     command_prefix: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run a single benchmark phase using the Codex CLI."""
+    root_dir = bench.results_dir.resolve().parent
+    before_markers = snapshot_root_generated_markers(root_dir, bench.results_dir)
     prompt_path.write_text(prompt)
     command = build_codex_command(
         model["id"],
@@ -1026,6 +1092,13 @@ def run_codex_phase(
             else None
         ),
     }
+    payload = detect_workspace_escape(
+        payload,
+        root_dir=root_dir,
+        results_dir=bench.results_dir,
+        project_dir=project_dir,
+        before_markers=before_markers,
+    )
     if result_path is not None:
         save_json(result_path, payload)
     return payload
