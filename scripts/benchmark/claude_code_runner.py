@@ -23,6 +23,7 @@ from benchmark.util import (
     save_json,
     shorten_text,
     utc_now,
+    validate_benchmark_workspace,
     write_project_context,
 )
 
@@ -366,6 +367,7 @@ def run_variant(
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir.mkdir(parents=True, exist_ok=True)
     init_project_git(project_dir)
+    validate_benchmark_workspace(results_dir, result_dir, project_dir)
     write_project_context(project_dir)
 
     if not force and result_path.exists():
