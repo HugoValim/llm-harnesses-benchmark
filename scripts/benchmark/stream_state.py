@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Any
 
 from benchmark.loop_detector import ToolCallLoopDetector
+from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit
 
 
 class ActionKind(Enum):
@@ -220,8 +221,12 @@ class EventStreamState:
         )
 
     def _handle_error_event(self, event: dict[str, Any]) -> StreamAction:
-        self._consecutive_error_events += 1
         error_detail = _extract_error_detail(event)
+        if contains_usage_limit(error_detail):
+            self._last_description = f"error: {_shorten(error_detail)}"
+            return StreamAction(kind=ActionKind.STALL, reason=USAGE_LIMIT_REACHED)
+
+        self._consecutive_error_events += 1
         description = f"error: {_shorten(error_detail)}"
         self._last_description = description
 

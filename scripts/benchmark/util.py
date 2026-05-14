@@ -13,6 +13,31 @@ from pathlib import Path
 from typing import Any
 
 
+# Canonical stall_reason / result status when a provider signals quota or
+# rate limits (Claude subscription, OpenRouter, Ollama Cloud, …).
+USAGE_LIMIT_REACHED = "usage_limit_reached"
+
+_USAGE_LIMIT_PHRASES = (
+    "usage limit",
+    "rate limit",
+    "too many requests",
+    "overloaded",
+)
+
+
+def contains_usage_limit(text: str) -> bool:
+    """Return True if ``text`` looks like a provider quota / throttle message.
+
+    Example:
+        >>> contains_usage_limit("Error: rate limit exceeded")
+        True
+        >>> contains_usage_limit("syntax error near foo")
+        False
+    """
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _USAGE_LIMIT_PHRASES)
+
+
 # Directories that contain vendored / generated artifacts rather than
 # project source. Excluded from file counting and structural scaffold
 # detection so phase-2 `.venv` / `node_modules` creation doesn't drown

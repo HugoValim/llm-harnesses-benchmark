@@ -9,6 +9,7 @@ from typing import Any
 
 from benchmark.backends import LocalModelBackend
 from benchmark.util import (
+    USAGE_LIMIT_REACHED,
     clone_json,
     count_files,
     count_files_matching,
@@ -41,7 +42,13 @@ OPENCODE_YOLO_PERMISSION = {
     "websearch": {"*": "allow"},
 }
 
-TERMINAL_STATUSES = {"completed", "completed_with_errors", "failed", "timeout"}
+TERMINAL_STATUSES = {
+    "completed",
+    "completed_with_errors",
+    "failed",
+    "timeout",
+    USAGE_LIMIT_REACHED,
+}
 
 _OLLAMA_CLOUD_EXPAND_HARNESSES = frozenset({"claude", "codex", "opencode", "ollama"})
 

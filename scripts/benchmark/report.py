@@ -7,6 +7,7 @@ from typing import Any
 
 from benchmark.config import summarize_project
 from benchmark.util import (
+    USAGE_LIMIT_REACHED,
     format_value,
     load_json,
     model_matches_harness,
@@ -22,6 +23,8 @@ def _rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> st
     ``run_opencode_phase`` so a ``--report-only`` rebuild reflects updated
     scaffold detection without re-running the benchmark.
     """
+    if row.get("stalled") and row.get("stall_reason") == USAGE_LIMIT_REACHED:
+        return USAGE_LIMIT_REACHED
     if row.get("timed_out"):
         return "timeout"
     if row.get("stalled"):
@@ -150,6 +153,7 @@ def build_report(
         "completed_with_errors",
         "failed",
         "timeout",
+        "usage_limit_reached",
         "not_run",
     ):
         lines.append(f"- `{status}`: {counts.get(status, 0)}")

@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.util import (
+    USAGE_LIMIT_REACHED,
+    contains_usage_limit,
     count_files,
     format_duration,
     format_value,
@@ -35,6 +37,7 @@ class ClaudeCodeStreamResult:
     timed_out: bool
     stalled: bool
     stall_reason: str | None
+    usage_limit_reached: bool = False
     final_result_event: dict[str, Any] | None = None
     tool_use_counts: Counter = field(default_factory=Counter)
     subagent_invocations: list[dict[str, Any]] = field(default_factory=list)
@@ -172,6 +175,7 @@ def stream_process(
             timed_out=timed_out,
             stalled=stalled,
             stall_reason=stall_reason,
+            usage_limit_reached=(stall_reason == USAGE_LIMIT_REACHED),
             final_result_event=final_result_event,
             tool_use_counts=tool_use_counts,
             subagent_invocations=subagent_invocations,
@@ -247,6 +251,9 @@ def stream_process(
                         etype == "system" and event.get("subtype") == "error"
                     )
                     if is_error:
+                        if contains_usage_limit(json.dumps(event)):
+                            _kill_group(process)
+                            return _build(False, True, USAGE_LIMIT_REACHED)
                         consecutive_error_events += 1
                         if consecutive_error_events >= error_loop_threshold:
                             _kill_group(process)
@@ -364,6 +371,7 @@ def run_variant(
                 "completed_with_errors",
                 "failed",
                 "timeout",
+                USAGE_LIMIT_REACHED,
             ):
                 print_line(
                     f"[{slug}] cached result status={cached['status']}; skipping (use --force to rerun)"
@@ -468,7 +476,15 @@ def run_variant(
     stop_reason = final.get("stop_reason")
     num_turns = final.get("num_turns", result.assistant_turns)
 
-    if result.timed_out:
+    usage_limited = result.usage_limit_reached or (
+        bool(final.get("is_error")) and contains_usage_limit(json.dumps(final))
+    )
+    if usage_limited:
+        status = USAGE_LIMIT_REACHED
+        print_line(
+            f"[{slug}] usage limit reached — aborting remaining Claude variants"
+        )
+    elif result.timed_out:
         status = "timeout"
     elif result.stalled:
         status = "failed"

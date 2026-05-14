@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -26,10 +27,24 @@ from benchmark.config import (  # noqa: E402
 )
 from benchmark.report import build_report, load_results  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
-from benchmark.util import load_json, model_matches_harness, print_line  # noqa: E402
+from benchmark.util import USAGE_LIMIT_REACHED, load_json, model_matches_harness, print_line  # noqa: E402
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
 HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "ollama"})
+
+
+def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
+    """True when a benchmark result indicates provider quota / throttle exhaustion."""
+    if not payload:
+        return False
+    if payload.get("status") == USAGE_LIMIT_REACHED:
+        return True
+    phases = payload.get("phases")
+    if isinstance(phases, list):
+        for ph in phases:
+            if isinstance(ph, dict) and ph.get("status") == USAGE_LIMIT_REACHED:
+                return True
+    return False
 
 
 def _cleanup_backends(
@@ -360,6 +375,8 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             followup_prompt=followup_prompt,
         )
 
+        abort_flag = threading.Event()
+
         total_models = len(selected_models)
         jobs = args.jobs if args.jobs > 0 else total_models
         jobs = max(1, min(jobs, total_models)) if total_models else 1
@@ -381,39 +398,59 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         )
 
         for index, model in local_jobs:
-            run_model(model, bench, index, total_models)
+            result_payload = run_model(model, bench, index, total_models)
+            if _phase_hit_usage_limit(result_payload):
+                abort_flag.set()
+                break
 
         cloud_workers = max(1, min(jobs, len(cloud_jobs))) if cloud_jobs else 1
 
         def _run_cloud_item(item: tuple[int, dict]) -> tuple[str, dict | None, str | None]:
             index, model = item
+            if abort_flag.is_set():
+                print_line(f"[{model['slug']}] skipped — usage limit active")
+                return model["slug"], None, None
             try:
                 payload = run_model(
                     model, bench, index, total_models, skip_stale_kill=True
                 )
+                if _phase_hit_usage_limit(payload):
+                    abort_flag.set()
                 return model["slug"], payload, None
             except Exception:
                 return model["slug"], None, traceback.format_exc()
 
-        if cloud_workers == 1 or len(cloud_jobs) <= 1:
-            for index, model in cloud_jobs:
-                run_model(model, bench, index, total_models)
-        else:
-            if harness == "opencode":
-                _kill_stale_opencode_processes()
-            with ThreadPoolExecutor(max_workers=cloud_workers) as pool:
-                futures = {
-                    pool.submit(_run_cloud_item, item): item[1]["slug"]
-                    for item in cloud_jobs
-                }
-                for fut in as_completed(futures):
-                    slug, _, err = fut.result()
-                    if err:
-                        print_line(f"[{slug}] ERROR:\n{err}")
-                    else:
-                        print_line(f"[{slug}] worker done")
+        if not abort_flag.is_set():
+            if cloud_workers == 1 or len(cloud_jobs) <= 1:
+                for index, model in cloud_jobs:
+                    result_payload = run_model(
+                        model, bench, index, total_models
+                    )
+                    if _phase_hit_usage_limit(result_payload):
+                        abort_flag.set()
+                        break
+            else:
+                if harness == "opencode":
+                    _kill_stale_opencode_processes()
+                with ThreadPoolExecutor(max_workers=cloud_workers) as pool:
+                    futures = {
+                        pool.submit(_run_cloud_item, item): item[1]["slug"]
+                        for item in cloud_jobs
+                    }
+                    for fut in as_completed(futures):
+                        slug, payload, err = fut.result()
+                        if err:
+                            print_line(f"[{slug}] ERROR:\n{err}")
+                        elif payload is not None:
+                            print_line(f"[{slug}] worker done")
 
         _cleanup_backends(backend, args.local_api_base)
+
+        if abort_flag.is_set():
+            print_line(
+                "Aborting: usage limit reached. Retry after limit resets."
+            )
+            return 1
 
     results = load_results(
         config, results_dir, warmup_payload, harness=harness
@@ -501,7 +538,12 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             f"timeout={timeout_seconds}s, isolate_home={isolate_home}"
         )
 
+        abort_flag = threading.Event()
+
         def _run(v: dict) -> tuple[str, dict | None, str | None]:
+            if abort_flag.is_set():
+                print_line(f"[{v['slug']}] skipped — usage limit active")
+                return v["slug"], None, None
             try:
                 payload = run_variant(
                     variant=v,
@@ -514,6 +556,8 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
                     isolate_home=isolate_home,
                     harness="claude",
                 )
+                if _phase_hit_usage_limit(payload):
+                    abort_flag.set()
                 return v["slug"], payload, None
             except Exception:
                 return v["slug"], None, traceback.format_exc()
@@ -527,11 +571,17 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             with ThreadPoolExecutor(max_workers=jobs) as pool:
                 futures = {pool.submit(_run, v): v["slug"] for v in variants}
                 for fut in as_completed(futures):
-                    slug, _, err = fut.result()
+                    slug, payload, err = fut.result()
                     if err:
                         print_line(f"[{slug}] ERROR:\n{err}")
-                    else:
+                    elif payload is not None:
                         print_line(f"[{slug}] worker done")
+
+        if abort_flag.is_set():
+            print_line(
+                "Aborting: usage limit reached. Retry after limit resets."
+            )
+            return 1
 
     all_results = load_variant_results(config, results_dir, harness="claude")
     report_path.write_text(build_variant_report(config, all_results))

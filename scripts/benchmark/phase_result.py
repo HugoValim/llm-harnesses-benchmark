@@ -4,25 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchmark.util import prompt_sha256
+from benchmark.util import USAGE_LIMIT_REACHED, prompt_sha256
 
 
 def derive_phase_status(
     *,
     timed_out: bool,
     stalled: bool,
+    stall_reason: str | None = None,
     finish_reason: str | None,
     exit_code: int | None,
     works_as_intended: str,
 ) -> str:
     """Return the canonical status string for a completed benchmark phase.
 
-    Priority: timeout > stalled > terminal-stop outcome > exit-code outcome.
+    Priority: usage-limit stall > timeout > other stalled > terminal-stop > exit-code.
 
     >>> derive_phase_status(timed_out=False, stalled=False,
     ...     finish_reason="stop", exit_code=0, works_as_intended="yes")
     'completed'
     """
+    if stalled and stall_reason == USAGE_LIMIT_REACHED:
+        return USAGE_LIMIT_REACHED
     if timed_out:
         return "timeout"
     if stalled:
@@ -77,6 +80,7 @@ def build_phase_payload(
     status = derive_phase_status(
         timed_out=timed_out,
         stalled=stalled,
+        stall_reason=stall_reason,
         finish_reason=finish_reason,
         exit_code=exit_code,
         works_as_intended=works_as_intended,

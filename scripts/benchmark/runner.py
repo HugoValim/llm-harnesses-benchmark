@@ -52,6 +52,7 @@ _ROOT_WORKSPACE_ESCAPE_MARKERS: frozenset[str] = frozenset(
     }
 )
 from benchmark.util import (
+    USAGE_LIMIT_REACHED,
     count_files,
     format_duration,
     format_value,
@@ -1033,6 +1034,7 @@ def run_codex_variant(
                 "completed_with_errors",
                 "failed",
                 "timeout",
+                USAGE_LIMIT_REACHED,
             ):
                 print_line(
                     f"[{slug}] cached result status={cached['status']}; "
