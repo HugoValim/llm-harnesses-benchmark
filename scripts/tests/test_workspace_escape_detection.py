@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -45,6 +46,50 @@ class TestWorkspaceEscapeDetection(unittest.TestCase):
             self.assertTrue(checked["workspace_escape_detected"])
             self.assertEqual(checked["workspace_escape_paths"], ["manage.py"])
             self.assertTrue((root_dir / "manage.py").exists())
+
+    def test_opencode_session_root_directory_marks_empty_project_failed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root_dir = Path(tmp)
+            results_dir = root_dir / "results"
+            project_dir = results_dir / "opencode-qwen3_5_ollama_cloud" / "project"
+            project_dir.mkdir(parents=True)
+            session_export_path = project_dir.parent / "session-export.json"
+            session_export_path.write_text(
+                json.dumps(
+                    {
+                        "info": {
+                            "id": "ses_qwen_regression",
+                            "directory": str(root_dir),
+                            "model": {
+                                "id": "qwen3.5:cloud",
+                                "providerID": "ollama",
+                            },
+                        },
+                        "messages": [],
+                    }
+                )
+            )
+
+            phase_payload: dict[str, Any] = {
+                "status": "completed",
+                "paths": {"project_dir": str(project_dir)},
+                "project_summary": summarize_project(project_dir),
+            }
+            checked = detect_workspace_escape(
+                phase_payload,
+                root_dir=root_dir,
+                results_dir=results_dir,
+                project_dir=project_dir,
+                before_markers=frozenset(),
+                session_export_path=session_export_path,
+            )
+
+            self.assertEqual(checked["status"], "failed")
+            self.assertTrue(checked["workspace_escape_detected"])
+            self.assertEqual(
+                checked["workspace_escape_session_directory"], str(root_dir)
+            )
+            self.assertEqual(checked["paths"]["project_dir"], str(project_dir))
 
 
 if __name__ == "__main__":

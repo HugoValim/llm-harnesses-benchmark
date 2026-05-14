@@ -83,6 +83,35 @@ def snapshot_root_generated_markers(root_dir: Path, results_dir: Path) -> frozen
     )
 
 
+def _read_opencode_session_directory(session_export_path: Path | None) -> Path | None:
+    if session_export_path is None or not session_export_path.exists():
+        return None
+    try:
+        session_export = json.loads(session_export_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(session_export, dict):
+        return None
+    info = session_export.get("info")
+    if not isinstance(info, dict):
+        return None
+    directory = info.get("directory")
+    if not isinstance(directory, str) or not directory:
+        return None
+    return Path(directory).resolve()
+
+
+def _escaped_session_directory(
+    session_export_path: Path | None, project_dir: Path
+) -> Path | None:
+    session_directory = _read_opencode_session_directory(session_export_path)
+    if session_directory is None:
+        return None
+    if session_directory == project_dir.resolve():
+        return None
+    return session_directory
+
+
 def detect_workspace_escape(
     payload: dict[str, Any],
     *,
@@ -90,6 +119,7 @@ def detect_workspace_escape(
     results_dir: Path,
     project_dir: Path,
     before_markers: frozenset[str],
+    session_export_path: Path | None = None,
 ) -> dict[str, Any]:
     """Mark phase payload failed when new root markers appear and project output is incomplete."""
     project_summary = payload.get("project_summary")
@@ -97,12 +127,17 @@ def detect_workspace_escape(
         project_summary = summarize_project(project_dir)
     current_markers = snapshot_root_generated_markers(root_dir, results_dir)
     unexpected_paths = sorted(current_markers - before_markers)
-    if not unexpected_paths or project_summary.get("works_as_intended") == "yes":
+    session_directory = _escaped_session_directory(session_export_path, project_dir)
+    if session_directory is None and (
+        not unexpected_paths or project_summary.get("works_as_intended") == "yes"
+    ):
         return payload
     checked = dict(payload)
     checked["status"] = "failed"
     checked["workspace_escape_detected"] = True
     checked["workspace_escape_paths"] = unexpected_paths
+    if session_directory is not None:
+        checked["workspace_escape_session_directory"] = str(session_directory)
     return checked
 
 
@@ -1640,6 +1675,15 @@ def run_model(
         "session_exported": exported_session is not None,
         "phases": phases,
     }
+    root_dir = bench.results_dir.resolve().parent
+    payload = detect_workspace_escape(
+        payload,
+        root_dir=root_dir,
+        results_dir=bench.results_dir,
+        project_dir=project_dir,
+        before_markers=snapshot_root_generated_markers(root_dir, bench.results_dir),
+        session_export_path=exported_session,
+    )
     save_json(result_path, payload)
     print_line(
         f"[{index}/{total}] finished {model['slug']} status={payload['status']} "
