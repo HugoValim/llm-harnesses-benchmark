@@ -26,6 +26,7 @@ from benchmark.config import (
     summarize_project,
 )
 from benchmark.loop_detector import ToolCallLoopDetector
+from benchmark.phase_result import build_phase_payload
 
 _SKIP_CONFIG_LOCK = threading.Lock()
 
@@ -905,36 +906,18 @@ def run_opencode_phase(
     metrics = extract_metrics(events)
     project_summary = summarize_project(project_dir)
     elapsed_seconds = round(wall_end - wall_start, 2)
-    total_tokens = metrics["tokens"].get("total")
-    terminal_stop_completed = metrics["finish_reason"] == "stop"
-
-    if result.timed_out:
-        status = "timeout"
-    elif result.stalled:
-        status = "failed"
-    elif terminal_stop_completed and project_summary["works_as_intended"] == "yes":
-        status = "completed"
-    elif terminal_stop_completed:
-        status = "completed_with_errors"
-    elif process.returncode == 0 and project_summary["works_as_intended"] == "yes":
-        status = "completed"
-    elif process.returncode == 0:
-        status = "completed_with_errors"
-    else:
-        status = "failed"
-
-    payload = {
-        "phase": phase_name,
-        "assistant_output_excerpt": metrics["assistant_output"][:4000],
-        "command": command,
-        "continued_from_session": continue_session_id,
-        "elapsed_seconds": elapsed_seconds,
-        "ended_at": utc_now(),
-        "exit_code": process.returncode,
-        "finish_reason": metrics["finish_reason"],
-        "model": model,
-        "opencode_session_id": metrics["session_id"],
-        "paths": {
+    payload = build_phase_payload(
+        phase_name=phase_name,
+        assistant_output=metrics["assistant_output"],
+        command=command,
+        continued_from_session=continue_session_id,
+        elapsed_seconds=elapsed_seconds,
+        ended_at=utc_now(),
+        exit_code=process.returncode,
+        finish_reason=metrics["finish_reason"],
+        model=model,
+        session_id=metrics["session_id"],
+        paths={
             "opencode_config": str(bench.opencode_config_path)
             if bench.opencode_config_path is not None
             else None,
@@ -943,28 +926,19 @@ def run_opencode_phase(
             "stderr": str(stderr_path),
             "stdout": str(stdout_path),
         },
-        "project_summary": project_summary,
-        "prompt_sha256": prompt_sha256(prompt),
-        "started_at": started_at,
-        "status": status,
-        "stderr_excerpt": result.stderr[:4000],
-        "stalled": result.stalled,
-        "stall_reason": result.stall_reason,
-        "timed_out": result.timed_out,
-        "timeout_seconds": bench.timeout_seconds,
-        "no_progress_timeout_seconds": bench.no_progress_timeout_seconds,
-        "tokens": metrics["tokens"],
-        "preview_output_tokens_per_second": result.latest_preview_output_tps,
-        "preview_output_tokens_per_second_average": result.preview_average_output_tps,
-        "tokens_per_second": round(total_tokens / elapsed_seconds, 2)
-        if total_tokens and elapsed_seconds
-        else None,
-        "output_tokens_per_second": (
-            round(metrics["tokens"].get("output", 0) / elapsed_seconds, 2)
-            if metrics["tokens"].get("output") and elapsed_seconds
-            else None
-        ),
-    }
+        project_summary=project_summary,
+        prompt=prompt,
+        started_at=started_at,
+        stderr=result.stderr,
+        stalled=result.stalled,
+        stall_reason=result.stall_reason,
+        timed_out=result.timed_out,
+        timeout_seconds=bench.timeout_seconds,
+        no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
+        tokens=metrics["tokens"],
+        latest_preview_output_tps=result.latest_preview_output_tps,
+        preview_average_output_tps=result.preview_average_output_tps,
+    )
     payload = detect_workspace_escape(
         payload,
         root_dir=root_dir,
@@ -1054,64 +1028,37 @@ def run_codex_phase(
     metrics = extract_codex_metrics(events)
     project_summary = summarize_project(project_dir)
     elapsed_seconds = round(wall_end - wall_start, 2)
-    total_tokens = metrics["tokens"].get("total")
-    terminal_stop_completed = metrics["finish_reason"] == "stop"
-
-    if result.timed_out:
-        status = "timeout"
-    elif result.stalled:
-        status = "failed"
-    elif terminal_stop_completed and project_summary["works_as_intended"] == "yes":
-        status = "completed"
-    elif terminal_stop_completed:
-        status = "completed_with_errors"
-    elif process.returncode == 0 and project_summary["works_as_intended"] == "yes":
-        status = "completed"
-    elif process.returncode == 0:
-        status = "completed_with_errors"
-    else:
-        status = "failed"
-
-    payload = {
-        "phase": phase_name,
-        "assistant_output_excerpt": metrics["assistant_output"][:4000],
-        "command": command,
-        "continued_from_session": None,
-        "elapsed_seconds": elapsed_seconds,
-        "ended_at": utc_now(),
-        "exit_code": process.returncode,
-        "finish_reason": metrics["finish_reason"],
-        "model": model,
-        "opencode_session_id": metrics["session_id"],
-        "paths": {
+    payload = build_phase_payload(
+        phase_name=phase_name,
+        assistant_output=metrics["assistant_output"],
+        command=command,
+        continued_from_session=None,
+        elapsed_seconds=elapsed_seconds,
+        ended_at=utc_now(),
+        exit_code=process.returncode,
+        finish_reason=metrics["finish_reason"],
+        model=model,
+        session_id=metrics["session_id"],
+        paths={
             "opencode_config": None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),
             "stdout": str(stdout_path),
         },
-        "project_summary": project_summary,
-        "prompt_sha256": prompt_sha256(prompt),
-        "started_at": started_at,
-        "status": status,
-        "stderr_excerpt": result.stderr[:4000],
-        "stalled": result.stalled,
-        "stall_reason": result.stall_reason,
-        "timed_out": result.timed_out,
-        "timeout_seconds": bench.timeout_seconds,
-        "no_progress_timeout_seconds": bench.no_progress_timeout_seconds,
-        "tokens": metrics["tokens"],
-        "preview_output_tokens_per_second": result.latest_preview_output_tps,
-        "preview_output_tokens_per_second_average": result.preview_average_output_tps,
-        "tokens_per_second": round(total_tokens / elapsed_seconds, 2)
-        if total_tokens and elapsed_seconds
-        else None,
-        "output_tokens_per_second": (
-            round(metrics["tokens"].get("output", 0) / elapsed_seconds, 2)
-            if metrics["tokens"].get("output") and elapsed_seconds
-            else None
-        ),
-    }
+        project_summary=project_summary,
+        prompt=prompt,
+        started_at=started_at,
+        stderr=result.stderr,
+        stalled=result.stalled,
+        stall_reason=result.stall_reason,
+        timed_out=result.timed_out,
+        timeout_seconds=bench.timeout_seconds,
+        no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
+        tokens=metrics["tokens"],
+        latest_preview_output_tps=result.latest_preview_output_tps,
+        preview_average_output_tps=result.preview_average_output_tps,
+    )
     payload = detect_workspace_escape(
         payload,
         root_dir=root_dir,
