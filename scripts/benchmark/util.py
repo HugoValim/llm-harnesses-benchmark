@@ -6,6 +6,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -58,11 +59,9 @@ def init_project_git(project_dir: Path) -> None:
         ...     init_project_git(p)
         ...     assert (p / ".git").is_dir()
     """
-    import subprocess as _sp
-
     if (project_dir / ".git").exists():
         return
-    completed = _sp.run(
+    completed = subprocess.run(
         ["git", "init", str(project_dir)],
         check=False,
         capture_output=True,
@@ -73,6 +72,79 @@ def init_project_git(project_dir: Path) -> None:
         raise RuntimeError(
             f"git init failed in {project_dir!s} (exit {completed.returncode}); stderr={stderr!r}"
         )
+
+
+def _workspace_shape_message() -> str:
+    return (
+        "expected workspace shape: "
+        "results_dir/<harness>-<slug>/project as an isolated git repo"
+    )
+
+
+def _ensure_project_under_results(
+    resolved_results_dir: Path, resolved_project_dir: Path
+) -> None:
+    if resolved_project_dir.is_relative_to(resolved_results_dir):
+        return
+    raise RuntimeError(
+        f"benchmark project_dir {resolved_project_dir!s} is outside "
+        f"results_dir {resolved_results_dir!s}; {_workspace_shape_message()}"
+    )
+
+
+def _resolve_git_top_level(project_dir: Path) -> Path:
+    completed = subprocess.run(
+        ["git", "-C", str(project_dir), "rev-parse", "--show-toplevel"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        return Path(completed.stdout.strip()).resolve()
+    stderr = (completed.stderr or "").strip()
+    raise RuntimeError(
+        f"git top-level check failed in project_dir {project_dir!s} "
+        f"(exit {completed.returncode}); stderr={stderr!r}; "
+        f"{_workspace_shape_message()}"
+    )
+
+
+def _ensure_git_top_level_matches_project(
+    git_top_level: Path, resolved_result_dir: Path, resolved_project_dir: Path
+) -> None:
+    if git_top_level == resolved_project_dir:
+        return
+    raise RuntimeError(
+        f"git top-level {git_top_level!s} does not match project_dir "
+        f"{resolved_project_dir!s}; result_dir={resolved_result_dir!s}; "
+        f"{_workspace_shape_message()}"
+    )
+
+
+def validate_benchmark_workspace(
+    results_dir: Path, result_dir: Path, project_dir: Path
+) -> None:
+    """Refuse launches when the generated project workspace is not isolated.
+
+    Example:
+        >>> from pathlib import Path
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as tmp:
+        ...     results = Path(tmp) / "results"
+        ...     result = results / "opencode-example"
+        ...     project = result / "project"
+        ...     project.mkdir(parents=True)
+        ...     init_project_git(project)
+        ...     validate_benchmark_workspace(results, result, project)
+    """
+    resolved_results_dir = results_dir.resolve()
+    resolved_result_dir = result_dir.resolve()
+    resolved_project_dir = project_dir.resolve()
+    _ensure_project_under_results(resolved_results_dir, resolved_project_dir)
+    git_top_level = _resolve_git_top_level(resolved_project_dir)
+    _ensure_git_top_level_matches_project(
+        git_top_level, resolved_result_dir, resolved_project_dir
+    )
 
 
 _WORKSPACE_CLAUDE_MD = """\
