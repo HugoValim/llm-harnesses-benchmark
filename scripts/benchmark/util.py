@@ -6,6 +6,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import signal
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -213,6 +214,39 @@ def save_json(path: Path, payload: dict[str, Any]) -> None:
 def save_json_preserve_order(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def _process_exited(process: subprocess.Popen[str], timeout_seconds: int) -> bool:
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
+
+
+def terminate_process_group(
+    process: subprocess.Popen[str], terminate_timeout_seconds: int = 10
+) -> None:
+    """Terminate a subprocess group, escalating if SIGTERM is ignored.
+
+    Example:
+        ``terminate_process_group(process)`` after launching with
+        ``start_new_session=True``.
+    """
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        process.terminate()
+    if _process_exited(process, terminate_timeout_seconds):
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        process.kill()
 
 
 def file_sha256(path: Path) -> str:

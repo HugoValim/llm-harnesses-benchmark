@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import select
-import signal
 import subprocess
 import time
 from collections import Counter, defaultdict
@@ -22,6 +21,7 @@ from benchmark.util import (
     prompt_sha256,
     save_json,
     shorten_text,
+    terminate_process_group,
     utc_now,
     validate_benchmark_workspace,
     write_project_context,
@@ -42,21 +42,7 @@ class ClaudeCodeStreamResult:
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    except PermissionError:
-        process.terminate()
-    try:
-        process.wait(timeout=10)
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
+    terminate_process_group(process)
 
 
 def build_command(
