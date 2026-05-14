@@ -44,6 +44,12 @@ from benchmark.util import (
 )
 
 
+def _opencode_args_with_dir(args: list[str], project_dir: Path) -> list[str]:
+    command_args = list(args)
+    command_args[1:1] = ["--dir", str(project_dir.resolve())]
+    return command_args
+
+
 @dataclass
 class StreamResult:
     """Output from a streamed opencode process."""
@@ -81,6 +87,7 @@ def build_opencode_command(
     runner: dict[str, Any],
     model_id: str,
     prompt: str,
+    project_dir: Path,
     continue_session_id: str | None = None,
     command_prefix: list[str] | None = None,
 ) -> list[str]:
@@ -99,13 +106,13 @@ def build_opencode_command(
     )
 
     if is_ollama_launch:
-        inner: list[str] = list(runner["args"])
+        inner = _opencode_args_with_dir(runner["args"], project_dir)
         if continue_session_id:
             inner.extend(["--session", continue_session_id])
         inner.append(prompt)
         return [*command_prefix, "--model", model_id, "--", *inner]
 
-    command = [runner["command"], *runner["args"]]
+    command = [runner["command"], *_opencode_args_with_dir(runner["args"], project_dir)]
     if continue_session_id:
         command.extend(["--session", continue_session_id])
     else:
@@ -774,6 +781,7 @@ def run_opencode_phase(
         bench.runner,
         model["id"],
         prompt,
+        project_dir,
         continue_session_id=continue_session_id,
         command_prefix=model.get("command_prefix"),
     )
