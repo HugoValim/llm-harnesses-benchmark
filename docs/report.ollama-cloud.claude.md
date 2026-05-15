@@ -2,7 +2,7 @@
 
 Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 only.
 
-Variants in this config: `kimi_k2_6_ollama_cloud`, `qwen3_5_ollama_cloud`, `glm_5_1_ollama_cloud`, `minimax_m2_7_ollama_cloud`, `deepseek_v4_pro_ollama_cloud`, `deepseek_v4_flash_ollama_cloud`, `gemma4_ollama_cloud`, `nemotron_3_super_ollama_cloud`, `gemini_3_flash_preview_ollama_cloud`
+Variants in this config: `kimi_k2_6_ollama_cloud`, `qwen3_5_ollama_cloud`, `glm_5_1_ollama_cloud`, `minimax_m2_7_ollama_cloud`, `deepseek_v4_pro_ollama_cloud`, `deepseek_v4_flash_ollama_cloud`, `gemma4_ollama_cloud`, `nemotron_3_super_ollama_cloud`
 
 Runner: `claude -p --output-format stream-json --dangerously-skip-permissions`
 
@@ -20,7 +20,6 @@ Each variant writes under `results/claude-<slug>/`.
 | deepseek_v4_flash_ollama_cloud | completed | 490s | 39 | 101 | 0 |
 | gemma4_ollama_cloud | completed | 537s | 32 | 48 | 0 |
 | nemotron_3_super_ollama_cloud | completed | 1470s | 36 | 182 | 0 |
-| gemini_3_flash_preview_ollama_cloud | completed | 334s | 32 | 51 | 0 |
 
 ## Per-Model Token Usage
 
@@ -73,11 +72,5 @@ Extracted from Claude Code's `modelUsage` field.
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
 | nemotron-3-super:cloud | 15,441,655 | 47,569 | 0 | 0 |
-
-### gemini_3_flash_preview_ollama_cloud
-
-| Model | Input | Output | Cache Read | Cache Create |
-|---|---:|---:|---:|---:|
-| gemini-3-flash-preview:cloud | 2,722,762 | 14,027 | 0 | 0 |
 
 ## Delegation Details
