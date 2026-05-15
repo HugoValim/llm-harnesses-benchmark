@@ -15,6 +15,7 @@
       "label": "GPT-5.5 (Codex / ChatGPT)",
       "provider": "openai",
       "runner_type": "codex",
+      "enable_followup": true,
       "selection_reason": "Codex exposes `gpt-5.5` for ChatGPT-linked auth; verify with `codex debug models`. May require subscription tier; fallback to `gpt-5.4` if unsupported."
     },
     {
@@ -23,6 +24,7 @@
       "label": "GPT-5.4 (Codex / ChatGPT)",
       "provider": "openai",
       "runner_type": "codex",
+      "enable_followup": true,
       "selection_reason": "Codex CLI docs example for `-m`. Edit `id` if your catalog uses a different tag."
     },
     {
@@ -31,6 +33,7 @@
       "label": "GPT-5.3-Codex (Codex CLI)",
       "provider": "openai",
       "runner_type": "codex",
+      "enable_followup": true,
       "selection_reason": "Often listed as the Codex-tuned variant; confirm with `codex debug models`."
     }
   ]
