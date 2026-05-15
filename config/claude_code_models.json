@@ -16,6 +16,7 @@
       "label": "Claude Sonnet 4.6 alone (Claude Code, subscription auth)",
       "main_model": "claude-sonnet-4-6",
       "subagent": null,
+      "enable_followup": true,
       "selection_reason": "Pure Sonnet through the Claude Code CLI on the Python (Django + Channels + LangChain) brief. Same prompt as the opencode runs. Direct comparison vs claude_sonnet_4_6 in config/models.json (same model, different harness). Uses Claude subscription auth — no ANTHROPIC_API_KEY required."
     },
     {
@@ -23,6 +24,7 @@
       "label": "Claude Opus 4.7 alone (Claude Code, subscription auth)",
       "main_model": "claude-opus-4-7",
       "subagent": null,
+      "enable_followup": true,
       "selection_reason": "Pure Opus through the Claude Code CLI on the same Python brief as Sonnet. Direct harness comparison vs claude_opus_4_7 in config/models.json (OpenRouter through opencode). Uses Claude subscription auth — no ANTHROPIC_API_KEY required."
     }
   ]

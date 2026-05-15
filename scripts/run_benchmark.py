@@ -153,7 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--followup-prompt",
         default=str(REPO_ROOT / "prompts" / "benchmark_followup_prompt.txt"),
-        help="Optional second-phase prompt (opencode/codex only).",
+        help="Optional second-phase prompt.",
     )
     parser.add_argument("--results-dir", default="results")
     parser.add_argument(
@@ -524,7 +524,7 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             return 1
         print_line(
             "Note: --harness claude uses variants JSON only; opencode/codex-only CLI flags "
-            "(warmup, local backend, preview TPS gate, follow-up, …) are ignored."
+            "(warmup, local backend, preview TPS gate, …) are ignored."
         )
         timeout_seconds = args.timeout_minutes * 60
         no_progress_timeout_seconds = args.no_progress_minutes * 60
@@ -533,10 +533,15 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
         isolate_home = bool(runner.get("isolate_home", False))
         jobs = args.jobs if args.jobs > 0 else len(variants)
         jobs = max(1, min(jobs, len(variants))) if variants else 1
+        followup_path = Path(args.followup_prompt)
+        followup_text = followup_path.read_text().strip() if followup_path.exists() else None
         print_line(
             f"Claude Code benchmark: {len(variants)} variants, jobs={jobs}, "
             f"timeout={timeout_seconds}s, isolate_home={isolate_home}"
         )
+
+        def _variant_enables_followup(v: dict) -> bool:
+            return bool(v.get("enable_followup", False))
 
         abort_flag = threading.Event()
 
@@ -555,6 +560,7 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
                     runner_command_prefix=runner_command_prefix,
                     isolate_home=isolate_home,
                     harness="claude",
+                    followup_prompt=followup_text if _variant_enables_followup(v) else None,
                 )
                 if _phase_hit_usage_limit(payload):
                     abort_flag.set()

@@ -142,6 +142,7 @@ def _expand_ollama_cloud_claude_config(
             "label": f"{entry['label']} via Claude Code",
             "main_model": entry["id"],
             "subagent": None,
+            "enable_followup": entry.get("enable_followup", False),
             "command_prefix": list(command_prefix),
             "selection_reason": str(entry.get("selection_reason", "")),
         }
@@ -164,6 +165,7 @@ def _expand_ollama_cloud_models_config(
             "label": f"{entry['label']} via {via}",
             "provider": "ollama_cloud",
             "runner_type": harness,
+            "enable_followup": entry.get("enable_followup"),
             "command_prefix": list(command_prefix),
             "selection_reason": str(entry.get("selection_reason", "")),
         }

@@ -34,7 +34,7 @@ def build_variant_report(config: dict[str, Any], results: list[dict[str, Any]]) 
     lines = [
         "# Claude Code Benchmark Report — Python (Django + Channels + LangChain)",
         "",
-        "Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 only.",
+        "Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 + Phase 2 (if variant enables follow-up).",
         "",
         f"Variants in this config: {', '.join(f'`{s}`' for s in variant_slugs) or '(none)'}",
         "",
@@ -58,6 +58,28 @@ def build_variant_report(config: dict[str, Any], results: list[dict[str, Any]]) 
         lines.append(
             f"| {slug} | {status} | {elapsed:.0f}s | {files} | {turns} | {delegations} |"
         )
+
+    # Per-variant phase breakdown (only shown when a variant ran phase 2)
+    phase_rows = [
+        (slug, by_slug[slug])
+        for slug in variant_slugs
+        if slug in by_slug and by_slug[slug].get("phases")
+    ]
+    if phase_rows:
+        lines.extend(["", "## Phase Breakdown", ""])
+        for slug, r in phase_rows:
+            lines.append(f"### {slug}")
+            lines.append("")
+            lines.append("| Phase | Status | Time | Turns | Files |")
+            lines.append("|---|---|---:|---:|---:|")
+            for ph in r["phases"]:
+                lines.append(
+                    f"| {ph.get('phase', '?')} | {ph.get('status', '?')} "
+                    f"| {ph.get('elapsed_seconds', 0):.0f}s "
+                    f"| {ph.get('num_turns', 0)} "
+                    f"| {ph.get('file_count', 0)} |"
+                )
+            lines.append("")
 
     lines.extend(["", "## Per-Model Token Usage", ""])
     lines.append("Extracted from Claude Code's `modelUsage` field.")

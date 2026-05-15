@@ -329,6 +329,7 @@ def run_variant(
     isolate_home: bool = False,
     harness: str = "claude",
     explicit_result_dir: Path | None = None,
+    followup_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Run a single benchmark variant.
 
@@ -536,12 +537,150 @@ def run_variant(
             "stderr_log": str(stderr_path),
         },
     }
+    run_phase2 = (
+        followup_prompt is not None
+        and not payload.get("timed_out")
+        and not payload.get("stalled")
+        and payload.get("status") != USAGE_LIMIT_REACHED
+    )
+    if run_phase2:
+        assert followup_prompt is not None  # narrowing for type checker
+        followup_prompt_path = result_dir / "followup-prompt.txt"
+        followup_stdout_path = result_dir / "followup-stream.ndjson"
+        followup_stderr_path = result_dir / "followup-stderr.log"
+        followup_prompt_path.write_text(followup_prompt)
+        p2_command = build_command(variant["main_model"], followup_prompt, command_prefix)
+        p2_started_at = utc_now()
+        p2_wall_start = time.monotonic()
+        print_line(f"[{slug}] starting phase 2 (follow-up prompt)")
+        p2_process = subprocess.Popen(
+            p2_command,
+            cwd=project_dir.resolve(),
+            env=isolated_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            bufsize=1,
+        )
+        p2_result = stream_process(
+            process=p2_process,
+            stdout_path=followup_stdout_path,
+            stderr_path=followup_stderr_path,
+            project_dir=project_dir,
+            model_slug=slug,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+        )
+        p2_elapsed = round(time.monotonic() - p2_wall_start, 2)
+        p2_final = p2_result.final_result_event or {}
+        p2_model_usage = p2_final.get("modelUsage", {})
+        p2_stop_reason = p2_final.get("stop_reason")
+        p2_num_turns = p2_final.get("num_turns", p2_result.assistant_turns)
+        p2_usage_limited = p2_result.usage_limit_reached or (
+            bool(p2_final.get("is_error")) and contains_usage_limit(json.dumps(p2_final))
+        )
+        if p2_usage_limited:
+            p2_status = USAGE_LIMIT_REACHED
+        elif p2_result.timed_out:
+            p2_status = "timeout"
+        elif p2_result.stalled:
+            p2_status = "failed"
+        elif p2_final.get("is_error"):
+            p2_status = "failed"
+        elif p2_stop_reason in ("end_turn", "stop_sequence", None) and p2_final:
+            p2_status = "completed"
+        else:
+            p2_status = "completed_with_errors"
+        p2_file_count = count_files(project_dir)
+        p2_subagent_counts: dict[str, int] = defaultdict(int)
+        for inv in p2_result.subagent_invocations:
+            p2_subagent_counts[inv.get("subagent_type") or "unknown"] += 1
+        phase1_core = {
+            "phase": "phase1",
+            "status": payload["status"],
+            "started_at": payload["started_at"],
+            "ended_at": payload["ended_at"],
+            "elapsed_seconds": payload["elapsed_seconds"],
+            "timed_out": payload["timed_out"],
+            "stalled": payload["stalled"],
+            "exit_code": payload["exit_code"],
+            "file_count": payload["file_count"],
+            "num_turns": payload["num_turns"],
+            "model_usage": payload["model_usage"],
+            "prompt_sha256": payload["prompt_sha256"],
+        }
+        phase2_core = {
+            "phase": "phase2",
+            "status": p2_status,
+            "started_at": p2_started_at,
+            "ended_at": utc_now(),
+            "elapsed_seconds": p2_elapsed,
+            "timed_out": p2_result.timed_out,
+            "stalled": p2_result.stalled,
+            "exit_code": p2_process.returncode,
+            "file_count": p2_file_count,
+            "num_turns": p2_num_turns,
+            "model_usage": p2_model_usage,
+            "prompt_sha256": prompt_sha256(followup_prompt),
+        }
+        merged_model_usage: dict[str, Any] = {k: dict(v) for k, v in model_usage.items()}
+        for model_id, p2_u in p2_model_usage.items():
+            if model_id in merged_model_usage:
+                m = merged_model_usage[model_id]
+                for tok_key in (
+                    "inputTokens",
+                    "outputTokens",
+                    "cacheReadInputTokens",
+                    "cacheCreationInputTokens",
+                ):
+                    m[tok_key] = m.get(tok_key, 0) + p2_u.get(tok_key, 0)
+            else:
+                merged_model_usage[model_id] = dict(p2_u)
+        combined_tool_use = dict(result.tool_use_counts)
+        for k, v in p2_result.tool_use_counts.items():
+            combined_tool_use[k] = combined_tool_use.get(k, 0) + v
+        combined_subagent_counts: dict[str, int] = dict(subagent_counts_by_type)
+        for k, v in p2_subagent_counts.items():
+            combined_subagent_counts[k] = combined_subagent_counts.get(k, 0) + v
+        payload.update({
+            "status": p2_status,
+            "ended_at": utc_now(),
+            "elapsed_seconds": round(elapsed + p2_elapsed, 2),
+            "timed_out": p2_result.timed_out,
+            "stalled": p2_result.stalled,
+            "stall_reason": p2_result.stall_reason,
+            "exit_code": p2_process.returncode,
+            "file_count": p2_file_count,
+            "num_turns": num_turns + p2_num_turns,
+            "assistant_turns": result.assistant_turns + p2_result.assistant_turns,
+            "stop_reason": p2_stop_reason,
+            "usage_total": p2_final.get("usage", {}),
+            "model_usage": merged_model_usage,
+            "tool_use_counts": combined_tool_use,
+            "subagent_invocations": result.subagent_invocations + p2_result.subagent_invocations,
+            "subagent_invocation_counts": combined_subagent_counts,
+            "followup_prompt_sha256": prompt_sha256(followup_prompt),
+            "phases": [phase1_core, phase2_core],
+            "paths": {
+                **payload["paths"],
+                "followup_prompt": str(followup_prompt_path),
+                "followup_stream_ndjson": str(followup_stdout_path),
+                "followup_stderr_log": str(followup_stderr_path),
+            },
+        })
+        status = p2_status
+        elapsed = elapsed + p2_elapsed
+        file_count = p2_file_count
+        num_turns = num_turns + p2_num_turns
+        model_usage = merged_model_usage
+
     save_json(result_path, payload)
 
     print_line("")
     print_line(
         f"Finished {slug} status={status} elapsed={elapsed:.2f}s files={file_count} "
-        f"turns={num_turns} delegations={len(result.subagent_invocations)}"
+        f"turns={num_turns} delegations={len(payload.get('subagent_invocations', []))}"
     )
     if model_usage:
         print_line(f"[{slug}] model_usage:")

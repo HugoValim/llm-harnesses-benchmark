@@ -38,48 +38,56 @@
       "slug": "kimi_k2_6_ollama_cloud",
       "id": "kimi-k2.6:cloud",
       "label": "Kimi K2.6 (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Best Kimi model on Ollama Cloud. State-of-the-art coding + long-horizon execution + multimodal agent swarm."
     },
     {
       "slug": "qwen3_5_ollama_cloud",
       "id": "qwen3.5:cloud",
       "label": "Qwen 3.5 (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Best Qwen model on Ollama Cloud. Reasoning, coding, and agentic tool use with vision."
     },
     {
       "slug": "glm_5_1_ollama_cloud",
       "id": "glm-5.1:cloud",
       "label": "GLM 5.1 (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Best GLM model on Ollama Cloud. Long-horizon agentic engineering with autonomous execution and sustained iteration."
     },
     {
       "slug": "minimax_m2_7_ollama_cloud",
       "id": "minimax-m2.7:cloud",
       "label": "MiniMax M2.7 (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Best MiniMax model on Ollama Cloud. Mid-tier model testing Python-stack knowledge and LangChain wiring capability."
     },
     {
       "slug": "deepseek_v4_pro_ollama_cloud",
       "id": "deepseek-v4-pro:cloud",
       "label": "DeepSeek V4 Pro (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Best DeepSeek model on Ollama Cloud. Tests whether Ollama Cloud serving avoids the reasoning_content multi-turn bug seen via OpenRouter/opencode."
     },
     {
       "slug": "deepseek_v4_flash_ollama_cloud",
       "id": "deepseek-v4-flash:cloud",
       "label": "DeepSeek V4 Flash (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Faster DeepSeek V4 tier on Ollama Cloud — latency/cost tradeoff vs V4 Pro on the same brief."
     },
     {
       "slug": "gemma4_ollama_cloud",
       "id": "gemma4:31b-cloud",
       "label": "Gemma 4 31B (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "Google Gemma 4 on Ollama Cloud (`gemma4:31b-cloud`; `gemma4:cloud` is not published on the registry) — cross-vendor baseline on the Django + Channels brief."
     },
     {
       "slug": "nemotron_3_super_ollama_cloud",
       "id": "nemotron-3-super:cloud",
       "label": "Nemotron 3 Super (Ollama Cloud)",
+      "enable_followup": true,
       "selection_reason": "NVIDIA Nemotron 3 Super on Ollama Cloud — agentic coding baseline in the cloud registry."
     }
   ]
