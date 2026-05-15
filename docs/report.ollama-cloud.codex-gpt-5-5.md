@@ -1,15 +1,16 @@
 # Benchmark Report
 
-Generated at: 2026-05-14T06:06:49+00:00
+Generated at: 2026-05-15T03:09:32+00:00
 Prompt SHA256: `fc90f6bba61d4919f1d2689080b930307f0e8faa96d64b55fdd925d3870bc355`
 
 ## Progress
 
-- `completed`: 0
+- `completed`: 1
 - `completed_with_errors`: 0
 - `failed`: 0
 - `timeout`: 0
-- `not_run`: 3
+- `usage_limit_reached`: 0
+- `not_run`: 2
 
 ## Runner
 
@@ -30,7 +31,7 @@ Prompt SHA256: `fc90f6bba61d4919f1d2689080b930307f0e8faa96d64b55fdd925d3870bc355
 
 | Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
-| GPT-5.5 (Codex / ChatGPT) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| GPT-5.5 (Codex / ChatGPT) | openai | - | completed | 1249.65 | 2375220 | 4472.10 | yes | 50 | Django + Channels app, tests, README, and container files detected. |
 | GPT-5.4 (Codex / ChatGPT) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | GPT-5.3-Codex (Codex CLI) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 
