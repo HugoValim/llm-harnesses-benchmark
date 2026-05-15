@@ -22,18 +22,15 @@ class TestExpandOllamaCloudConfig(unittest.TestCase):
         path = REPO_ROOT / "config" / "ollama_cloud_models.json"
         raw = json.loads(path.read_text())
         codex = expand_ollama_cloud_config(raw, "codex")
-        self.assertEqual(len(codex["models"]), 9)
+        self.assertEqual(len(codex["models"]), 8)
         self.assertEqual(codex["models"][0]["runner_type"], "codex")
         self.assertTrue(codex["models"][0]["label"].endswith(" via Codex"))
         by_slug = {m["slug"]: m for m in codex["models"]}
         self.assertEqual(by_slug["gemma4_ollama_cloud"]["id"], "gemma4:31b-cloud")
-        self.assertEqual(
-            by_slug["gemini_3_flash_preview_ollama_cloud"]["id"],
-            "gemini-3-flash-preview:cloud",
-        )
+        self.assertNotIn("gemini_3_flash_preview_ollama_cloud", by_slug)
 
         claude = expand_ollama_cloud_config(raw, "claude")
-        self.assertEqual(len(claude["variants"]), 9)
+        self.assertEqual(len(claude["variants"]), 8)
         self.assertEqual(claude["variants"][0]["main_model"], "kimi-k2.6:cloud")
         self.assertTrue(claude["variants"][0]["label"].endswith(" via Claude Code"))
 

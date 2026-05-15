@@ -81,12 +81,6 @@
       "id": "nemotron-3-super:cloud",
       "label": "Nemotron 3 Super (Ollama Cloud)",
       "selection_reason": "NVIDIA Nemotron 3 Super on Ollama Cloud — agentic coding baseline in the cloud registry."
-    },
-    {
-      "slug": "gemini_3_flash_preview_ollama_cloud",
-      "id": "gemini-3-flash-preview:cloud",
-      "label": "Gemini 3 Flash Preview (Ollama Cloud)",
-      "selection_reason": "Gemini 3 Flash preview on Ollama Cloud — preview-tier speed/latency check against the shared harness."
     }
   ]
 }
