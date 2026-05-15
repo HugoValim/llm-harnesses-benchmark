@@ -9,8 +9,9 @@ report follows the rubric layout in ``prompts/audit_prompt_template.txt``
   Total | Tier`` table. Replaces the broken inline parser previously baked
   into ``run_audit_benchmark.py``.
 - ``build_statistical_summary``: regex-derived harness / model / dimension
-  rollups. **Not the final analysis** — this is structured input that the
-  AI meta-analyst consumes.
+  rollups plus **leader-relative normalized scores** (ceiling = mean of
+  configured benchmark-leader model slugs). **Not the final analysis** —
+  this is structured input that the AI meta-analyst consumes.
 - ``run_ai_meta_analysis``: dispatch a configured LLM (harness + model)
   through ``benchmark.claude_code_runner.run_variant`` to read every audit
   report and write the actual meta-analysis to ``meta-analysis.md``.
@@ -41,6 +42,157 @@ DEFAULT_DIMENSION_LABELS: tuple[str, ...] = (
     "Secrets & config hygiene",
     "Production hardening",
 )
+
+# Model slug substrings that identify benchmark leader runs (substring match,
+# case-insensitive), e.g. ``codex-gpt_5_5`` → ``gpt_5_5``, ``opencode-claude_opus_4_7``.
+LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = ("gpt_5_5", "claude_opus_4_7")
+
+_NORMALIZED_PCT_CAP = 150.0
+
+
+def _is_leader_slug(model_slug: str) -> bool:
+    """Return True when ``model_slug`` matches a configured leader substring."""
+    lowered = model_slug.lower()
+    return any(s.lower() in lowered for s in LEADER_MODEL_SLUG_SUBSTRINGS)
+
+
+def _leader_ceiling(reports: list[ParsedReport]) -> dict[str, float | None]:
+    """Mean total and per-dimension scores across all leader-target reports.
+
+    Keys: ``\"total\"`` and ``\"1\"``..``\"9\"`` for D1..D9. When no leader
+    reports exist, every value is ``None``.
+    """
+    keys = ["total", *[str(i) for i in range(1, NUM_DIMENSIONS + 1)]]
+    leaders = [r for r in reports if _is_leader_slug(r.model_slug)]
+    if not leaders:
+        return dict.fromkeys(keys, None)
+
+    out: dict[str, float | None] = {}
+    totals = [float(r.total) for r in leaders if r.total is not None]
+    out["total"] = mean(totals) if totals else None
+    for i in range(1, NUM_DIMENSIONS + 1):
+        vals = [float(r.dim_score(i)) for r in leaders if r.dim_score(i) is not None]
+        out[str(i)] = mean(vals) if vals else None
+    return out
+
+
+def _pct_of_ceiling(numer: float, ceiling: float | None) -> str:
+    """Format ``numer/ceiling`` as a percentage capped at 150%, or ``-``."""
+    if ceiling is None or ceiling <= 0:
+        return "-"
+    pct = min(_NORMALIZED_PCT_CAP, (numer / ceiling) * 100.0)
+    return f"{pct:.1f}%"
+
+
+def _normalized_scores_section(
+    reports: list[ParsedReport],
+    dim_labels: list[str],
+) -> list[str]:
+    """Markdown block: leader ceiling + non-leader scores as % of leaders."""
+    lines: list[str] = [
+        "## Normalized scores",
+        "",
+        "Non-leader model slugs vs mean totals/dimensions of benchmark leader "
+        f"runs (substring match on slugs: {', '.join(repr(s) for s in LEADER_MODEL_SLUG_SUBSTRINGS)}). "
+        "Percentages are capped at 150% of the leader mean for that column.",
+        "",
+    ]
+    leader_reports = [r for r in reports if _is_leader_slug(r.model_slug)]
+    if not leader_reports:
+        lines.append("*(no leader runs found — normalization skipped)*")
+        return lines
+
+    ceiling = _leader_ceiling(reports)
+    if ceiling.get("total") is None:
+        lines.append(
+            "*(leader runs present but no parseable totals — normalization skipped)*"
+        )
+        return lines
+
+    leader_slugs = sorted({r.model_slug for r in leader_reports})
+    lines.append("### Benchmark leaders (ceiling)")
+    lines.append("")
+    lh_header = ["Model slug", "Reports", "Harnesses", "Avg total"]
+    lines.append("| " + " | ".join(lh_header) + " |")
+    lines.append("|" + "|".join(["---"] * len(lh_header)) + "|")
+    for slug in leader_slugs:
+        subset = [r for r in reports if r.model_slug == slug]
+        totals_l = [float(r.total) for r in subset if r.total is not None]
+        avg_l = mean(totals_l) if totals_l else None
+        harnesses = ", ".join(sorted({r.harness for r in subset}))
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    slug,
+                    str(len(subset)),
+                    harnesses or "-",
+                    _fmt(avg_l),
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    lines.append(
+        f"**Ceiling (leader mean)**: total={_fmt(ceiling['total'])}; "
+        + "; ".join(
+            f"D{i}={_fmt(ceiling[str(i)])}" for i in range(1, NUM_DIMENSIONS + 1)
+        )
+    )
+    lines.append("")
+
+    by_slug: dict[str, list[ParsedReport]] = {}
+    for r in reports:
+        if _is_leader_slug(r.model_slug):
+            continue
+        by_slug.setdefault(r.model_slug, []).append(r)
+
+    rows: list[tuple[float, list[str]]] = []
+    for slug, subset in by_slug.items():
+        totals_m = [float(r.total) for r in subset if r.total is not None]
+        if not totals_m:
+            continue
+        raw_avg = mean(totals_m)
+        harnesses = ", ".join(sorted({r.harness for r in subset}))
+        pct_total = _pct_of_ceiling(raw_avg, ceiling["total"])
+        dim_pcts: list[str] = []
+        for i in range(1, NUM_DIMENSIONS + 1):
+            dim_vals = [float(r.dim_score(i)) for r in subset if r.dim_score(i) is not None]
+            dim_avg = mean(dim_vals) if dim_vals else None
+            dim_pcts.append(
+                _pct_of_ceiling(dim_avg, ceiling[str(i)])
+                if dim_avg is not None
+                else "-"
+            )
+        row_cells = [
+            slug,
+            harnesses or "-",
+            _fmt(raw_avg),
+            pct_total,
+            *dim_pcts,
+        ]
+        rows.append((raw_avg, row_cells))
+
+    rows.sort(key=lambda t: t[0], reverse=True)
+
+    nh_header = ["Model slug", "Harnesses", "Raw avg", "% of ceiling"]
+    nh_header.extend(f"D{i} %" for i in range(1, NUM_DIMENSIONS + 1))
+    lines.append("### Non-leader models (vs ceiling)")
+    lines.append("")
+    lines.append("| " + " | ".join(nh_header) + " |")
+    lines.append("|" + "|".join(["---"] * len(nh_header)) + "|")
+    if not rows:
+        lines.append("| *(no non-leader reports with a parseable total)* | " + " | ".join([""] * (len(nh_header) - 1)) + " |")
+    else:
+        for _, cells in rows:
+            lines.append("| " + " | ".join(cells) + " |")
+
+    lines.append("")
+    lines.append("Dimension legend (for D% columns):")
+    lines.append("")
+    for i, label in enumerate(dim_labels, 1):
+        lines.append(f"- **D{i}**: {label}")
+    return lines
 
 
 @dataclass
@@ -446,6 +598,7 @@ def build_statistical_summary(reports_dir: Path) -> str:
         _harness_section(reports, dim_labels),
         _cross_harness_model_section(reports, dim_labels),
         _dimension_breakdown_section(reports, dim_labels),
+        _normalized_scores_section(reports, dim_labels),
     ]
     for section in sections:
         if section:
