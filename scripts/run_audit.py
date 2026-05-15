@@ -26,6 +26,7 @@ import argparse
 import json
 import shutil
 import sys
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -39,7 +40,7 @@ from benchmark.audit_report import (  # noqa: E402
 )
 from benchmark.claude_code_runner import run_variant  # noqa: E402
 from benchmark.runner import run_codex_variant  # noqa: E402
-from benchmark.util import load_json, print_line  # noqa: E402
+from benchmark.util import USAGE_LIMIT_REACHED, load_json, print_line  # noqa: E402
 
 
 _CODEX_RUNNER_TYPES: frozenset[str] = frozenset({"codex", "ollama"})
@@ -420,10 +421,16 @@ def main() -> int:
         runner_command_prefix = runner.get("command_prefix")
         isolate_home = bool(runner.get("isolate_home", False))
 
+        limit_hit = threading.Event()
+
         def _run(auditor: dict, target: dict) -> tuple[str, str, str | None]:
             auditor_slug = auditor["slug"]
             target_slug = target["slug"]
             job_slug = f"{auditor_slug}__auditing__{target_slug}"
+
+            if limit_hit.is_set():
+                print_line(f"[{job_slug}] skipped (usage limit reached)")
+                return job_slug, "skipped", None
 
             result_dir = results_dir / auditor_slug / target_slug
             result_dir.mkdir(parents=True, exist_ok=True)
@@ -442,7 +449,7 @@ def main() -> int:
             try:
                 runner_type = auditor.get("runner_type", "claude")
                 if runner_type in _CODEX_RUNNER_TYPES:
-                    run_codex_variant(
+                    run_result = run_codex_variant(
                         variant=auditor,
                         prompt=audit_prompt,
                         results_dir=results_dir / auditor_slug,
@@ -453,7 +460,7 @@ def main() -> int:
                         explicit_result_dir=result_dir,
                     )
                 else:
-                    run_variant(
+                    run_result = run_variant(
                         variant=auditor,
                         prompt=audit_prompt,
                         results_dir=results_dir / auditor_slug,
@@ -464,6 +471,11 @@ def main() -> int:
                         isolate_home=isolate_home,
                         explicit_result_dir=result_dir,
                     )
+
+                if run_result.get("status") == USAGE_LIMIT_REACHED:
+                    limit_hit.set()
+                    return job_slug, USAGE_LIMIT_REACHED, None
+
                 # The LLM should have written report.md via the Write tool. If
                 # not, fall back to extracting the last assistant text from
                 # stream.ndjson so the comparison table still has something.
@@ -484,6 +496,9 @@ def main() -> int:
                     print_line(f"[{job_slug}] ERROR:\n{err}")
                 else:
                     print_line(f"[{job_slug}] {status}")
+                if status == USAGE_LIMIT_REACHED:
+                    print_line("Usage limit reached — stopping audit early.")
+                    break
         else:
             with ThreadPoolExecutor(max_workers=jobs_count) as pool:
                 futures = {
@@ -497,6 +512,8 @@ def main() -> int:
                         print_line(f"[{job_slug}] ERROR:\n{err}")
                     else:
                         print_line(f"[{job_slug}] {status}")
+                    if status == USAGE_LIMIT_REACHED:
+                        print_line("Usage limit reached — stopping audit early.")
 
     # Cross-auditor comparison + regex rollup are written every run (including
     # --report-only). They are NOT inputs to the AI meta-analyst; they exist
