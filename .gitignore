@@ -3,8 +3,6 @@
 /results-claude-code/*/
 /results/runtime_verification_summary.json
 
-# Audit reports
-/audit-reports/
 
 # Generated opencode config (auto-rewritten on every run)
 /config/opencode.benchmark.json

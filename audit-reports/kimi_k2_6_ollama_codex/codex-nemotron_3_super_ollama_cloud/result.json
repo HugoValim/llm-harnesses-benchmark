@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Audit report written to `/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud/report.md`.\n\n**Score: 68 / 100 \u2192 Tier B**\n\nKey findings:\n- **Streaming works**: Real `ollama.AsyncClient.chat(..., stream=True)` with immediate chunk-by-chunk WebSocket forwarding; tests assert the same.\n- **Critical failures**: README claims ruff/mypy/bandit/coverage/pip-audit are configured but no config files exist (CF#6); docker-compose defaults `DEBUG=True` (CF#10).\n- **Major gaps**: No chat history (single-turn only, -7), consumer wires LLM inline with no service layer (-3), bare-pass `disconnect` handler (-3), missing Ollama preflight guard (-3).\n- **Tooling**: requirements.txt present but `pip install` fails due to `htmx 0.0.0` \u2192 `pydantic<2.0.0` conflict with pinned `pydantic==2.13.4`.\n\nPackage-source verification for `ollama.AsyncClient.chat` and `channels` classes was confirmed against the installed packages. `langchain_ollama` verification was **unverified** because the project venv is empty (only pip).",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch codex --model kimi-k2.6:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 397.8,
+  "ended_at": "2026-05-15T04:13:23+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "id": "kimi-k2.6:cloud",
+    "label": "Kimi K2.6 (Ollama Cloud) auditor via Codex",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "slug": "kimi_k2_6_ollama_codex"
+  },
+  "no_progress_timeout_seconds": 360,
+  "opencode_session_id": "019e29d0-be26-7f50-b0df-9b266280e23c",
+  "output_tokens_per_second": 46.18,
+  "paths": {
+    "opencode_config": null,
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/codex-nemotron_3_super_ollama_cloud/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 6,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "850015f51934b13f4aa709537a02f8dc3da62079e36e8e9ed1e8d8619ba7b917",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-15T04:06:45+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "2026-05-15T04:06:46.565797Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n",
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "tokens": {
+    "input": 1981222,
+    "output": 18371,
+    "total": 1999593
+  },
+  "tokens_per_second": 5026.63
+}

@@ -1,0 +1,185 @@
+Prompt-Version: v2.1
+
+Audit the benchmark output for model qwen3_5_ollama_cloud. Project lives at /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project
+
+## Source of truth for LLM / Channels / Django API claims
+
+Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv. The Python minor version is not pinned (the spec asks for the newest Python from mise), so use a glob:
+
+- /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/langchain_ollama/chat_models.py (for ChatOllama)
+- /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
+- /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/ollama/_client.py (for Client / AsyncClient / chat())
+- /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/channels/generic/websocket.py (for AsyncWebsocketConsumer, connect, receive_json, send_json, disconnect)
+- /home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/channels/routing.py (for ProtocolTypeRouter, URLRouter)
+
+Use the first match from each glob; if the venv does not exist at all, note it under U1 preflight evidence and treat package-source verification as "unverified" for this run.
+
+Key facts about the installed packages (DO NOT guess — grep the source):
+
+- `from langchain_ollama import ChatOllama` is the correct import for LangChain 1.x Ollama chat. `from langchain_community.chat_models import ChatOllama` is deprecated — verify in langchain_ollama vs community if unsure.
+- `ChatOllama(model="...", base_url="...")` — verify the exact constructor parameters in chat_models.py.
+- For the raw client: `from ollama import AsyncClient`; `await client.chat(model=..., messages=..., stream=True)` yields chunks; verify field names (e.g. message content) in _client.py. Synchronous `Client` exists, but Channels streaming should use the async path.
+- `.invoke(messages)` or `.ainvoke(messages)` on `ChatOllama` returns an `AIMessage` with `.content`. `.predict()`, `.run()`, `.call()` are NOT streaming methods.
+- `.stream(messages)` / `.astream(messages)` on `ChatOllama` are the correct streaming methods; they yield `AIMessageChunk` objects with `.content`.
+- `AsyncWebsocketConsumer` is from `channels.generic.websocket`. It has `connect(self)`, `disconnect(self, close_code)`, `receive_json(self, content)`, `send_json(self, content)`.
+- `ProtocolTypeRouter` and `URLRouter` are from `channels.routing`.
+- `LLMChain` is deprecated in langchain 1.x; its presence is a deduction.
+
+## The benchmark prompt's explicit deliverables
+
+(Score against THIS, not what you think a good Django app should look like.)
+
+1. Django + Django Channels (no DRF, no auth, no Celery)
+2. Newest Python from mise
+3. ChatGPT-style SPA, not an API service
+4. Tailwind (django-tailwind / PostCSS / tailwind CLI — any one, properly wired)
+5. HTMX + ws ext (or small vanilla JS) for partial DOM updates as tokens stream
+6. Channels AsyncWebsocketConsumer for streaming
+7. OLLAMA_HOST and OLLAMA_MODEL via env (default `http://localhost:11434` / `qwen2.5:7b`); no OpenRouter key required
+8. No secrets in source / .env / Dockerfile / compose / README. Django `SECRET_KEY` must come from the environment with no hardcoded fallback (compose-generated value is OK). OLLAMA_HOST and OLLAMA_MODEL are not secrets but must be configurable from env, not hardcoded only in source
+9. Real, working Ollama integration via either `langchain-ollama` `ChatOllama` or the `ollama` Python client — either is acceptable as long as tokens stream over the WebSocket
+10. Token streaming from model → WebSocket
+11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LLM/Ollama wiring (mocked), template rendering
+12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
+13. Dockerfile + docker-compose with ASGI server (daphne or uvicorn)
+14. Real README (not a "this README would normally document…" stub)
+15. All project files in current working directory (`.`), no nested chat_app/ subdir
+16. `.env.example` (or equivalent) documenting OLLAMA_HOST and OLLAMA_MODEL with their defaults
+
+## Universal blind spots in scope for this benchmark
+
+All U1-U8 rows from the benchmark-ai-code REFERENCE apply to this audit. Opt-outs:
+
+- None. U1-U8 are all applicable: the spec requires Docker (U7), env-var configuration (U6), a WebSocket disconnect path (U2), real-time Ollama integration (U1, U3), a service-layer split between consumer and LLM client (U4), structured logging (U5), and a clean dependency manifest (U8).
+
+The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric. For U2 (`disconnect`), apply the disconnect-related deduction in **§4 Error handling** OR in **§6 Streaming & frontend** (whichever section you cite first), never both.
+
+## Audit dimensions — score each per its weight, total 100
+
+1. **Deliverable completeness** (0-25)
+   - Dockerfile present AND has valid Python (3.10+). Missing/broken: -5.
+   - docker-compose.yml present. Missing: -5.
+   - README has actual content (NOT the stock template). Stock template: -5.
+   - requirements.txt OR pyproject.toml present. Missing: -5.
+   - Each missing tool config (ruff, mypy, bandit, coverage, pip-audit): -1.
+   - Tailwind claimed but not wired (CDN only when django-tailwind/PostCSS was the approach): -2.
+   - ASGI server (daphne/uvicorn) missing from Dockerfile: -3.
+   - DRF / auth / Celery present: -3 each.
+   - Unused dependency declared in requirements.txt / pyproject.toml but not imported in source (U8): -2.
+   - No `.env.example` (or equivalent) documenting OLLAMA_HOST / OLLAMA_MODEL (U6): -2.
+   - `ASGI_APPLICATION` missing from settings: -2.
+
+2. **LLM integration correctness** (0-20)
+   - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
+   - Wrong streaming method (`.predict`, `.run`, `.call`, or `chat()` without `stream=True` on the ollama client): -5.
+   - Deprecated `langchain_community.chat_models.ChatOllama` instead of `langchain_ollama.ChatOllama`: -3.
+   - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -3.
+   - No streaming (returns full response): -7.
+   - No multi-turn (one-shot only): -3.
+   - Correct entry + real streaming + OLLAMA_HOST/OLLAMA_MODEL env wiring + tokens piped to WS: full marks.
+
+3. **Test quality** (0-15)
+   - Tests don't exercise LLM path (constants/import smoke only): -10.
+   - No real mocks (pytest-mock, monkeypatch, FakeLLM): -3.
+   - Tests mock the hallucinated API: -5.
+   - No consumer test (WebsocketCommunicator): -3.
+   - No view/template test: -2.
+
+4. **Error handling** (0-10)
+   - No try/except around LLM calls (one upstream blip = 500): -4.
+   - Missing OLLAMA_HOST/OLLAMA_MODEL env check or no unreachable-Ollama preflight guard (U1): -3.
+   - No `disconnect` handler, or bare-`pass` disconnect (U2): -3.
+   - No user-visible degraded UI on Ollama failure (U3): -3.
+   - CSRF disabled globally (e.g. `CsrfViewMiddleware` removed or bypassed): -2.
+   - `|safe` on raw LLM output (XSS): -2.
+
+5. **Persistence / multi-turn state** (0-10)
+   - In-memory per-consumer (per-tab) history is OK per brief — full marks if turns accumulate.
+   - Class variable / module global (race-prone across consumers): -5.
+   - No history (single-turn only): -7.
+
+6. **Streaming & frontend wiring** (0-10)
+   - Single template dump (no {% include %} / partials): -3.
+   - Tailwind not actually built (no static/, no CLI invocation, no PostCSS config) when not using CDN: -3.
+   - No HTMX ws ext or equivalent JS streaming: -4.
+   - Token-by-token UI updates not visible (only full-message swap): -2.
+   - No chunk-by-chunk test assertion that the streaming path yields multiple chunks (tests only assert final joined string): -2.
+   - Consumer buffers all chunks before first WebSocket send (e.g. collects the full async generator into a list/string before the first `send`, short of the explicit CF#3 anti-pattern): -2.
+   - No disconnect handler **or** no try/except in the consumer streaming loop for forward errors (U2 / stream robustness — do not stack with §4 if you already deducted U2 there): -2.
+   - D6 sub-deductions above are additive with each other and with the bullets in this section; floor this dimension at 0.
+
+7. **Architecture** (0-5)
+   - Consumer wires LLM client inline with no service layer (U4): -3.
+   - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
+   - View doing template + LLM in one function: -1.
+
+8. **Secrets & config hygiene** (0-3)
+   - Any `SECRET_KEY` / `DJANGO_SECRET_KEY` literal or insecure string fallback in source, Dockerfile, compose, or README: cap this dimension at 0 (treat as CF#1 in ledger).
+   - `DEBUG=True` hardcoded as the default for the production/Docker path, or compose hardcodes debug on: -1.
+   - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -1.
+
+9. **Production hardening** (0-2)
+   - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -1.
+   - No structured logging configured (print-only, no `logging` setup) (U5): -1.
+   - Non-root container user: best practice only — no deduction.
+
+## Auto-critical-failure classification
+
+The items below are **always critical failures**, regardless of how this rubric's per-dimension deduction triggers describe them. The auditor cannot downgrade them to minor deductions. Multiple matches → multiple critical failures (each gets its own ledger row and its own mapped trigger deduction).
+
+| # | Trigger | Primary dimension | Evidence to cite |
+|---|---------|-------------------|------------------|
+| 1 | Any hardcoded secret in source / Dockerfile / compose / README / `.env` (including "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`). Django `SECRET_KEY` literals count. | D8 Secrets & config hygiene | `file:line` of the literal |
+| 2 | A spec hard-requirement deliverable is entirely absent OR loaded-but-unused (e.g. spec requires HTMX with WebSocket extension and the submission either omits it or imports it without wiring it to the streaming consumer) | D6 Streaming & frontend / D1 Deliverable completeness | `file:line` showing absence or unused import |
+| 3 | A spec functional behavior is broken by an anti-pattern (e.g. spec requires real-time token streaming and the consumer buffers via `list(.astream(...))`, `[chunk async for chunk in ...]` collected before send, or `await asyncio.to_thread(lambda: list(...))`) | D2 LLM integration | `file:line` of the buffering pattern |
+| 4 | Missing framework-default security middleware that the spec's stack assumes (CSRF, security middleware, `SecurityMiddleware`) | D4 Error handling | `file:line` of `MIDDLEWARE` list, with the missing entry called out |
+| 5 | Missing dependency declarations: spec-required tools (pytest, pytest-django, pytest-asyncio, ruff, mypy, bandit, coverage, pip-audit) absent from `requirements*.txt` / `pyproject.toml` such that the dev environment cannot be reproduced | D1 Deliverable completeness | `requirements.txt:1-N` or `pyproject.toml:[tool.*]` |
+| 6 | Tooling claimed by README/spec but unconfigured (no `[tool.ruff]`, no `[tool.mypy]`, no `.bandit` / `[tool.bandit]`, no `[tool.coverage]`, no pip-audit invocation) | D1 Deliverable completeness | absence of config block / file |
+| 7 | Hallucinated entry class / method that does not exist in the library source (verified by grep against `/home/hugo/projects/python-benchmark/results/claude-qwen3_5_ollama_cloud/project/.venv/lib/python3.*/site-packages/...`) | D2 LLM integration | grep result from library source proving absence |
+| 8 | Spec required env-driven input but submission hardcodes the value (e.g. OLLAMA_HOST / OLLAMA_MODEL only readable from Python source, never from env) | D2 LLM integration / D7 Architecture | `file:line` of the hardcoded value |
+| 9 | Tests pass against an anti-pattern (e.g. tests assert buffered output instead of streaming chunks, or mock a hallucinated API surface) — tests give a false-green | D3 Test quality | `test_*.py:line` showing the wrong assertion shape |
+| 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
+
+Operating rules:
+- D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
+- Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
+
+## Required output sections
+
+Target: under 800 words total. No speculation — code excerpts and package-source grep only.
+
+A. **Quick summary line** (1 sentence: did the submission meet the spec?).
+
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **nine** rows numbered 1–9 (D1–D9): `# | Dimension | Score / Max | Justification (file:line)`.
+
+C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
+
+D. **Practical tier** (default 20-point bands):
+   - **A (81-100)**: ship as-is or with trivial (<30 min) patches.
+   - **B (61-80)**: 1-2 hours to ship. Architecture is sound, minor gaps.
+   - **C (41-60)**: major rework needed. Core bugs or missing deliverables.
+   - **D (0-40)**: throw away or use only for architectural inspiration.
+
+E. **Verification section** — for every API call you claim is hallucinated, show the grep result from the installed package source that proves it. If you can't prove it, call it "unverified, likely correct."
+
+F. **Critical Failures** — bullet list, each with `file:line` evidence and a 1-sentence summary. Omit the section if there are none.
+
+G. **Critical-failure ledger** — for every item in section F, one row of the form: `<file:line>` → mapped rubric trigger (cite the trigger text) → mandatory deduction (the point loss the trigger states). If no rubric trigger fits, write "no trigger; -5 from <closest dimension>" and justify in one clause. Omit the section if section F is omitted.
+
+H. **Submission metadata & generation metrics** — one block, `n/a` for any unavailable field:
+   - Model
+   - Harness (e.g. claude-code, opencode, codex)
+   - Generation-Time (wall-clock, from `results/<harness>-<slug>/result.json` when present)
+   - Input-Tokens / Output-Tokens / Total-Tokens (from harness run artifact)
+   - Estimated-Cost-USD — **compute** from token counts × the model's row in the benchmark-ai-code skill's `PRICING.md`; never copy a harness-reported cost
+   - Pricing-Source (default `PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
+   - Date (YYYY-MM-DD of audit)
+   - Prompt-Version (MUST equal `v2.1` — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Source (path under `results/`, git hash, or chat link)
+
+I. **Killer strength** (one sentence) + **Killer weakness** (one sentence).
+
+## Output instruction
+
+When you have finished writing all sections above, write your **complete** audit report
+(sections A–I) to the file `/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-qwen3_5_ollama_cloud/report.md` using a file write tool. Do not truncate.

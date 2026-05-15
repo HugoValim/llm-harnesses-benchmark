@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Audit complete. Report written to `audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud/report.md`.\n\n**Score: 74 / 100 (Tier B)**\n\nKey findings:\n- **CF#4**: Missing `CsrfViewMiddleware` in `chatproject/settings.py:18-22`\n- **U1**: No Ollama preflight guard\n- **U2**: Bare-pass `disconnect` in consumer\n- **U8**: Unused `django-htmx` dependency declared but never imported\n- No multi-turn chat history (-7 D5)\n- Tailwind delivered via CDN instead of wired build (-2 D1)\n- No healthcheck or structured logging (-2 D9)\n\nVerified API calls against installed venv source \u2014 no hallucinations. All streaming paths use real async generators with immediate WebSocket send per chunk.",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch codex --model kimi-k2.6:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 348.88,
+  "ended_at": "2026-05-15T03:38:54+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "id": "kimi-k2.6:cloud",
+    "label": "Kimi K2.6 (Ollama Cloud) auditor via Codex",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "slug": "kimi_k2_6_ollama_codex"
+  },
+  "no_progress_timeout_seconds": 360,
+  "opencode_session_id": "019e29b1-ebad-7d33-b41e-2aea9b7ac832",
+  "output_tokens_per_second": 56.97,
+  "paths": {
+    "opencode_config": null,
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/kimi_k2_6_ollama_codex/claude-glm_5_1_ollama_cloud/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 6,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "dbbcb5278406e4c8964a5998678df76cc9b24b909fef08c137425a60448ca05e",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-15T03:33:05+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "2026-05-15T03:33:06.605017Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n",
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "tokens": {
+    "input": 804879,
+    "output": 19876,
+    "total": 824755
+  },
+  "tokens_per_second": 2364.01
+}
