@@ -1,4 +1,4 @@
-Prompt-Version: meta-v2.0
+Prompt-Version: meta-v3.1
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -38,9 +38,10 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Per-dimension scores from section B (`D1..D9`, each `score/max`)
    - Total from section C (`X/100`); record `null` if absent or malformed
    - Tier from section D (A/B/C/D)
-   - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 10 auto-CF rows)
-   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`
+   - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 12 auto-CF rows)
+   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
    - Record `n/a` for any missing field; never invent values
+   - After extraction, identify **leader reports** — those whose `<model_slug>` (case-insensitive substring match) contains `gpt_5_5` or `claude_opus_4_7`. Compute the leader mean total and per-dimension mean across all such reports. Carry these forward into Section 1 (executive summary) and Section 8 Check 5 (leader anchor calibration).
 3. Build the per-model cross-harness table (group by model slug; avg/std-dev of total across harnesses).
 4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D9 + total).
 5. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
@@ -60,6 +61,7 @@ State the verdict explicitly:
 - **Best model overall**: `<model_slug>` with avg total X.X/100 across N harnesses. One-sentence why.
 - Single most important harness-attributable pattern (cite a report:line).
 - Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
+- **Leader anchor band**: leader mean X.X/100 (N leader runs across harnesses {…}). Expected band: 95-97. Verdict: PASS / WARN / FAIL / insufficient-data (see Section 8 Check 5).
 - Calibration verdict in one clause (PASS / WARN / FAIL — defined in section 8).
 
 ### 2. Best model overall
@@ -72,6 +74,7 @@ Rules:
 - "Harnesses seen" = count of harness prefixes where the model has a valid total.
 - "Verdict" is one of: `consistent` (std dev <= 5), `harness-sensitive` (std dev > 10), `mixed` (5 < std dev <= 10), `insufficient-data` (only 1 valid total).
 - **Suppress the best-model claim** for any model with `insufficient-data` — note them but do not crown them.
+- If the top two eligible models differ by <=3 points and N<=5 for either contender, call it a tie instead of a winner.
 - Below the table, one sentence naming the winner and citing the report:line that best illustrates its strength.
 
 ### 3. Harness ranking
@@ -84,6 +87,7 @@ Rules:
 - Critical-failure count = sum of section-F failures across all runs of that harness.
 - Headline is one sentence summarizing harness behavior, citing one specific `report.md:line` as evidence.
 - Below the table: one-line sample-size caveat (e.g. "N=5 per harness; a single outlier swings avg by ~3 points — treat margins under 3 as ties").
+- If the top two harnesses differ by <=3 points and either has fewer than 5 valid runs, call it a tie.
 
 ### 4. Cross-harness model pairings
 
@@ -130,7 +134,7 @@ Rules:
 |---:|---|---:|---|---|
 
 Rules:
-- One row per CF type (#1..#10) that appears at least once across the cohort. Omit types with zero hits.
+- One row per CF type (#1..#12) that appears at least once across the cohort. Omit types with zero hits.
 - "Affected targets" lists `<harness>-<model_slug>` entries (space-separated; truncate with `…` after 6 entries and put the full list in the appendix).
 - Classification:
   - **universal** — every harness has at least one target hitting this CF type
@@ -139,15 +143,20 @@ Rules:
 
 ### 8. Calibration check (rubric fitness, non-blocking)
 
-Run all four checks and record the verdict per check, then an overall verdict:
+Run all five checks and record the verdict per check, then an overall verdict:
 
 - **Check 1 — Cohort median**: median total across all valid runs. PASS if <= 80; WARN if 80 < median <= 85; FAIL if > 85 (rubric too lenient).
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
 - **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target).
 - **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
+- **Check 5 — Leader anchor calibration**: leader mean total = mean of all totals where model slug (case-insensitive substring) matches `gpt_5_5` or `claude_opus_4_7`. The benchmark treats these models as reference anchors whose fully-compliant output should land in the 95-97 band.
+  - **PASS** if leader mean ∈ [94, 98] inclusive.
+  - **WARN** if leader mean ∈ [90, 94) ∪ (98, 100] — rubric or auditor drift; recommend deduction triggers to tighten or loosen as appropriate.
+  - **FAIL** if leader mean < 90 — leader runs scoring far below their reference band; investigate whether the rubric is over-deducting, whether the leaders genuinely regressed, or whether auditors are mis-applying triggers. Recommend a Prompt-Version bump and a re-run.
+  - If fewer than 2 leader reports are available, record verdict as `insufficient-data` and do NOT let this check influence the overall verdict.
 
 Overall verdict:
-- **PASS** — all four checks pass
+- **PASS** — all five checks pass (treat `insufficient-data` on Check 5 as neutral, not a failure)
 - **WARN** — one or more WARNs, no FAILs
 - **FAIL** — one or more FAILs
 
@@ -188,6 +197,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.1` and whose underlying benchmark prompt metadata is `benchmark-v3.0` (and `benchmark-followup-v3.0` when follow-up is present). Reports tagged `audit-v3.0` are excluded from cross-cell comparison until re-audited under `audit-v3.1`. List mismatches in the appendix and exclude them from rankings.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
   - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.

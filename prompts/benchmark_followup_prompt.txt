@@ -1,15 +1,22 @@
-Once finished coding and testing, you must make sure it runs, both locally, and that docker build also finishes successfully, and docker compose is able to run.
-
-Do not ask for confirmation. Do not stop with a plan. Fulfill the request and finish.
+Prompt-Version: benchmark-followup-v3.0
 
 This is phase 2 of 2 and a continuation of the existing project in the current working directory. Do not regenerate the app. Do not create a second app. Validate and fix the current codebase in place.
 
-Use environment variables so the LLM client actually works. Ensure `OLLAMA_HOST` (default `http://localhost:11434`) and `OLLAMA_MODEL` (default `qwen2.5:7b`) are set in the environment for the running app, including in the Dockerfile/compose. Verify the Ollama server is reachable before declaring the app healthy. Do not print secret values, do not copy secret file contents into the repo, and do not commit secrets into files, logs, Dockerfiles, compose files, or README examples.
+Do not ask for confirmation. Do not stop with a plan. Continue until validation is complete or until you hit a hard environment blocker that cannot be resolved from inside the workspace.
 
 Validate the project end-to-end in this order:
-- create or reuse a virtualenv, install the project's dependencies, run `python manage.py migrate` if the project's settings require a database, and run the local app under an ASGI server (daphne or uvicorn) in a way that proves it boots and accepts WebSocket connections
-- make any fixes needed so it boots cleanly
-- make sure `docker build` finishes successfully
-- make sure `docker compose up --build` is able to run, and that the served port is reachable with the WebSocket consumer wired up
+1. Create or reuse the local virtualenv with Python 3.13.13 from mise, install the project's dependencies, and run migrations if the settings require a database.
+2. Run the automated test suite and the configured static checks that are practical in this environment: ruff, mypy, bandit, coverage, and pip-audit.
+3. Run the local app under an ASGI server (daphne or uvicorn) and prove it boots.
+4. Prove the HTTP page is reachable.
+5. Prove the WebSocket route accepts a connection and can stream multiple mocked or real chunks through the app path.
+6. Run `docker build`.
+7. Run `docker compose up --build` long enough to prove the served port is reachable and the WebSocket route is wired.
 
-If one step passes, move to the next without asking for confirmation. If something fails, fix it and continue. Only stop when you have actually completed the validation work or you hit a hard blocker you cannot resolve from inside the workspace.
+Environment and blocker rules:
+- `OLLAMA_HOST` defaults to `http://localhost:11434` and `OLLAMA_MODEL` defaults to `qwen2.5:7b`; both must still be env-driven in app and Docker compose.
+- Check whether the Ollama server is reachable. If it is unavailable, do not mark the app broken solely for that reason. Instead verify that the app reports the dependency failure cleanly and record the blocker in the verification summary.
+- Do not print secrets, copy secret file contents into the repo, or write secret-like placeholders into source, `.env`, Dockerfile, compose, logs, or README examples.
+- If a validation step fails because of project code, fix it and rerun the smallest relevant command before moving on.
+
+Before finishing, update the verification summary in README or `VERIFY.md` with each command attempted, its result, and any unresolved environment blocker.

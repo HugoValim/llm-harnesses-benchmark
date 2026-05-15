@@ -1,10 +1,10 @@
-Prompt-Version: v2.1
+Prompt-Version: audit-v3.1
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
 ## Source of truth for LLM / Channels / Django API claims
 
-Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv. The Python minor version is not pinned (the spec asks for the newest Python from mise), so use a glob:
+Before classifying ANY method call as "hallucinated" or "wrong", verify against the real installed package source in the project's own venv. The benchmark pins Python 3.13.13, but use a glob so virtualenv layout differences do not break the audit:
 
 - {project_dir}/.venv/lib/python3.*/site-packages/langchain_ollama/chat_models.py (for ChatOllama)
 - {project_dir}/.venv/lib/python3.*/site-packages/langchain_core/language_models/chat_models.py (for .invoke / .ainvoke / .stream / .astream signatures)
@@ -30,21 +30,22 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 (Score against THIS, not what you think a good Django app should look like.)
 
 1. Django + Django Channels (no DRF, no auth, no Celery)
-2. Newest Python from mise
+2. Python 3.13.13 from mise
 3. ChatGPT-style SPA, not an API service
-4. Tailwind (django-tailwind / PostCSS / tailwind CLI — any one, properly wired)
-5. HTMX + ws ext (or small vanilla JS) for partial DOM updates as tokens stream
+4. Tailwind via the official Tailwind CLI, properly wired with source CSS and built static CSS
+5. HTMX + WebSocket extension for partial DOM updates as tokens stream
 6. Channels AsyncWebsocketConsumer for streaming
 7. OLLAMA_HOST and OLLAMA_MODEL via env (default `http://localhost:11434` / `qwen2.5:7b`); no OpenRouter key required
 8. No secrets in source / .env / Dockerfile / compose / README. Django `SECRET_KEY` must come from the environment with no hardcoded fallback (compose-generated value is OK). OLLAMA_HOST and OLLAMA_MODEL are not secrets but must be configurable from env, not hardcoded only in source
-9. Real, working Ollama integration via either `langchain-ollama` `ChatOllama` or the `ollama` Python client — either is acceptable as long as tokens stream over the WebSocket
+9. Real, working Ollama integration via `langchain-ollama` `ChatOllama`; direct `ollama` Python client is not accepted for v3.0
 10. Token streaming from model → WebSocket
 11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LLM/Ollama wiring (mocked), template rendering
 12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
 13. Dockerfile + docker-compose with ASGI server (daphne or uvicorn)
-14. Real README (not a "this README would normally document…" stub)
+14. Real README (not a "this README would normally document…" stub), including Tailwind build and verification commands
 15. All project files in current working directory (`.`), no nested chat_app/ subdir
 16. `.env.example` (or equivalent) documenting OLLAMA_HOST and OLLAMA_MODEL with their defaults
+17. Verification summary in README or `VERIFY.md` listing commands run, pass/fail result, and unresolved environment blockers
 
 ## Universal blind spots in scope for this benchmark
 
@@ -52,7 +53,26 @@ All U1-U8 rows from the benchmark-ai-code REFERENCE apply to this audit. Opt-out
 
 - None. U1-U8 are all applicable: the spec requires Docker (U7), env-var configuration (U6), a WebSocket disconnect path (U2), real-time Ollama integration (U1, U3), a service-layer split between consumer and LLM client (U4), structured logging (U5), and a clean dependency manifest (U8).
 
-The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric. For U2 (`disconnect`), apply the disconnect-related deduction in **§4 Error handling** OR in **§6 Streaming & frontend** (whichever section you cite first), never both.
+The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric. **U2 (`disconnect`)** — when the consumer has no `disconnect` method or a bare-`pass` `disconnect`, classify **CF#11** (section F mandatory). Apply the -3 in **§4** (D4) OR cite it in **§6** (D6) when D4 deductions are exhausted — **never both**. CF#11 always appears in section F when the condition holds.
+
+## Dimension weight lock (authoritative — do not alter these maxes)
+
+| # | Dimension | Max |
+|---|---|---:|
+| D1 | Deliverable completeness | 25 |
+| D2 | LLM integration correctness | 20 |
+| D3 | Test quality | 15 |
+| D4 | Error handling | 10 |
+| D5 | Persistence / multi-turn | 10 |
+| D6 | Streaming & frontend | 10 |
+| D7 | Architecture | 5 |
+| D8 | Secrets & config hygiene | 3 |
+| D9 | Production hardening | 2 |
+| **—** | **Total** | **100** |
+
+## Benchmark anchors (scoring calibration)
+
+`gpt_5_5` and `claude_opus_4_7` are benchmark reference anchors for this rubric. A near-perfect, fully spec-compliant submission from these models is expected to land in the **95-97 / 100** band — not 100 by default. Reserve 98-100 for submissions with literally zero rubric trip-ups across all nine dimensions. If you are about to score a non-leader run higher than the anchor band, double-check that the rubric triggers above were applied; auditor-induced score inflation against leaders is the most common calibration failure here.
 
 ## Audit dimensions — score each per its weight, total 100
 
@@ -62,15 +82,17 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
    - README has actual content (NOT the stock template). Stock template: -5.
    - requirements.txt OR pyproject.toml present. Missing: -5.
    - Each missing tool config (ruff, mypy, bandit, coverage, pip-audit): -1.
-   - Tailwind claimed but not wired (CDN only when django-tailwind/PostCSS was the approach): -2.
+   - Tailwind CLI missing or replaced by CDN/PostCSS/django-tailwind: -2.
    - ASGI server (daphne/uvicorn) missing from Dockerfile: -3.
    - DRF / auth / Celery present: -3 each.
    - Unused dependency declared in requirements.txt / pyproject.toml but not imported in source (U8): -2.
    - No `.env.example` (or equivalent) documenting OLLAMA_HOST / OLLAMA_MODEL (U6): -2.
    - `ASGI_APPLICATION` missing from settings: -2.
+   - Missing verification summary with command results: -2.
 
 2. **LLM integration correctness** (0-20)
    - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
+   - Uses direct `ollama` Python client instead of `langchain-ollama` `ChatOllama`: -5.
    - Wrong streaming method (`.predict`, `.run`, `.call`, or `chat()` without `stream=True` on the ollama client): -5.
    - Deprecated `langchain_community.chat_models.ChatOllama` instead of `langchain_ollama.ChatOllama`: -3.
    - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -3.
@@ -88,7 +110,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
    - Missing OLLAMA_HOST/OLLAMA_MODEL env check or no unreachable-Ollama preflight guard (U1): -3.
-   - No `disconnect` handler, or bare-`pass` disconnect (U2): -3.
+   - No `disconnect` handler, or bare-`pass` disconnect (U2) → classified as CF#11; mandatory -3 from D4 (do not double-deduct via §6).
    - No user-visible degraded UI on Ollama failure (U3): -3.
    - CSRF disabled globally (e.g. `CsrfViewMiddleware` removed or bypassed): -2.
    - `|safe` on raw LLM output (XSS): -2.
@@ -100,12 +122,12 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 
 6. **Streaming & frontend wiring** (0-10)
    - Single template dump (no {% include %} / partials): -3.
-   - Tailwind not actually built (no static/, no CLI invocation, no PostCSS config) when not using CDN: -3.
-   - No HTMX ws ext or equivalent JS streaming: -4.
+   - Tailwind CLI not actually wired (no source CSS, no static built CSS, no CLI invocation): -3.
+   - No HTMX WebSocket extension wired to the streaming route: -4.
    - Token-by-token UI updates not visible (only full-message swap): -2.
    - No chunk-by-chunk test assertion that the streaming path yields multiple chunks (tests only assert final joined string): -2.
    - Consumer buffers all chunks before first WebSocket send (e.g. collects the full async generator into a list/string before the first `send`, short of the explicit CF#3 anti-pattern): -2.
-   - No disconnect handler **or** no try/except in the consumer streaming loop for forward errors (U2 / stream robustness — do not stack with §4 if you already deducted U2 there): -2.
+   - No try/except in the consumer streaming loop for forward errors (stream robustness): -2. Missing/bare-pass `disconnect` is **CF#11** (U2) — do not duplicate that deduction here; §4 covers it.
    - D6 sub-deductions above are additive with each other and with the bullets in this section; floor this dimension at 0.
 
 7. **Architecture** (0-5)
@@ -139,10 +161,13 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 8 | Spec required env-driven input but submission hardcodes the value (e.g. OLLAMA_HOST / OLLAMA_MODEL only readable from Python source, never from env) | D2 LLM integration / D7 Architecture | `file:line` of the hardcoded value |
 | 9 | Tests pass against an anti-pattern (e.g. tests assert buffered output instead of streaming chunks, or mock a hallucinated API surface) — tests give a false-green | D3 Test quality | `test_*.py:line` showing the wrong assertion shape |
 | 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
+| 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
+| 12 | The v3.0 benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
 
 Operating rules:
 - D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
 - Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
+- **Sum check (mandatory):** Before finalising section B, section B must contain exactly nine rows, D1-D9 in order, and the denominators in the Score/Max column must sum to exactly 100. If not, correct the table before writing the report. Reports with a non-100 denominator sum are automatically excluded from cross-run comparison.
 
 ## Required output sections
 
@@ -171,11 +196,13 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Harness (e.g. claude-code, opencode, codex)
    - Generation-Time (wall-clock, from `results/<harness>-<slug>/result.json` when present)
    - Input-Tokens / Output-Tokens / Total-Tokens (from harness run artifact)
-   - Estimated-Cost-USD — **compute** from token counts × the model's row in the benchmark-ai-code skill's `PRICING.md`; never copy a harness-reported cost
-   - Pricing-Source (default `PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
+   - Estimated-Cost-USD — **compute** from token counts × the model's row in `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md`; never copy a harness-reported cost
+   - Pricing-Source (default `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `v2.1` — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.1`; primary benchmark prompt must be `benchmark-v3.0`; follow-up prompt must be `benchmark-followup-v3.0` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
+   - Primary-Prompt-SHA256 (from `result.json` or `prompt.txt` hash; `n/a` if unavailable)
+   - Followup-Prompt-SHA256 (from `result.json` or `followup-prompt.txt` hash; `n/a` if unavailable)
 
 I. **Killer strength** (one sentence) + **Killer weakness** (one sentence).
 
