@@ -88,7 +88,7 @@ DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 # Harness prefixes recognised when stripping ``results/<harness>-<slug>/`` →
 # ``<slug>``. Anything that doesn't match one of these is treated as a legacy
 # ``results/<slug>/project`` layout and the dirname itself becomes the slug.
-HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "ollama", "opencode")
+HARNESS_PREFIXES: tuple[str, ...] = ("claude", "cursor", "codex", "ollama", "opencode")
 
 
 def discover_project_dirs(
@@ -103,7 +103,7 @@ def discover_project_dirs(
       Used as the audit output dir name; unique by construction.
     - ``model_slug``: the slug with the harness prefix stripped, or the dir
       name itself when no harness prefix is recognised.
-    - ``harness``: ``"claude" | "codex" | "ollama" | "opencode" | "unknown"``.
+    - ``harness``: ``"claude" | "cursor" | "codex" | "ollama" | "opencode" | "unknown"``.
     - ``project_dir``: absolute Path to ``<name>/project``.
     - ``label`` / ``main_model`` / ``selection_reason`` from
       ``config_targets_by_slug[model_slug]`` when available (optional metadata).

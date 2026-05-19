@@ -3,13 +3,15 @@ set -euo pipefail
 
 # End-to-end Ollama Cloud benchmark + audit pipeline (audit-v3.1).
 #
-# Phase 1 - Build: five ``run_benchmark.py`` invocations, all with explicit
+# Phase 1 - Build: six ``run_benchmark.py`` invocations, all with explicit
 # ``--config`` / ``--results-dir`` / ``--report`` (same flag order everywhere):
 #   1–3. Ollama Cloud matrix — ``$OLLAMA_CLOUD_CONFIG`` expanded per harness
 #        (``ollama launch {claude,codex,opencode}``) -> results/{claude,codex,opencode}-<slug>/
-#   4. Anthropic subscription baseline — ``$CLAUDE_CODE_CONFIG`` (plain ``claude``) ->
+#   4. Cursor subscription baseline — ``$CURSOR_CONFIG`` (``agent`` CLI) ->
+#      results/cursor-composer_2_5/, results/cursor-composer_2_0/
+#   5. Anthropic subscription baseline — ``$CLAUDE_CODE_CONFIG`` (plain ``claude``) ->
 #      results/claude-claude_opus_4_7/   **leader anchor — required by audit-v3.1**
-#   5. ChatGPT-linked Codex baseline — ``$CODEX_CHATGPT_CONFIG`` (plain ``codex``) ->
+#   6. ChatGPT-linked Codex baseline — ``$CODEX_CHATGPT_CONFIG`` (plain ``codex``) ->
 #      results/codex-codex_gpt_5_5/      **leader anchor — required by audit-v3.1**
 #
 # The two leader baselines are not optional: ``audit-v3.1`` calibrates the rubric
@@ -43,7 +45,7 @@ set -euo pipefail
 #   META_ANALYSIS_HARNESS=ollama
 #   META_ANALYSIS_INPUT_DIR=kimi_k2_6_ollama_cloud
 #
-# Forwarded args (``"$@"``) apply only to the five build steps; audit + meta use fixed args.
+# Forwarded args (``"$@"``) apply only to the six build steps; audit + meta use fixed args.
 #
 # Examples:
 #   ./scripts/run_ollama_cloud_benchmark.sh
@@ -58,6 +60,7 @@ cd "$(dirname "$0")/.."
 
 # --- Paths -------------------------------------------------------------------
 OLLAMA_CLOUD_CONFIG=config/ollama_cloud_models.json
+CURSOR_CONFIG=config/cursor_models.json
 CLAUDE_CODE_CONFIG=config/claude_code_models.json
 CODEX_CHATGPT_CONFIG=config/codex_chatgpt_models.json
 AUDIT_MODELS_CONFIG=config/audit_models.json
@@ -142,6 +145,13 @@ python3 scripts/run_benchmark.py \
   --config "$OLLAMA_CLOUD_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
   --report docs/report.ollama-cloud.opencode.md \
+  "$@"
+
+python3 scripts/run_benchmark.py \
+  --harness cursor \
+  --config "$CURSOR_CONFIG" \
+  --results-dir "$BENCHMARK_RESULTS_DIR" \
+  --report docs/report.ollama-cloud.cursor.md \
   "$@"
 
 python3 scripts/run_benchmark.py \
