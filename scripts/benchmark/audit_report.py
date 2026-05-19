@@ -618,6 +618,21 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 
+def audit_variant_runner_type(config: dict, slug: str) -> str:
+    """Return ``runner_type`` for an audit_models.json variant slug.
+
+    Example:
+        >>> audit_variant_runner_type({"variants": [{"slug": "x"}]}, "x")
+        'claude'
+    """
+    for variant in config.get("variants", []):
+        if variant.get("skip_by_default"):
+            continue
+        if variant.get("slug") == slug:
+            return str(variant.get("runner_type", "claude"))
+    raise ValueError(f"No audit variant with slug={slug!r}")
+
+
 def resolve_meta_variant(
     meta_config: dict, harness: str, model_slug: str | None
 ) -> dict:

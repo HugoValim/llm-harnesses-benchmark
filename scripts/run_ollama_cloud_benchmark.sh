@@ -84,22 +84,7 @@ META_ANALYSIS_INPUT_DIR=
 
 # Return runner_type for a variant slug (default claude). Exits 1 if slug missing.
 _audit_variant_runner_type() {
-  python3 - "$AUDIT_MODELS_CONFIG" "$1" <<'PY'
-import json
-import sys
-
-path, slug = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as f:
-    config = json.load(f)
-for variant in config.get("variants", []):
-    if variant.get("skip_by_default"):
-        continue
-    if variant.get("slug") == slug:
-        print(variant.get("runner_type", "claude"))
-        raise SystemExit(0)
-print(f"ERROR: slug {slug!r} not found in {path}", file=sys.stderr)
-raise SystemExit(1)
-PY
+  python3 scripts/audit_variant_runner_type.py "$AUDIT_MODELS_CONFIG" "$1"
 }
 
 _resolve_meta_config() {
@@ -179,12 +164,19 @@ _resolve_meta_config
 # a re-run and then get excluded by the meta-analyst (guardrail in meta-v3.1).
 AUDITOR_REPORT_DIR="$AUDIT_REPORTS_DIR/$AUDITOR_SLUG"
 if [ -d "$AUDITOR_REPORT_DIR" ]; then
-  STALE_REPORTS=$(grep -l "Prompt-Version: audit-v3.0" "$AUDITOR_REPORT_DIR"/*/report.md 2>/dev/null || true)
-  if [ -n "$STALE_REPORTS" ]; then
+  STALE_REPORTS=()
+  shopt -s nullglob
+  for _report in "$AUDITOR_REPORT_DIR"/*/report.md; do
+    if grep -q "Prompt-Version: audit-v3.0" "$_report" 2>/dev/null; then
+      STALE_REPORTS+=("$_report")
+    fi
+  done
+  shopt -u nullglob
+  if [ "${#STALE_REPORTS[@]}" -gt 0 ]; then
     echo "ERROR: stale audit-v3.0 reports found under $AUDITOR_REPORT_DIR:" >&2
-    echo "$STALE_REPORTS" >&2
+    printf '%s\n' "${STALE_REPORTS[@]}" >&2
     echo "" >&2
-    echo "The meta-analysis (meta-v3.1) excludes audit-v3.0 reports. Remove them" >&2
+    echo "The meta-analysis meta-v3.1 excludes audit-v3.0 reports. Remove them" >&2
     echo "and re-run, or run with --force forwarded only to the audit phase." >&2
     echo "  Example: rm -r $AUDITOR_REPORT_DIR && ./scripts/run_ollama_cloud_benchmark.sh" >&2
     exit 2
