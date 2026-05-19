@@ -1,6 +1,6 @@
 # Claude Code Benchmark Report — Python (Django + Channels + LangChain)
 
-Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 only.
+Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 + Phase 2 (if variant enables follow-up).
 
 Variants in this config: `kimi_k2_6_ollama_cloud`, `qwen3_5_ollama_cloud`, `glm_5_1_ollama_cloud`, `minimax_m2_7_ollama_cloud`, `deepseek_v4_pro_ollama_cloud`, `deepseek_v4_flash_ollama_cloud`, `gemma4_ollama_cloud`, `nemotron_3_super_ollama_cloud`
 
@@ -12,14 +12,66 @@ Each variant writes under `results/claude-<slug>/`.
 
 | Variant | Status | Time | Files | Turns | Delegations |
 |---|---:|---:|---:|---:|---:|
-| kimi_k2_6_ollama_cloud | completed | 1510s | 38 | 137 | 0 |
-| qwen3_5_ollama_cloud | completed | 1951s | 10637 | 123 | 0 |
-| glm_5_1_ollama_cloud | completed | 565s | 44 | 99 | 0 |
-| minimax_m2_7_ollama_cloud | completed | 1757s | 40 | 130 | 0 |
-| deepseek_v4_pro_ollama_cloud | completed | 886s | 42 | 113 | 0 |
-| deepseek_v4_flash_ollama_cloud | completed | 490s | 39 | 101 | 0 |
-| gemma4_ollama_cloud | completed | 537s | 32 | 48 | 0 |
-| nemotron_3_super_ollama_cloud | completed | 1470s | 36 | 182 | 0 |
+| kimi_k2_6_ollama_cloud | failed | 2118s | 43 | 234 | 0 |
+| qwen3_5_ollama_cloud | completed | 4570s | 45 | 264 | 0 |
+| glm_5_1_ollama_cloud | completed | 896s | 47 | 157 | 0 |
+| minimax_m2_7_ollama_cloud | completed | 4730s | 45 | 282 | 0 |
+| deepseek_v4_pro_ollama_cloud | completed | 2296s | 42 | 219 | 0 |
+| deepseek_v4_flash_ollama_cloud | completed | 1872s | 44 | 196 | 0 |
+| gemma4_ollama_cloud | failed | 578s | 2 | 5 | 0 |
+| nemotron_3_super_ollama_cloud | completed | 1098s | 36 | 170 | 0 |
+
+## Phase Breakdown
+
+### kimi_k2_6_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 1440s | 151 | 36 |
+| phase2 | failed | 678s | 83 | 43 |
+
+### qwen3_5_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 1554s | 126 | 42 |
+| phase2 | completed | 3015s | 138 | 45 |
+
+### glm_5_1_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 391s | 82 | 47 |
+| phase2 | completed | 505s | 75 | 47 |
+
+### minimax_m2_7_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 1639s | 166 | 44 |
+| phase2 | completed | 3091s | 116 | 45 |
+
+### deepseek_v4_pro_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 1568s | 120 | 41 |
+| phase2 | completed | 728s | 99 | 42 |
+
+### deepseek_v4_flash_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 871s | 117 | 44 |
+| phase2 | completed | 1000s | 79 | 44 |
+
+### nemotron_3_super_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 1065s | 159 | 36 |
+| phase2 | completed | 33s | 11 | 36 |
+
 
 ## Per-Model Token Usage
 
@@ -29,48 +81,42 @@ Extracted from Claude Code's `modelUsage` field.
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| kimi-k2.6:cloud | 7,700,887 | 29,222 | 0 | 0 |
+| kimi-k2.6:cloud | 6,185,687 | 33,461 | 0 | 0 |
 
 ### qwen3_5_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| qwen3.5:cloud | 7,204,426 | 34,986 | 0 | 0 |
+| qwen3.5:cloud | 19,672,304 | 60,221 | 0 | 0 |
 
 ### glm_5_1_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| glm-5.1:cloud | 3,166,302 | 42,230 | 0 | 0 |
+| glm-5.1:cloud | 6,205,652 | 27,078 | 0 | 0 |
 
 ### minimax_m2_7_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| minimax-m2.7:cloud | 5,239,693 | 29,108 | 0 | 0 |
+| minimax-m2.7:cloud | 13,504,117 | 61,234 | 0 | 0 |
 
 ### deepseek_v4_pro_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| deepseek-v4-pro:cloud | 4,011,471 | 25,292 | 0 | 0 |
+| deepseek-v4-pro:cloud | 8,210,384 | 51,867 | 0 | 0 |
 
 ### deepseek_v4_flash_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| deepseek-v4-flash:cloud | 3,940,847 | 25,077 | 0 | 0 |
-
-### gemma4_ollama_cloud
-
-| Model | Input | Output | Cache Read | Cache Create |
-|---|---:|---:|---:|---:|
-| gemma4:31b-cloud | 1,647,474 | 10,137 | 0 | 0 |
+| deepseek-v4-flash:cloud | 7,532,586 | 45,584 | 0 | 0 |
 
 ### nemotron_3_super_ollama_cloud
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| nemotron-3-super:cloud | 15,441,655 | 47,569 | 0 | 0 |
+| nemotron-3-super:cloud | 10,877,348 | 28,689 | 0 | 0 |
 
 ## Delegation Details

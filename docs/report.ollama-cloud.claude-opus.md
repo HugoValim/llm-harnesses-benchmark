@@ -1,6 +1,6 @@
 # Claude Code Benchmark Report — Python (Django + Channels + LangChain)
 
-Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 only.
+Same prompt as the main benchmark (`prompts/benchmark_prompt.txt`). Phase 1 + Phase 2 (if variant enables follow-up).
 
 Variants in this config: `claude_sonnet_4_6`, `claude_opus_4_7`
 
