@@ -152,6 +152,14 @@ python3 scripts/run_benchmark.py \
   --report docs/report.ollama-cloud.claude-opus.md \
   "$@"
 
+python3 scripts/run_benchmark.py \
+  --harness codex \
+  --config "$CODEX_CHATGPT_CONFIG" \
+  --results-dir "$BENCHMARK_RESULTS_DIR" \
+  --model codex_gpt_5_5 \
+  --report docs/report.ollama-cloud.codex-gpt-5-5.md \
+  "$@"
+
 # Phase 2 - Audit (Role 1) -----------------------------------------------------
 
 _resolve_meta_config
