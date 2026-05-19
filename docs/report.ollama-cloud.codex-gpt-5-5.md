@@ -1,6 +1,6 @@
 # Benchmark Report
 
-Generated at: 2026-05-15T06:48:27+00:00
+Generated at: 2026-05-19T08:41:29+00:00
 Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28`
 
 ## Progress
@@ -23,7 +23,7 @@ Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28
 
 ## Model Selection
 
-- `codex_gpt_5_5` -> `gpt-5.5`: Codex exposes `gpt-5.5` for ChatGPT-linked auth; verify with `codex debug models`. May require subscription tier; fallback to `gpt-5.4` if unsupported.
+- `codex_gpt_5_5` -> `gpt-5.5`: Codex `gpt-5.5` with `model_reasoning_effort=xhigh` (extra-high reasoning). Verify with `codex debug models`. May require subscription tier; fallback to `gpt-5.4` if unsupported.
 - `codex_gpt_5_4` -> `gpt-5.4`: Codex CLI docs example for `-m`. Edit `id` if your catalog uses a different tag.
 - `codex_gpt_5_3_codex` -> `gpt-5.3-codex`: Often listed as the Codex-tuned variant; confirm with `codex debug models`.
 
@@ -31,7 +31,7 @@ Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28
 
 | Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
-| GPT-5.5 (Codex / ChatGPT) | openai | - | completed | 1249.65 | 2375220 | 4472.10 | yes | 50 | Django + Channels app, tests, README, and container files detected. |
+| GPT-5.5 xhigh (Codex / ChatGPT) | openai | - | completed | 2414.66 | 2640382 | 3041.46 | yes | 48 | Django + Channels app, tests, README, and container files detected. |
 | GPT-5.4 (Codex / ChatGPT) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | GPT-5.3-Codex (Codex CLI) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 
