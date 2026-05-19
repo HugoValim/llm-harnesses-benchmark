@@ -12,11 +12,12 @@
     {
       "slug": "codex_gpt_5_5",
       "id": "gpt-5.5",
-      "label": "GPT-5.5 (Codex / ChatGPT)",
+      "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
       "provider": "openai",
       "runner_type": "codex",
+      "codex_reasoning_effort": "xhigh",
       "enable_followup": true,
-      "selection_reason": "Codex exposes `gpt-5.5` for ChatGPT-linked auth; verify with `codex debug models`. May require subscription tier; fallback to `gpt-5.4` if unsupported."
+      "selection_reason": "Codex `gpt-5.5` with `model_reasoning_effort=xhigh` (extra-high reasoning). Verify with `codex debug models`. May require subscription tier; fallback to `gpt-5.4` if unsupported."
     },
     {
       "slug": "codex_gpt_5_4",
