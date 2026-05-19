@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.1
+Prompt-Version: meta-v3.2
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -41,7 +41,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 12 auto-CF rows)
    - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
    - Record `n/a` for any missing field; never invent values
-   - After extraction, identify **leader reports** — those whose `<model_slug>` (case-insensitive substring match) contains `gpt_5_5` or `claude_opus_4_7`. Compute the leader mean total and per-dimension mean across all such reports. Carry these forward into Section 1 (executive summary) and Section 8 Check 5 (leader anchor calibration).
+   - After extraction, identify **leader reports** — those whose `<model_slug>` (case-insensitive substring match) contains `claude_opus_4_7` (Opus 4.7 reference anchor only). Compute the leader mean total and per-dimension mean across all such reports. Carry these forward into Section 1 (executive summary) and Section 8 Check 5 (leader anchor calibration).
 3. Build the per-model cross-harness table (group by model slug; avg/std-dev of total across harnesses).
 4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D9 + total).
 5. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
@@ -61,7 +61,7 @@ State the verdict explicitly:
 - **Best model overall**: `<model_slug>` with avg total X.X/100 across N harnesses. One-sentence why.
 - Single most important harness-attributable pattern (cite a report:line).
 - Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
-- **Leader anchor band**: leader mean X.X/100 (N leader runs across harnesses {…}). Expected band: 95-97. Verdict: PASS / WARN / FAIL / insufficient-data (see Section 8 Check 5).
+- **Leader anchor band** (Opus 4.7 only): leader mean X.X/100 (N Opus 4.7 runs across harnesses {…}). Expected band: 95-97. Verdict: PASS / WARN / FAIL / insufficient-data (see Section 8 Check 5).
 - Calibration verdict in one clause (PASS / WARN / FAIL — defined in section 8).
 
 ### 2. Best model overall
@@ -149,7 +149,7 @@ Run all five checks and record the verdict per check, then an overall verdict:
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
 - **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target).
 - **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
-- **Check 5 — Leader anchor calibration**: leader mean total = mean of all totals where model slug (case-insensitive substring) matches `gpt_5_5` or `claude_opus_4_7`. The benchmark treats these models as reference anchors whose fully-compliant output should land in the 95-97 band.
+- **Check 5 — Leader anchor calibration**: leader mean total = mean of all totals where model slug (case-insensitive substring) matches `claude_opus_4_7` only. The benchmark treats Opus 4.7 as the sole reference anchor whose fully-compliant output should land in the 95-97 band.
   - **PASS** if leader mean ∈ [94, 98] inclusive.
   - **WARN** if leader mean ∈ [90, 94) ∪ (98, 100] — rubric or auditor drift; recommend deduction triggers to tighten or loosen as appropriate.
   - **FAIL** if leader mean < 90 — leader runs scoring far below their reference band; investigate whether the rubric is over-deducting, whether the leaders genuinely regressed, or whether auditors are mis-applying triggers. Recommend a Prompt-Version bump and a re-run.
