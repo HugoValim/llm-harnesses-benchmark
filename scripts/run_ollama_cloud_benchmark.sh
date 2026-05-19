@@ -115,28 +115,28 @@ python3 scripts/run_benchmark.py \
   --harness claude \
   --config "$OLLAMA_CLOUD_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report docs/report.ollama-cloud.claude.md \
+  --report 'docs/report.ollama-cloud.claude.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
   --harness codex \
   --config "$OLLAMA_CLOUD_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report docs/report.ollama-cloud.codex.md \
+  --report 'docs/report.ollama-cloud.codex.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
   --harness opencode \
   --config "$OLLAMA_CLOUD_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report docs/report.ollama-cloud.opencode.md \
+  --report 'docs/report.ollama-cloud.opencode.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
   --harness cursor \
   --config "$CURSOR_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report docs/report.ollama-cloud.cursor.md \
+  --report 'docs/report.ollama-cloud.cursor.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
@@ -144,7 +144,7 @@ python3 scripts/run_benchmark.py \
   --config "$CLAUDE_CODE_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
   --variant claude_opus_4_7 \
-  --report docs/report.ollama-cloud.claude-opus.md \
+  --report 'docs/report.ollama-cloud.claude-opus.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
@@ -152,7 +152,7 @@ python3 scripts/run_benchmark.py \
   --config "$CODEX_CHATGPT_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
   --model codex_gpt_5_5 \
-  --report docs/report.ollama-cloud.codex-gpt-5-5.md \
+  --report 'docs/report.ollama-cloud.codex-gpt-5-5.md' \
   "$@"
 
 # Phase 2 - Audit (Role 1) -----------------------------------------------------
