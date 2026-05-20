@@ -103,7 +103,7 @@
       "selection_reason": "NVIDIA Nemotron 3 Super served by Ollama Cloud for reasoning and coding benchmark coverage."
     },
     {
-      "slug": "gemma4_31b_ollama_cloud",
+      "slug": "gemma4_ollama_cloud",
       "label": "Gemma 4 31B (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "gemma4:31b-cloud",
@@ -115,13 +115,6 @@
       "provider": "ollama_cloud",
       "id": "minimax-m2.7:cloud",
       "selection_reason": "MiniMax M2.7 served by Ollama Cloud as a mid-tier Python-stack benchmark model."
-    },
-    {
-      "slug": "gemini_3_flash_preview_ollama_cloud",
-      "label": "Gemini 3 Flash Preview (Ollama Cloud)",
-      "provider": "ollama_cloud",
-      "id": "gemini-3-flash-preview:cloud",
-      "selection_reason": "Google Gemini 3 Flash Preview served by Ollama Cloud for fast-tier benchmark coverage."
     }
   ]
 }
