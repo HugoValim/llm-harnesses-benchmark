@@ -23,7 +23,7 @@ def test_ollama_cloud_slug_count() -> None:
     from benchmark.util import load_json
 
     registry = load_json(MODELS_CONFIG)["models"]
-    assert len(ollama_cloud_slugs(registry)) == 9
+    assert len(ollama_cloud_slugs(registry)) == 8
 
 
 def test_build_matrix_includes_all_ollama_on_three_harnesses() -> None:
@@ -39,9 +39,10 @@ def test_build_matrix_includes_all_ollama_on_three_harnesses() -> None:
 
 
 def test_build_matrix_step_count() -> None:
+    registry = load_json_models()
     steps = build_matrix(MODELS_CONFIG)
-    # 9 ollama models × 3 harnesses + 2 baselines (opus/gpt already counted only as baselines)
-    assert len(steps) == 9 * 3 + 2
+    n = len(ollama_cloud_slugs(registry))
+    assert len(steps) == n * len(OLLAMA_BUILD_HARNESSES) + len(BASELINE_STEPS)
 
 
 def test_reject_forwarded_model_flag() -> None:
@@ -63,8 +64,12 @@ def test_list_steps_cli() -> None:
         text=True,
         cwd=REPO_ROOT,
     )
+    registry = load_json_models()
     lines = [ln for ln in completed.stdout.strip().splitlines() if ln]
-    assert len(lines) == 9 * 3 + 2
+    expected = len(ollama_cloud_slugs(registry)) * len(OLLAMA_BUILD_HARNESSES) + len(
+        BASELINE_STEPS
+    )
+    assert len(lines) == expected
     assert "claude_opus_4_7" in completed.stdout
     assert "codex_gpt_5_5" in completed.stdout
 
