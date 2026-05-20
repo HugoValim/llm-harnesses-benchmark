@@ -38,7 +38,8 @@ python-benchmark/
 │   └── audit_prompt_template.txt          # LLM-powered audit rubric
 ├── scripts/
 │   ├── run_benchmark.py                   # unified entrypoint: --harness opencode|codex|claude
-│   ├── run_ollama_cloud_benchmark.sh      # Ollama Cloud matrix + subscription baselines + audit + meta
+│   ├── run_full_benchmark.sh              # full matrix (all harnesses) + audit + meta
+│   ├── run_ollama_cloud_benchmark.sh      # convenience wrapper → run_full_benchmark.sh
 │   ├── run_audit.py                       # Role 1: per-project LLM audits (rubric reports)
 │   ├── run_meta_analysis.py               # Role 2: cross-auditor meta-analysis
 │   ├── run_audit_benchmark.py             # deprecated shim → run_audit.py + run_meta_analysis.py
@@ -104,8 +105,10 @@ python scripts/run_benchmark.py --harness codex --config config/codex_chatgpt_mo
 python scripts/run_benchmark.py --harness claude
 python scripts/run_benchmark.py --harness claude --variant claude_sonnet_4_6
 
-# End-to-end Ollama Cloud builds + audit + meta-analysis (see script header for phases)
-./scripts/run_ollama_cloud_benchmark.sh
+# End-to-end full benchmark + audit + meta-analysis (Ollama Cloud matrix on
+# opencode/codex/claude + Opus/GPT-5.5 baselines; see scripts/run_full_benchmark.py)
+./scripts/run_full_benchmark.sh
+python scripts/run_full_benchmark.py --list-steps
 
 # Audit only: all `results/*/project` with chosen auditor slug from config/audit_models.json
 python scripts/run_audit.py --auditor kimi_k2_6_ollama_codex --target all -j 3
@@ -131,7 +134,7 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 
 **Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Use **`./scripts/run_ollama_cloud_benchmark.sh`** for the full build + audit + meta pipeline, or run `run_benchmark.py` / `run_audit.py` / `run_meta_analysis.py` separately.
+**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Use **`./scripts/run_full_benchmark.sh`** for the full build + audit + meta pipeline (the legacy `run_ollama_cloud_benchmark.sh` delegates to it).
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
 
