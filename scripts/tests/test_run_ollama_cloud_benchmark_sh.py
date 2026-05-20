@@ -1,4 +1,4 @@
-"""Regression tests for Ollama Cloud pipeline shell helpers."""
+"""Regression tests for full-benchmark pipeline entrypoints."""
 
 from __future__ import annotations
 
@@ -14,47 +14,28 @@ from benchmark.util import load_json  # noqa: E402
 
 HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
 MODELS_CONFIG = REPO_ROOT / "config" / "models.json"
-PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_ollama_cloud_benchmark.sh"
+PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_benchmark.sh"
+PIPELINE_PY = REPO_ROOT / "scripts" / "run_full_benchmark.py"
+OLLAMA_CLOUD_WRAPPER = REPO_ROOT / "scripts" / "run_ollama_cloud_benchmark.sh"
 MODEL_HARNESS_SCRIPT = REPO_ROOT / "scripts" / "audit_model_harness.py"
 
 
-def test_run_ollama_cloud_benchmark_sh_passes_bash_n() -> None:
+def test_run_full_benchmark_sh_passes_bash_n() -> None:
     subprocess.run(["bash", "-n", str(PIPELINE_SCRIPT)], check=True)
 
 
-def test_run_ollama_cloud_benchmark_sh_quotes_report_paths() -> None:
-    """--report paths must be single-quoted so $5/$report cannot break the shell."""
-    for line in PIPELINE_SCRIPT.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("--report "):
-            continue
-        assert "--report '" in line, f"unquoted --report path: {stripped}"
-        assert "\t" not in line.split("--report", 1)[1]
-        path = line.split("--report", 1)[1].strip()
-        assert path.startswith("'docs/report."), path
-        assert path.rstrip(" \\").endswith(".md'"), path
+def test_run_full_benchmark_sh_delegates_to_python() -> None:
+    text = PIPELINE_SCRIPT.read_text(encoding="utf-8")
+    assert "run_full_benchmark.py" in text
+    assert "exec python3" in text
 
 
-def test_codex_gpt_report_path_survives_fifth_positional_param() -> None:
-    """Regression: unquoted gpt-5-5 paths must not invoke ort.ollama-cloud... as a command."""
-    report_flag = "'docs/report.ollama-cloud.codex-gpt-5-5.md'"
-    completed = subprocess.run(
-        [
-            "bash",
-            "-c",
-            (
-                "set -euo pipefail; "
-                "set -- a b c d ort; "
-                f"python3 -c 'import sys; print(sys.argv[-1])' --report {report_flag}"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert (
-        completed.stdout.strip() == "docs/report.ollama-cloud.codex-gpt-5-5.md"
-    )
+def test_run_ollama_cloud_benchmark_sh_passes_bash_n() -> None:
+    subprocess.run(["bash", "-n", str(OLLAMA_CLOUD_WRAPPER)], check=True)
+
+
+def test_run_full_benchmark_py_passes_compile() -> None:
+    subprocess.run([sys.executable, "-m", "py_compile", str(PIPELINE_PY)], check=True)
 
 
 def test_audit_model_harness_lookup() -> None:
