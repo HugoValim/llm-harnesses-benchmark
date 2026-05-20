@@ -1,0 +1,42 @@
+{
+  "opencode": {
+    "command": "opencode",
+    "args": [
+      "run",
+      "--agent",
+      "build",
+      "--format",
+      "json"
+    ],
+    "notes": [
+      "Same opencode runner as the Rails profile - chosen for machine-readable JSON events with session IDs and token counts.",
+      "Models with opencode_id in models.json are auto-included using that ID (typically an OpenRouter path).",
+      "Verification is performed by scripts/analyze_results_runtime_python.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose."
+    ]
+  },
+  "codex": {
+    "command": "codex",
+    "notes": [
+      "ChatGPT-linked Codex: plain `codex` on PATH. Authenticate with `codex login` (ChatGPT OAuth) or subscription-backed credentials.",
+      "openai provider -> runner_type=codex. ollama_cloud provider -> runner_type=ollama -> `ollama launch codex`.",
+      "Uses `codex exec --json --ephemeral` with the harness autonomy flags."
+    ]
+  },
+  "claude": {
+    "command": "claude",
+    "isolate_home": false,
+    "notes": [
+      "Uses Claude Code CLI in headless mode (-p with --output-format stream-json --dangerously-skip-permissions).",
+      "anthropic provider -> runs claude directly. ollama_cloud provider -> command_prefix=[ollama, launch, claude].",
+      "isolate_home defaults to false so Claude subscription auth (read from ~/.claude/) works."
+    ]
+  },
+  "cursor": {
+    "command": "agent",
+    "notes": [
+      "Cursor Agent CLI in headless mode: agent -p --output-format stream-json --force --trust.",
+      "Authenticate with `agent login` (subscription) or set CURSOR_API_KEY for automation.",
+      "cursor provider models are auto-included."
+    ]
+  }
+}
