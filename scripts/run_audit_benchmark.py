@@ -21,7 +21,7 @@ _MESSAGE = (
     "DEPRECATED: scripts/run_audit_benchmark.py has been split into two scripts.\n"
     "  Use scripts/run_audit.py for per-project AI audits (Role 1).\n"
     "  Use scripts/run_meta_analysis.py for the cross-auditor meta-analysis (Role 2).\n"
-    "Role 1's --report-only rebuild writes audit-reports/comparison.md, including\n"
+    "Role 1's --report-only rebuild writes audit-reports/<auditor>/comparison.md, including\n"
     "leader-relative normalized scores (ceiling = mean of gpt_5_5 and claude_opus_4_7 runs).\n"
     "See CLAUDE.md for the updated invocation examples.\n"
 )

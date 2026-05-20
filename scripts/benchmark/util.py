@@ -310,7 +310,7 @@ def model_matches_harness(model: dict[str, Any], harness: str) -> bool:
     if harness == "codex":
         if rt == "codex":
             return True
-        return bool(rt == "ollama" and uses_ollama_launch_codex(model))
+        return rt == "ollama"
     if harness == "ollama":
         if rt == "ollama":
             return True

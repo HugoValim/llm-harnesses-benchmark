@@ -177,7 +177,7 @@ def _expand_ollama_cloud_models_config(
 def expand_ollama_cloud_config(
     config: dict[str, Any], harness: str
 ) -> dict[str, Any]:
-    """Expand ``config/ollama_cloud_models.json`` into a normal harness config dict.
+    """Expand legacy Ollama Cloud rows into a normal harness config dict.
 
     Unified rows list ``slug``, ``id`` (Ollama tag), ``label`` (without ``via …``),
     and ``selection_reason``; runner metadata lives under ``runner_configs``.
@@ -198,6 +198,130 @@ def expand_ollama_cloud_config(
     )
 
 
+def _normalize_registry_models(models: Any) -> list[dict[str, Any]]:
+    if not isinstance(models, list):
+        return []
+    return [clone_json(model) for model in models if isinstance(model, dict)]
+
+
+def _load_registry_harness(config_path: Path, harness: str) -> dict[str, Any]:
+    harnesses_path = config_path.parent / "harnesses.json"
+    if not harnesses_path.exists():
+        raise ValueError(
+            f"registry config {config_path!s} has no runner; expected harnesses at "
+            f"{harnesses_path!s}"
+        )
+    harnesses = load_json(harnesses_path)
+    runner = harnesses.get(harness)
+    if isinstance(runner, dict):
+        return runner
+    raise ValueError(
+        f"registry config {harnesses_path!s} missing harness {harness!r}; "
+        f"available={sorted(harnesses)}"
+    )
+
+
+# Maps provider -> harnesses that run it natively (without opencode_id).
+_PROVIDER_HARNESS_MAP: dict[str, frozenset[str]] = {
+    "anthropic": frozenset({"claude"}),
+    "openai": frozenset({"codex"}),
+    "cursor": frozenset({"cursor"}),
+    "ollama_cloud": frozenset({"claude", "codex"}),
+}
+
+
+def _build_registry_model_row(model: dict[str, Any], harness: str) -> dict[str, Any]:
+    row = clone_json(model)
+    row["harness"] = harness
+    # opencode uses a harness-specific id (e.g. openrouter path) when provided.
+    if harness == "opencode" and model.get("opencode_id"):
+        row["id"] = model["opencode_id"]
+    provider = row.get("provider", "")
+    if provider == "ollama_cloud":
+        # codex: runner_type=ollama auto-injects `ollama launch codex`.
+        # claude: prepend `ollama launch claude` as command prefix.
+        row.setdefault("runner_type", "ollama" if harness == "codex" else harness)
+        if harness == "claude":
+            row.setdefault("command_prefix", ["ollama", "launch", "claude"])
+    elif provider == "openai":
+        row.setdefault("runner_type", "codex")
+    else:
+        row.setdefault("runner_type", harness)
+    if not isinstance(row.get("id"), str) or not row["id"]:
+        raise ValueError(
+            f"harness {harness!r} model {row.get('slug')!r} needs string id"
+        )
+    return row
+
+
+def _registry_models_for_harness(
+    registry_models: list[dict[str, Any]], harness: str
+) -> list[dict[str, Any]]:
+    out = []
+    for model in registry_models:
+        provider = model.get("provider", "")
+        if harness in _PROVIDER_HARNESS_MAP.get(provider, frozenset()):
+            out.append(_build_registry_model_row(model, harness))
+        elif harness == "opencode" and model.get("opencode_id"):
+            out.append(_build_registry_model_row(model, harness))
+    return out
+
+
+def _strip_harness_model_map(runner: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in runner.items() if k != "models"}
+
+
+def resolve_harness_config(
+    config: dict[str, Any], config_path: Path, harness: str
+) -> dict[str, Any]:
+    """Return a normal models config for one harness.
+
+    Routing is derived from each model's provider:
+    - anthropic  -> claude harness
+    - openai     -> codex harness (runner_type=codex)
+    - cursor     -> cursor harness
+    - ollama_cloud -> claude + codex (ollama launch <harness>)
+    - opencode_id field present -> also included in opencode harness
+
+    Example:
+        ``resolve_harness_config(config, Path("config/models.json"), "codex")``
+        returns ``{"runner": ..., "models": [...]}`` scoped to codex rows.
+    """
+    if config.get("ollama_cloud"):
+        return expand_ollama_cloud_config(config, harness)
+    if "runner" in config:
+        return config
+    runner = _load_registry_harness(config_path, harness)
+    registry_models = _normalize_registry_models(config.get("models"))
+    models = _registry_models_for_harness(registry_models, harness)
+    return {
+        "runner": _strip_harness_model_map(runner),
+        "models": models,
+        "_registry_models": registry_models,
+    }
+
+
+def resolve_build_harness_config(
+    config: dict[str, Any], config_path: Path, harness: str
+) -> dict[str, Any]:
+    """Return runnable model rows and runner metadata for one build harness."""
+    return resolve_harness_config(config, config_path, harness)
+
+
+def resolve_audit_harness_config(
+    config: dict[str, Any], config_path: Path, harness: str
+) -> dict[str, Any]:
+    """Return runnable model rows and runner metadata for one audit harness."""
+    return resolve_harness_config(config, config_path, harness)
+
+
+def resolve_meta_harness_config(
+    config: dict[str, Any], config_path: Path, harness: str
+) -> dict[str, Any]:
+    """Return runnable model rows and runner metadata for one meta harness."""
+    return resolve_harness_config(config, config_path, harness)
+
+
 @dataclass
 class BenchmarkConfig:
     """All settings needed for a benchmark run, built from CLI args and config files."""
@@ -206,7 +330,6 @@ class BenchmarkConfig:
     config_path: Path
     results_dir: Path
     harness: str  # "opencode" | "codex" — prefix for result subdirs: results/<harness>-<slug>/
-    opencode_config_path: Path | None
     timeout_seconds: int
     no_progress_timeout_seconds: int
     min_preview_output_tps: float | None
@@ -228,12 +351,6 @@ def load_opencode_config() -> dict[str, Any] | None:
         return None
 
 
-def load_opencode_config_from_path(path: Path | None) -> dict[str, Any] | None:
-    if path is None:
-        return load_opencode_config()
-    return load_optional_json(path)
-
-
 def load_opencode_ollama_api_base() -> str | None:
     payload = load_opencode_config()
     if not payload:
@@ -244,109 +361,6 @@ def load_opencode_ollama_api_base() -> str | None:
     if not isinstance(base_url, str) or not base_url:
         return None
     return base_url[:-3] if base_url.endswith("/v1") else base_url
-
-
-def resolve_ollama_model_name(
-    opencode_model_id: str, config_path: Path | None = None
-) -> str | None:
-    payload = load_opencode_config_from_path(config_path)
-    if not payload:
-        return None
-    normalized = (
-        opencode_model_id.split("/", 1)[1]
-        if opencode_model_id.startswith("ollama/")
-        else opencode_model_id
-    )
-    model_entry = (
-        payload.get("provider", {})
-        .get("ollama", {})
-        .get("models", {})
-        .get(normalized, {})
-    )
-    model_name = model_entry.get("id")
-    if isinstance(model_name, str) and model_name:
-        return model_name
-    return None
-
-
-def resolve_ollama_context_limit(
-    opencode_model_id: str, config_path: Path | None = None
-) -> int | None:
-    payload = load_opencode_config_from_path(config_path)
-    if not payload:
-        return None
-    normalized = (
-        opencode_model_id.split("/", 1)[1]
-        if opencode_model_id.startswith("ollama/")
-        else opencode_model_id
-    )
-    model_entry = (
-        payload.get("provider", {})
-        .get("ollama", {})
-        .get("models", {})
-        .get(normalized, {})
-    )
-    context_limit = model_entry.get("limit", {}).get("context")
-    if isinstance(context_limit, int) and context_limit > 0:
-        return context_limit
-    return None
-
-
-def provider_model_key(model: dict[str, Any]) -> str:
-    provider_prefix = f"{model['provider']}/"
-    if model["id"].startswith(provider_prefix):
-        return model["id"][len(provider_prefix) :]
-    return model["id"]
-
-
-def fallback_ollama_config_entry(
-    model: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
-    model_name = model.get("ollama_model_name")
-    if not isinstance(model_name, str) or not model_name:
-        return None
-    model_key = provider_model_key(model)
-    entry: dict[str, Any] = {
-        "id": model_name,
-        "name": model.get("ollama_display_name") or f"{model['label']} (Ollama)",
-        "limit": {},
-    }
-    context_limit = model.get("ollama_limit_context")
-    output_limit = model.get("ollama_limit_output")
-    if isinstance(context_limit, int) and context_limit > 0:
-        entry["limit"]["context"] = context_limit
-    if isinstance(output_limit, int) and output_limit > 0:
-        entry["limit"]["output"] = output_limit
-    if model.get("ollama_tool_call") is True:
-        entry["tool_call"] = True
-    if model.get("ollama_reasoning") is True:
-        entry["reasoning"] = True
-    return model_key, entry
-
-
-def apply_ollama_model_overrides(
-    local_entry: dict[str, Any], model: dict[str, Any]
-) -> dict[str, Any]:
-    model_name = model.get("ollama_model_name")
-    if isinstance(model_name, str) and model_name:
-        local_entry["id"] = model_name
-    display_name = model.get("ollama_display_name")
-    if isinstance(display_name, str) and display_name:
-        local_entry["name"] = display_name
-    if model.get("ollama_tool_call") is True:
-        local_entry["tool_call"] = True
-    if model.get("ollama_reasoning") is True:
-        local_entry["reasoning"] = True
-    return local_entry
-
-
-def fallback_provider_config_entry(model: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    model_key = provider_model_key(model)
-    entry: dict[str, Any] = {
-        "id": model_key,
-        "name": model.get("label") or model_key,
-    }
-    return model_key, entry
 
 
 def load_ollama_warmup_payload(path: Path) -> dict[str, Any] | None:
@@ -486,303 +500,3 @@ def model_enables_followup(model: dict[str, Any]) -> bool:
     # (codex uses --ephemeral with no session continuity)
     return model["provider"] not in ("ollama", "codex")
 
-
-def prepare_local_opencode_config(
-    models: list[dict[str, Any]],
-    warmup_payload: dict[str, Any] | None,
-    local_api_base: str | None = None,
-    local_backend_type: str | None = None,
-) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    summary: dict[str, Any] = {
-        "configured": [],
-        "missing_warmup": [],
-        "missing_source_entry": [],
-        "skipped_reason": None,
-        "source": str(OPENCODE_CONFIG_PATH),
-    }
-    source_config = load_opencode_config()
-    if not source_config:
-        summary["skipped_reason"] = f"missing opencode config at {OPENCODE_CONFIG_PATH}"
-        return None, summary
-
-    source_providers = source_config.get("provider", {})
-    if not isinstance(source_providers, dict):
-        summary["skipped_reason"] = "opencode config has no provider map"
-        return None, summary
-
-    using_llama_swap = local_backend_type == "llama-swap"
-    warmup_results = warmup_payload.get("results_by_slug", {}) if warmup_payload else {}
-    local_config: dict[str, Any] = {
-        "$schema": source_config.get("$schema", "https://opencode.ai/config.json"),
-        "provider": {},
-    }
-
-    # Collect all cloud providers we'll need (models AND their opencode_subagent entries)
-    cloud_provider_names: set[str] = set()
-    for model in models:
-        if model.get("provider") != "ollama":
-            cloud_provider_names.add(model["provider"])
-        sub = model.get("opencode_subagent")
-        if (
-            isinstance(sub, dict)
-            and sub.get("provider")
-            and sub["provider"] != "ollama"
-        ):
-            cloud_provider_names.add(sub["provider"])
-
-    for provider_name in sorted(cloud_provider_names):
-        provider_entry = source_providers.get(provider_name)
-        if isinstance(provider_entry, dict):
-            local_config["provider"][provider_name] = clone_json(provider_entry)
-        else:
-            local_config["provider"][provider_name] = {}
-        provider_models = local_config["provider"][provider_name].get("models")
-        if not isinstance(provider_models, dict):
-            local_config["provider"][provider_name]["models"] = {}
-
-    ollama_provider = source_providers.get("ollama")
-    # When using llama-swap backend, also accept a "llama-swap" provider as the
-    # source for local models (the home config may wire models there directly).
-    if not isinstance(ollama_provider, dict) and using_llama_swap:
-        ollama_provider = source_providers.get("llama-swap")
-    if isinstance(ollama_provider, dict):
-        local_ollama_provider = clone_json(ollama_provider)
-        source_ollama_models = ollama_provider.get("models", {})
-        local_ollama_models: dict[str, Any] = {}
-    else:
-        local_ollama_provider = None
-        source_ollama_models = {}
-        local_ollama_models = {}
-
-    # Override the ollama provider baseURL when using llama-swap
-    if using_llama_swap and local_api_base and local_ollama_provider is not None:
-        api_url = local_api_base.rstrip("/")
-        if not api_url.endswith("/v1"):
-            api_url += "/v1"
-        local_ollama_provider.setdefault("options", {})["baseURL"] = api_url
-        summary["baseURL_override"] = api_url
-
-    for model in models:
-        if model.get("provider") != "ollama":
-            continue
-        warmup_entry = warmup_results.get(model["slug"])
-        verified_context = (
-            warmup_entry.get("highest_verified_context")
-            if isinstance(warmup_entry, dict)
-            else None
-        )
-        override_context = model.get("benchmark_context_override")
-
-        model_key = provider_model_key(model)
-        config_entry = (
-            source_ollama_models.get(model_key)
-            if isinstance(source_ollama_models, dict)
-            else None
-        )
-        fallback = fallback_ollama_config_entry(model)
-        if not isinstance(config_entry, dict) and fallback is not None:
-            _, config_entry = fallback
-        if not isinstance(config_entry, dict):
-            summary["missing_source_entry"].append(model_key)
-            continue
-
-        local_entry = clone_json(config_entry)
-        local_entry = apply_ollama_model_overrides(local_entry, model)
-
-        # When using llama-swap, override the model ID, strip context limits
-        # (context is managed server-side), and only keep reasoning/tool_call
-        # flags if explicitly set in the benchmark model config.
-        llama_swap_name = model.get("llama_swap_model")
-        if using_llama_swap and llama_swap_name:
-            local_entry["id"] = llama_swap_name
-            if "limit" in local_entry:
-                local_entry["limit"].pop("context", None)
-                local_entry["limit"].pop("output", None)
-                if not local_entry["limit"]:
-                    del local_entry["limit"]
-            # Reset capability flags — only keep them if the benchmark
-            # model config explicitly declares them for llama-swap use.
-            if "reasoning" not in model:
-                local_entry.pop("reasoning", None)
-            if "tool_call" not in model:
-                local_entry.pop("tool_call", None)
-
-        chosen_context = None
-        if not using_llama_swap:
-            # Context negotiation only matters for Ollama; llama-swap manages it server-side
-            if isinstance(override_context, int) and override_context > 0:
-                chosen_context = override_context
-            elif isinstance(verified_context, int) and verified_context > 0:
-                chosen_context = verified_context
-
-        if chosen_context is not None:
-            local_entry.setdefault("limit", {})["context"] = chosen_context
-            source_label = (
-                "override"
-                if isinstance(override_context, int) and override_context > 0
-                else "warmup"
-            )
-            summary["configured"].append(
-                f"{model['slug']}={chosen_context} ({source_label})"
-            )
-        elif not using_llama_swap:
-            summary["missing_warmup"].append(model["slug"])
-
-        local_ollama_models[model_key] = local_entry
-
-    if local_ollama_provider is not None:
-        local_ollama_provider["models"] = local_ollama_models
-        local_config["provider"]["ollama"] = local_ollama_provider
-
-    for model in models:
-        if model.get("provider") == "ollama":
-            continue
-        provider_name = model["provider"]
-        provider_entry = local_config["provider"].setdefault(provider_name, {})
-        provider_models = provider_entry.get("models")
-        if not isinstance(provider_models, dict):
-            provider_models = {}
-            provider_entry["models"] = provider_models
-        model_key, fallback_entry = fallback_provider_config_entry(model)
-        # Merge any opencode_model_options (e.g., reasoning config for thinking-mode models)
-        extra_options = model.get("opencode_model_options")
-        if isinstance(extra_options, dict):
-            fallback_entry = {**fallback_entry, **extra_options}
-        provider_models.setdefault(model_key, fallback_entry)
-
-    # Multi-agent: emit primary + subagent definitions for any model with opencode_subagent
-    multi_agent_models = [
-        m for m in models if isinstance(m.get("opencode_subagent"), dict)
-    ]
-    if multi_agent_models:
-        agent_map = local_config.setdefault("agent", {})
-        for model in multi_agent_models:
-            sub = model["opencode_subagent"]
-            sub_name = sub.get("name", "coder")
-            sub_model_id = sub["model_id"]
-            # opencode_subagent_options lets the model config inject extra fields into the
-            # subagent's provider model entry (e.g. {"reasoning": true} for models that put
-            # substantive content in reasoning blocks — DeepSeek V4 Pro, Qwen 3.6 Plus —
-            # which opencode otherwise drops, producing empty <task_result> bodies).
-            extra_provider_opts = sub.get("provider_model_options") or {}
-            base_entry = {"name": "PLACEHOLDER", "tool_call": True}
-            # Auto-enable reasoning for known reasoning-class subagent models so the
-            # cheap-cloud-executor pairings stop producing empty results.
-            REASONING_PREFIXES = (
-                "deepseek/deepseek-v4-pro",
-                "deepseek/deepseek-v4-flash",
-                "qwen/qwen3.6",
-                "qwen/qwen3.5",
-                "moonshotai/kimi-k2.6",
-            )
-            sub_id_lower = sub_model_id.lower()
-            auto_reasoning = any(p in sub_id_lower for p in REASONING_PREFIXES)
-            # Register the subagent's model in its provider's models map so opencode knows about it
-            sub_provider = sub.get("provider")
-            if sub_provider and sub_provider != "ollama":
-                prov_entry = local_config["provider"].setdefault(sub_provider, {})
-                prov_models = prov_entry.setdefault("models", {})
-                # Strip the "<provider>/" prefix to get the bare model key
-                bare_key = (
-                    sub_model_id.split("/", 1)[-1]
-                    if "/" in sub_model_id
-                    else sub_model_id
-                )
-                entry = {"name": bare_key, "tool_call": True}
-                if auto_reasoning:
-                    entry["reasoning"] = True
-                entry.update(extra_provider_opts)
-                prov_models.setdefault(bare_key, entry)
-            elif sub_provider == "ollama":
-                # llama-swap-backed subagent: add to the ollama provider models map
-                ollama_prov = local_config["provider"].setdefault("ollama", {})
-                ollama_models = ollama_prov.setdefault("models", {})
-                llama_swap_name = (
-                    sub.get("llama_swap_model") or sub_model_id.split("/", 1)[-1]
-                )
-                bare_key = (
-                    sub_model_id.split("/", 1)[-1]
-                    if "/" in sub_model_id
-                    else sub_model_id
-                )
-                entry = {
-                    "id": llama_swap_name,
-                    "name": llama_swap_name,
-                    "tool_call": True,
-                }
-                if auto_reasoning:
-                    entry["reasoning"] = True
-                entry.update(extra_provider_opts)
-                ollama_models.setdefault(bare_key, entry)
-            # Emit the subagent itself
-            agent_map[sub_name] = {
-                "mode": "subagent",
-                "model": sub_model_id,
-                "description": sub.get(
-                    "description", f"Delegate coding tasks to {sub_name}"
-                ),
-                "prompt": sub.get(
-                    "prompt", "You are a focused coding agent. Execute precisely."
-                ),
-            }
-        summary["multi_agent_subagents"] = sorted(
-            {m["opencode_subagent"]["name"] for m in multi_agent_models}
-        )
-
-    if not local_config["provider"]:
-        summary["skipped_reason"] = "no provider config available for selected models"
-        return None, summary
-
-    return local_config, summary
-
-
-def write_local_opencode_config(
-    path: Path,
-    models: list[dict[str, Any]],
-    warmup_payload: dict[str, Any] | None,
-    local_api_base: str | None = None,
-    local_backend_type: str | None = None,
-) -> dict[str, Any]:
-    local_config, summary = prepare_local_opencode_config(
-        models,
-        warmup_payload,
-        local_api_base=local_api_base,
-        local_backend_type=local_backend_type,
-    )
-    if local_config is None:
-        return summary
-    save_json(path, local_config)
-    summary["path"] = str(path)
-    return summary
-
-
-def print_local_opencode_config_summary(summary: dict[str, Any]) -> None:
-    skipped_reason = summary.get("skipped_reason")
-    if skipped_reason:
-        print_line(f"Local opencode benchmark config skipped: {skipped_reason}")
-        return
-    path = summary.get("path")
-    configured = summary.get("configured", [])
-    missing_warmup = summary.get("missing_warmup", [])
-    missing_source_entry = summary.get("missing_source_entry", [])
-    source = summary.get("source")
-    if path:
-        print_line(f"Local opencode benchmark config: {path}")
-    if source:
-        print_line(f"Local opencode benchmark config source: {source}")
-    base_override = summary.get("baseURL_override")
-    if base_override:
-        print_line(f"Ollama provider baseURL override: {base_override}")
-    print_line("Local opencode benchmark permissions: yolo (auto-approve enabled)")
-    if configured:
-        print_line(f"Ollama benchmark contexts: {', '.join(configured)}")
-    else:
-        print_line("Ollama benchmark contexts: none")
-    if missing_warmup:
-        print_line(
-            f"Ollama benchmark config missing warmup: {', '.join(missing_warmup)}"
-        )
-    if missing_source_entry:
-        print_line(
-            f"Ollama benchmark config missing source entries: {', '.join(missing_source_entry)}"
-        )

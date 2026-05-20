@@ -21,8 +21,6 @@ from benchmark.config import (
     existing_terminal_result,
     mark_model_skip_by_default,
     model_enables_followup,
-    resolve_ollama_context_limit,
-    resolve_ollama_model_name,
     summarize_project,
 )
 from benchmark.phase_result import build_phase_payload
@@ -663,68 +661,7 @@ def stream_process_output(
                 return _make_result(False, False, None)
 
 
-def _verify_opencode_config(
-    config_path: Path | None,
-    model: dict[str, Any],
-    model_slug: str,
-    project_dir: Path,
-) -> None:
-    """Verify the opencode config resolves correctly from the project cwd.
 
-    Guards against the relative-path bug where OPENCODE_CONFIG pointed at a
-    path that didn't exist from the opencode cwd, causing silent fallback to
-    the home config (wrong port / wrong model ID).
-    """
-    if config_path is None:
-        return
-    resolved = config_path.resolve()
-    if not resolved.exists():
-        raise RuntimeError(
-            f"[{model_slug}] OPENCODE_CONFIG does not exist: {resolved} "
-            f"(from project_dir={project_dir})"
-        )
-
-    if model.get("provider") != "ollama":
-        return
-
-    try:
-        config = json.loads(resolved.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        print_line(f"[{model_slug}] WARNING: could not parse {resolved}: {exc}")
-        return
-
-    base_url = (
-        config.get("provider", {})
-        .get("ollama", {})
-        .get("options", {})
-        .get("baseURL", "")
-    )
-
-    # Check that the model entry exists in the config
-    model_key = model["id"]
-    if model_key.startswith("ollama/"):
-        model_key = model_key[len("ollama/") :]
-    models_map = config.get("provider", {}).get("ollama", {}).get("models", {})
-    entry = models_map.get(model_key)
-    if not entry:
-        print_line(
-            f"[{model_slug}] WARNING: model key '{model_key}' not found in "
-            f"opencode config {resolved} — opencode may fall back to the home config"
-        )
-
-    # If using llama-swap, verify baseURL points to the llama-swap port
-    llama_swap_model = model.get("llama_swap_model")
-    if llama_swap_model and entry:
-        config_model_id = entry.get("id", "")
-        if config_model_id != llama_swap_model:
-            print_line(
-                f"[{model_slug}] WARNING: config model id '{config_model_id}' "
-                f"doesn't match llama_swap_model '{llama_swap_model}'"
-            )
-
-    print_line(
-        f"[{model_slug}] opencode config verified: {resolved} baseURL={base_url}"
-    )
 
 
 def run_opencode_phase(
@@ -746,7 +683,6 @@ def run_opencode_phase(
     root_dir = bench.results_dir.resolve().parent
     before_markers = snapshot_root_generated_markers(root_dir, bench.results_dir)
     prompt_path.write_text(prompt)
-    _verify_opencode_config(bench.opencode_config_path, model, model_slug, project_dir)
     command = build_opencode_command(
         bench.runner,
         model["id"],
@@ -757,8 +693,6 @@ def run_opencode_phase(
     )
     wall_start = time.monotonic()
     process_env = os.environ.copy()
-    if bench.opencode_config_path is not None:
-        process_env["OPENCODE_CONFIG"] = str(bench.opencode_config_path.resolve())
     process_env["OPENCODE_PERMISSION"] = json.dumps(
         OPENCODE_YOLO_PERMISSION, separators=(",", ":")
     )
@@ -809,9 +743,6 @@ def run_opencode_phase(
         model=model,
         session_id=metrics["session_id"],
         paths={
-            "opencode_config": str(bench.opencode_config_path)
-            if bench.opencode_config_path is not None
-            else None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),
@@ -931,7 +862,6 @@ def run_codex_phase(
         model=model,
         session_id=metrics["session_id"],
         paths={
-            "opencode_config": None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),
@@ -1049,7 +979,6 @@ def run_codex_variant(
         config_path=Path(),
         results_dir=results_dir,
         harness=harness,
-        opencode_config_path=None,
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
         min_preview_output_tps=None,
@@ -1230,15 +1159,8 @@ def _ensure_local_model_ready(
             target_model, model["slug"], context_limit=None
         )
 
-    # Ollama path: resolve model name and context from opencode config
-    target_model = resolve_ollama_model_name(model["id"], bench.opencode_config_path)
-    context_limit = resolve_ollama_context_limit(
-        model["id"], bench.opencode_config_path
-    )
-    if not target_model:
-        target_model = model.get("ollama_model_name") or model["id"].split("/", 1)[-1]
-
-    return bench.backend.ensure_model_ready(target_model, model["slug"], context_limit)
+    target_model = model.get("ollama_model_name") or model["id"].split("/", 1)[-1]
+    return bench.backend.ensure_model_ready(target_model, model["slug"], context_limit=None)
 
 
 def run_model(
@@ -1298,8 +1220,6 @@ def run_model(
     )
     print_line(f"[{model['slug']}] results_dir={result_dir}")
     print_line(f"[{model['slug']}] timeout={bench.timeout_seconds}s")
-    if runner_type not in _CODEX_RUNNERS and bench.opencode_config_path is not None:
-        print_line(f"[{model['slug']}] opencode_config={bench.opencode_config_path}")
     print_line(
         f"[{model['slug']}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
     )
@@ -1319,9 +1239,6 @@ def run_model(
                 "model": model,
                 "opencode_session_id": None,
                 "paths": {
-                    "opencode_config": str(bench.opencode_config_path)
-                    if bench.opencode_config_path is not None
-                    else None,
                     "project_dir": str(project_dir),
                     "prompt": str(prompt_path),
                     "stderr": str(stderr_path),
@@ -1449,8 +1366,6 @@ def run_model(
     exported_session = None
     if runner_type not in _CODEX_RUNNERS:
         process_env = os.environ.copy()
-        if bench.opencode_config_path is not None:
-            process_env["OPENCODE_CONFIG"] = str(bench.opencode_config_path.resolve())
         process_env["OPENCODE_PERMISSION"] = json.dumps(
             OPENCODE_YOLO_PERMISSION, separators=(",", ":")
         )
@@ -1472,9 +1387,6 @@ def run_model(
         "model": model,
         "opencode_session_id": session_id,
         "paths": {
-            "opencode_config": str(bench.opencode_config_path)
-            if bench.opencode_config_path is not None
-            else None,
             "project_dir": str(project_dir),
             "prompt": str(prompt_path),
             "stderr": str(stderr_path),

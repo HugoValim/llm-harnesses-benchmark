@@ -3,21 +3,24 @@
 
 Reads every ``audit-reports/<auditor>/<target>/report.md`` produced by
 ``scripts/run_audit.py`` and dispatches an LLM meta-analyst (Claude Code
-variant) against the full grid. The meta-analyst follows
+model) against the full grid. The meta-analyst follows
 ``prompts/audit_meta_analysis_prompt.txt`` and writes
-``audit-reports/meta-analysis.md`` (best-harness verdict, best-model verdict,
-cross-harness model pairings, dimension-level signal, performance & cost,
-critical-failure inventory, calibration check, recommendations).
+``audit-reports/<meta_model_slug>/meta-analysis.md`` (best-harness verdict,
+best-model verdict, cross-harness model pairings, dimension-level signal,
+performance & cost, critical-failure inventory, calibration check,
+recommendations). Run artifacts live under the same
+``audit-reports/<meta_model_slug>/`` directory.
 
-Before dispatch, ``audit-reports/comparison.md`` is rebuilt from the existing
-reports so the regex rollup is always in sync. The AI meta-analyst itself
-reads the raw ``report.md`` files, not the rollup.
+Before dispatch, ``audit-reports/<meta_model_slug>/comparison.md`` is
+rebuilt from the configured input auditor tree(s) so the regex rollup is
+always in sync. The AI meta-analyst itself reads the raw ``report.md`` files,
+not the rollup.
 
 Auth:
   - Anthropic meta-analysts use Claude subscription auth (``claude login``).
   - Non-Anthropic meta-analysts are routed via
-    ``ollama launch claude --model <tag>`` through the variant's
-    ``command_prefix`` field in audit_models.json.
+    ``ollama launch claude --model <tag>`` through the model row's
+    ``command_prefix`` field in config/models.json.
 """
 
 from __future__ import annotations
@@ -38,12 +41,29 @@ from benchmark.audit_report import (  # noqa: E402
     resolve_meta_variant,
     run_ai_meta_analysis,
 )
+from benchmark.config import resolve_meta_harness_config  # noqa: E402
 from benchmark.util import load_json, print_line  # noqa: E402
 
 
-AUDIT_CONFIG_PATH = REPO_ROOT / "config" / "audit_models.json"
+MODELS_CONFIG_PATH = REPO_ROOT / "config" / "models.json"
 META_PROMPT_TEMPLATE_PATH = REPO_ROOT / "prompts" / "audit_meta_analysis_prompt.txt"
 DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
+
+
+def _required_meta_binary(harness: str, meta_model: dict) -> str:
+    command_prefix = meta_model.get("command_prefix") or []
+    if harness == "ollama":
+        return "ollama"
+    if (
+        isinstance(command_prefix, list)
+        and len(command_prefix) >= 2
+        and command_prefix[0] == "ollama"
+        and command_prefix[1] == "launch"
+    ):
+        return "ollama"
+    if harness == "codex":
+        return "codex"
+    return "claude"
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,38 +71,44 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Role 2: dispatch an LLM meta-analyst over the per-target audit "
             "reports written by scripts/run_audit.py. Always rebuilds "
-            "comparison.md first; writes meta-analysis.md to the results dir."
+            "comparison.md first; writes meta-analysis.md under the meta "
+            "output directory."
         )
     )
     parser.add_argument(
-        "--audit-config",
-        default=str(AUDIT_CONFIG_PATH),
-        help="Path to audit_models.json (auditor registry; also used for meta variants).",
+        "--models-config",
+        default=str(MODELS_CONFIG_PATH),
+        help="Path to models.json (shared model registry).",
     )
     parser.add_argument(
         "--results-dir",
         default=str(DEFAULT_RESULTS_DIR),
-        help="Directory containing the per-auditor subdirs with report.md files.",
-    )
-    parser.add_argument(
-        "--meta-harness",
-        default="claude",
-        choices=("claude", "codex", "ollama"),
         help=(
-            "Harness used to dispatch the AI meta-analysis (default: claude). "
-            "'codex' runs the meta-analyst via the Codex CLI; 'ollama' wraps "
-            "codex with `ollama launch codex` for Ollama Cloud models. "
-            "Non-Anthropic Claude variants can still be routed via a "
-            "command_prefix (e.g. ['ollama','launch','claude'])."
+            "Root audit-reports directory. Used to resolve relative "
+            "--meta-input-dir paths and as the parent of the default "
+            "--meta-output-dir."
         ),
     )
     parser.add_argument(
-        "--meta-model",
+        "--meta-output-dir",
         default=None,
         help=(
-            "Variant slug from --audit-config to use for the meta-analysis. "
-            "Default: first non-skipped variant whose harness matches "
-            "--meta-harness."
+            "Directory for meta-analysis outputs (meta-analysis.md, "
+            "comparison.md, _meta-analysis-runs/). Default: "
+            "<results-dir>/<meta-model slug>."
+        ),
+    )
+    parser.add_argument(
+        "--harness",
+        default="claude",
+        help="Meta-analysis dispatch harness slug from harnesses.json.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Select one meta-analysis model slug from models.json. Default: "
+            "first non-skipped meta model whose harness matches --harness."
         ),
     )
     parser.add_argument(
@@ -100,7 +126,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Auditor subdir(s) whose report.md files the meta-analyst reads. "
             "Repeatable. Accepts an absolute path or a name relative to the "
-            "results dir (e.g. 'kimi_k2_6_ollama_codex'). Default: every auditor-"
+            "results dir (e.g. 'kimi_k2_6_ollama_cloud'). Default: every auditor-"
             "shaped subdir auto-discovered under --results-dir."
         ),
     )
@@ -126,22 +152,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    audit_config_path = Path(args.audit_config)
+    models_config_path = Path(args.models_config)
     results_dir = Path(args.results_dir)
     meta_prompt_path = Path(args.meta_prompt)
-
-    required_binary = {
-        "claude": "claude",
-        "codex": "codex",
-        "ollama": "ollama",
-    }[args.meta_harness]
-    if shutil.which(required_binary) is None:
-        print(
-            f"{required_binary} is not available on PATH "
-            f"(required for --meta-harness {args.meta_harness})",
-            file=sys.stderr,
-        )
-        return 1
 
     if not meta_prompt_path.exists():
         print(
@@ -150,33 +163,41 @@ def main() -> int:
         )
         return 1
 
-    if not results_dir.is_dir():
+    models_config = load_json(models_config_path)
+    try:
+        meta_config = resolve_meta_harness_config(
+            models_config, models_config_path, args.harness
+        )
+    except ValueError as exc:
+        print(f"Meta-analysis harness resolution failed: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        meta_variant = resolve_meta_variant(
+            meta_config, args.harness, args.model
+        )
+    except ValueError as exc:
+        print(f"Meta-analysis model resolution failed: {exc}", file=sys.stderr)
+        return 1
+
+    meta_dispatch_harness = str(meta_variant.get("runner_type", args.harness))
+    required_binary = _required_meta_binary(meta_dispatch_harness, meta_variant)
+    if shutil.which(required_binary) is None:
         print(
-            f"Results dir does not exist: {results_dir}. Run scripts/run_audit.py first.",
+            f"{required_binary} is not available on PATH "
+            f"(required for --harness {args.harness})",
             file=sys.stderr,
         )
         return 1
 
-    audit_config = load_json(audit_config_path)
+    if args.meta_output_dir:
+        meta_output_dir = Path(args.meta_output_dir)
+        if not meta_output_dir.is_absolute():
+            meta_output_dir = (results_dir / meta_output_dir).resolve()
+    else:
+        meta_output_dir = (results_dir / meta_variant["slug"]).resolve()
 
-    # Rebuild the regex rollup first so comparison.md is in sync. The AI
-    # meta-analyst reads the raw report.md files; this artifact is for humans.
-    results_dir.mkdir(parents=True, exist_ok=True)
-    comparison_md = build_comparison_table(results_dir)
-    statistical_md = build_statistical_summary(results_dir)
-    comparison_path = results_dir / "comparison.md"
-    comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
-    print_line(f"Comparison table + statistical summary written: {comparison_path}")
-
-    try:
-        meta_variant = resolve_meta_variant(
-            audit_config, args.meta_harness, args.meta_model
-        )
-    except ValueError as exc:
-        print(f"Meta-analysis variant resolution failed: {exc}", file=sys.stderr)
-        return 1
-
-    meta_runner = audit_config.get("runner") or {}
+    meta_runner = meta_config.get("runner") or {}
     meta_command_prefix = meta_runner.get("command_prefix")
     meta_isolate_home = bool(meta_runner.get("isolate_home", False))
 
@@ -195,6 +216,13 @@ def main() -> int:
                 return 1
             meta_input_dirs.append(resolved)
     else:
+        if not results_dir.is_dir():
+            print(
+                f"Results dir does not exist: {results_dir}. "
+                "Run scripts/run_audit.py first.",
+                file=sys.stderr,
+            )
+            return 1
         meta_input_dirs = discover_auditor_subdirs(results_dir)
         if not meta_input_dirs:
             print(
@@ -204,19 +232,28 @@ def main() -> int:
             )
             return 1
 
+    # Rebuild the regex rollup under the meta output dir. The AI meta-analyst
+    # reads the raw report.md files; this artifact is for humans.
+    meta_output_dir.mkdir(parents=True, exist_ok=True)
+    comparison_md = build_comparison_table(source_dirs=meta_input_dirs)
+    statistical_md = build_statistical_summary(source_dirs=meta_input_dirs)
+    comparison_path = meta_output_dir / "comparison.md"
+    comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
+    print_line(f"Comparison table + statistical summary written: {comparison_path}")
+
     print_line(
-        f"Dispatching AI meta-analysis: harness={args.meta_harness} "
-        f"variant={meta_variant['slug']} model={meta_variant.get('main_model', '?')} "
+        f"Dispatching AI meta-analysis: harness={args.harness} "
+        f"model={meta_variant['slug']} id={meta_variant.get('main_model', '?')} "
         f"input_dirs=[{', '.join(p.name for p in meta_input_dirs)}]"
     )
 
     try:
         run_ai_meta_analysis(
-            reports_dir=results_dir,
+            reports_dir=meta_output_dir,
             audit_input_dirs=meta_input_dirs,
             prompt_template=meta_prompt_path.read_text(),
             variant=meta_variant,
-            harness=args.meta_harness,
+            harness=meta_dispatch_harness,
             runner_command_prefix=meta_command_prefix,
             isolate_home=meta_isolate_home,
             timeout_seconds=args.meta_timeout_minutes * 60,
@@ -231,13 +268,13 @@ def main() -> int:
         traceback.print_exc()
         return 1
 
-    meta_output = results_dir / "meta-analysis.md"
+    meta_output = meta_output_dir / "meta-analysis.md"
     if meta_output.exists():
         print_line(f"AI meta-analysis written: {meta_output}")
     else:
         print_line(
             f"WARNING: meta-analysis run finished but {meta_output} was not written. "
-            f"Check {results_dir / '_meta-analysis-runs' / meta_variant['slug']}."
+            f"Check {meta_output_dir / '_meta-analysis-runs' / meta_variant['slug']}."
         )
         return 1
     return 0

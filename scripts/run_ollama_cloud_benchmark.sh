@@ -3,37 +3,35 @@ set -euo pipefail
 
 # End-to-end Ollama Cloud benchmark + audit pipeline (audit-v3.1).
 #
-# Phase 1 - Build: six ``run_benchmark.py`` invocations, all with explicit
-# ``--config`` / ``--results-dir`` / ``--report`` (same flag order everywhere):
-#   1–3. Ollama Cloud matrix — ``$OLLAMA_CLOUD_CONFIG`` expanded per harness
-#        (``ollama launch {claude,codex,opencode}``) -> results/{claude,codex,opencode}-<slug>/
-#   4. Cursor subscription baseline — ``$CURSOR_CONFIG`` (``agent`` CLI) ->
+# Phase 1 - Build: four ``run_benchmark.py`` invocations, all with explicit
+# ``--models-config`` / ``--results-dir`` / ``--report`` (same flag order everywhere):
+#   1. Shared opencode registry rows -> results/opencode-<slug>/
+#   2. Shared codex registry rows -> results/codex-<slug>/
+#   3. Cursor subscription baseline — shared cursor registry rows (``agent`` CLI) ->
 #      results/cursor-composer_2_5/, results/cursor-composer_2_0/
-#   5. Anthropic subscription baseline — ``$CLAUDE_CODE_CONFIG`` (plain ``claude``) ->
+#   4. Anthropic subscription baseline — shared Claude registry row (plain ``claude``) ->
 #      results/claude-claude_opus_4_7/   **leader anchor — required by audit-v3.1**
-#   6. ChatGPT-linked Codex baseline — ``$CODEX_CHATGPT_CONFIG`` (plain ``codex``) ->
-#      results/codex-codex_gpt_5_5/      **leader anchor — required by audit-v3.1**
 #
-# The two leader baselines are not optional: ``audit-v3.1`` calibrates the rubric
-# against ``gpt_5_5`` and ``claude_opus_4_7`` (expected 95-97/100). Phase 3's
+# The leader baselines are not optional: ``audit-v3.1`` calibrates the rubric
+# against ``codex_gpt_5_5`` and ``claude_opus_4_7`` (expected 95-97/100). Phase 3's
 # Check 5 records ``insufficient-data`` if fewer than 2 leader reports exist.
 #
-# Phase 2 - Audit (Role 1, audit-v3.1): ``run_audit.py`` with ``$AUDIT_MODELS_CONFIG``;
+# Phase 2 - Audit (Role 1, audit-v3.1): ``run_audit.py`` with ``$MODELS_CONFIG``;
 #   reports under ``$AUDIT_REPORTS_DIR/$AUDITOR_SLUG/<harness>-<slug>/report.md``.
-#   Rebuilds ``$AUDIT_REPORTS_DIR/comparison.md``. The pre-flight below detects any
+#   Rebuilds ``$AUDIT_REPORTS_DIR/$AUDITOR_SLUG/comparison.md``. The pre-flight below detects any
 #   stale ``audit-v3.0`` reports and aborts with instructions, since the meta-analyst
 #   excludes v3.0 reports from cross-cell comparison.
 #
 # Phase 3 - Meta-analysis (Role 2, meta-v3.1): ``run_meta_analysis.py`` reads
 #   ``$META_ANALYSIS_INPUT_DIR`` (default: same tree Phase 2 wrote) and dispatches the
-#   variant ``$META_ANALYSIS_AUDITOR_SLUG`` via harness ``$META_ANALYSIS_HARNESS``
-#   (default: that variant's ``runner_type`` in audit_models.json). Writes
-#   ``$AUDIT_REPORTS_DIR/meta-analysis.md``.
+#   model ``$META_ANALYSIS_AUDITOR_SLUG`` via harness ``$META_ANALYSIS_HARNESS``
+#   (default: the first matching harness in harnesses.json). Writes
+#   ``$AUDIT_REPORTS_DIR/$META_ANALYSIS_AUDITOR_SLUG/meta-analysis.md``.
 #
-# Auditor / meta knobs (all slugs must exist in ``$AUDIT_MODELS_CONFIG``):
+# Auditor / meta knobs (all slugs must exist in ``$MODELS_CONFIG``):
 #   AUDITOR_SLUG              — Role 1 auditor (required).
 #   META_ANALYSIS_AUDITOR_SLUG — Role 2 meta-analyst; default = AUDITOR_SLUG.
-#   META_ANALYSIS_HARNESS     — claude | codex | ollama; default = runner_type of meta slug.
+#   META_ANALYSIS_HARNESS     — claude | codex; default = first harness mapping for meta slug.
 #   META_ANALYSIS_INPUT_DIR   — report tree to read; default = AUDITOR_SLUG.
 #
 # Example — Kimi via ``ollama launch claude`` for audit + meta:
@@ -41,16 +39,16 @@ set -euo pipefail
 #
 # Example — Kimi audit on claude harness, meta via ``ollama launch codex``:
 #   AUDITOR_SLUG=kimi_k2_6_ollama_cloud
-#   META_ANALYSIS_AUDITOR_SLUG=kimi_k2_6_ollama_codex
-#   META_ANALYSIS_HARNESS=ollama
+#   META_ANALYSIS_AUDITOR_SLUG=kimi_k2_6_ollama_cloud
+#   META_ANALYSIS_HARNESS=codex
 #   META_ANALYSIS_INPUT_DIR=kimi_k2_6_ollama_cloud
 #
-# Forwarded args (``"$@"``) apply only to the six build steps; audit + meta use fixed args.
+# Forwarded args (``"$@"``) apply only to the build steps; audit + meta use fixed args.
 #
 # Examples:
 #   ./scripts/run_ollama_cloud_benchmark.sh
 #   ./scripts/run_ollama_cloud_benchmark.sh --force
-#   ./scripts/run_ollama_cloud_benchmark.sh --variant qwen3_5_ollama_cloud --model qwen3_5_ollama_cloud
+#   python3 scripts/run_benchmark.py --harness codex --model codex_gpt_5_5
 #
 # Cutover note (audit-v3.0 -> audit-v3.1): on first run after the prompt bump,
 # delete or move existing audit reports for the active auditor so phase 2
@@ -59,49 +57,46 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # --- Paths -------------------------------------------------------------------
-OLLAMA_CLOUD_CONFIG=config/ollama_cloud_models.json
-CURSOR_CONFIG=config/cursor_models.json
-CLAUDE_CODE_CONFIG=config/claude_code_models.json
-CODEX_CHATGPT_CONFIG=config/codex_chatgpt_models.json
-AUDIT_MODELS_CONFIG=config/audit_models.json
+MODELS_CONFIG=config/models.json
+HARNESSES_CONFIG=config/harnesses.json
 BENCHMARK_RESULTS_DIR=results
 AUDIT_REPORTS_DIR=audit-reports
 
-# --- Phase 2 & 3: auditor / meta-analyst (config/audit_models.json) ----------
+# --- Phase 2 & 3: auditor / meta-analyst (config/models.json) ----------------
 # Role 1 auditor slug. Reports -> audit-reports/<slug>/
 AUDITOR_SLUG=kimi_k2_6_ollama_cloud
-# AUDITOR_SLUG=deepseek_v4_pro_ollama_codex
+# AUDITOR_SLUG=deepseek_v4_pro_ollama_cloud
 
 # Role 2 meta-analyst slug. Empty = same as AUDITOR_SLUG.
 META_ANALYSIS_AUDITOR_SLUG=
-# META_ANALYSIS_AUDITOR_SLUG=kimi_k2_6_ollama_codex
+# META_ANALYSIS_AUDITOR_SLUG=kimi_k2_6_ollama_cloud
 
-# Role 2 harness: claude | codex | ollama. Empty = runner_type of meta slug in AUDIT_MODELS_CONFIG.
+# Role 2 harness: claude | codex. Empty = first harness mapping for the meta slug.
 META_ANALYSIS_HARNESS=
 
 # Role 2 input tree (auditor subdir under AUDIT_REPORTS_DIR). Empty = AUDITOR_SLUG.
 META_ANALYSIS_INPUT_DIR=
 
-# Return runner_type for a variant slug (default claude). Exits 1 if slug missing.
-_audit_variant_runner_type() {
-  python3 scripts/audit_variant_runner_type.py "$AUDIT_MODELS_CONFIG" "$1"
+# Return default harness for a model slug. Exits 1 if slug missing.
+_audit_model_harness() {
+  python3 scripts/audit_model_harness.py "$HARNESSES_CONFIG" "$1"
 }
 
 _resolve_meta_config() {
   META_ANALYSIS_AUDITOR_SLUG="${META_ANALYSIS_AUDITOR_SLUG:-$AUDITOR_SLUG}"
   META_ANALYSIS_INPUT_DIR="${META_ANALYSIS_INPUT_DIR:-$AUDITOR_SLUG}"
   local expected_harness
-  expected_harness="$(_audit_variant_runner_type "$META_ANALYSIS_AUDITOR_SLUG")"
+  expected_harness="$(_audit_model_harness "$META_ANALYSIS_AUDITOR_SLUG")"
   if [ -z "${META_ANALYSIS_HARNESS:-}" ]; then
     META_ANALYSIS_HARNESS="$expected_harness"
   elif [ "$META_ANALYSIS_HARNESS" != "$expected_harness" ]; then
-    echo "ERROR: META_ANALYSIS_HARNESS=${META_ANALYSIS_HARNESS} but variant ${META_ANALYSIS_AUDITOR_SLUG} has runner_type=${expected_harness} in ${AUDIT_MODELS_CONFIG}" >&2
+    echo "ERROR: META_ANALYSIS_HARNESS=${META_ANALYSIS_HARNESS} but model ${META_ANALYSIS_AUDITOR_SLUG} defaults to harness=${expected_harness} in ${HARNESSES_CONFIG}" >&2
     exit 2
   fi
   case "$META_ANALYSIS_HARNESS" in
-    claude|codex|ollama) ;;
+    claude|codex) ;;
     *)
-      echo "ERROR: META_ANALYSIS_HARNESS must be claude, codex, or ollama (got ${META_ANALYSIS_HARNESS})" >&2
+      echo "ERROR: META_ANALYSIS_HARNESS must be claude or codex (got ${META_ANALYSIS_HARNESS})" >&2
       exit 2
       ;;
   esac
@@ -112,47 +107,32 @@ _resolve_meta_config() {
 # Phase 1 - Build ------------------------------------------------------------
 
 python3 scripts/run_benchmark.py \
-  --harness claude \
-  --config "$OLLAMA_CLOUD_CONFIG" \
-  --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report 'docs/report.ollama-cloud.claude.md' \
-  "$@"
-
-python3 scripts/run_benchmark.py \
-  --harness codex \
-  --config "$OLLAMA_CLOUD_CONFIG" \
-  --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --report 'docs/report.ollama-cloud.codex.md' \
-  "$@"
-
-python3 scripts/run_benchmark.py \
   --harness opencode \
-  --config "$OLLAMA_CLOUD_CONFIG" \
+  --models-config "$MODELS_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
   --report 'docs/report.ollama-cloud.opencode.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
+  --harness codex \
+  --models-config "$MODELS_CONFIG" \
+  --results-dir "$BENCHMARK_RESULTS_DIR" \
+  --report 'docs/report.ollama-cloud.codex.md' \
+  "$@"
+
+python3 scripts/run_benchmark.py \
   --harness cursor \
-  --config "$CURSOR_CONFIG" \
+  --models-config "$MODELS_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
   --report 'docs/report.ollama-cloud.cursor.md' \
   "$@"
 
 python3 scripts/run_benchmark.py \
   --harness claude \
-  --config "$CLAUDE_CODE_CONFIG" \
+  --models-config "$MODELS_CONFIG" \
   --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --variant claude_opus_4_7 \
+  --model claude_opus_4_7 \
   --report 'docs/report.ollama-cloud.claude-opus.md' \
-  "$@"
-
-python3 scripts/run_benchmark.py \
-  --harness codex \
-  --config "$CODEX_CHATGPT_CONFIG" \
-  --results-dir "$BENCHMARK_RESULTS_DIR" \
-  --model codex_gpt_5_5 \
-  --report 'docs/report.ollama-cloud.codex-gpt-5-5.md' \
   "$@"
 
 # Phase 2 - Audit (Role 1) -----------------------------------------------------
@@ -184,18 +164,21 @@ if [ -d "$AUDITOR_REPORT_DIR" ]; then
 fi
 
 python3 scripts/run_audit.py \
-  --audit-config "$AUDIT_MODELS_CONFIG" \
+  --models-config "$MODELS_CONFIG" \
+  --harness claude \
   --benchmark-results-dir "$BENCHMARK_RESULTS_DIR" \
   --results-dir "$AUDIT_REPORTS_DIR" \
-  --auditor "$AUDITOR_SLUG" \
+  --model "$AUDITOR_SLUG" \
   --target all \
   -j 3
 
 # Phase 3 - Meta-analysis (Role 2) -------------------------------------------
 
 python3 scripts/run_meta_analysis.py \
-  --audit-config "$AUDIT_MODELS_CONFIG" \
+  --no-progress-minutes 15 \
+  --models-config "$MODELS_CONFIG" \
   --results-dir "$AUDIT_REPORTS_DIR" \
-  --meta-harness "$META_ANALYSIS_HARNESS" \
-  --meta-model "$META_ANALYSIS_AUDITOR_SLUG" \
-  --meta-input-dir "$META_ANALYSIS_INPUT_DIR"
+  --harness "$META_ANALYSIS_HARNESS" \
+  --model "$META_ANALYSIS_AUDITOR_SLUG" \
+  --meta-input-dir "$META_ANALYSIS_INPUT_DIR" \
+  --force

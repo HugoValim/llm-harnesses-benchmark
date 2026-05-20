@@ -10,6 +10,7 @@ import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -27,18 +28,21 @@ from benchmark.cursor_report import (  # noqa: E402
 from benchmark.cursor_runner import run_variant as run_cursor_variant  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
-    expand_ollama_cloud_config,
     load_ollama_warmup_payload,
     load_opencode_ollama_api_base,
-    print_local_opencode_config_summary,
-    write_local_opencode_config,
+    resolve_build_harness_config,
 )
 from benchmark.report import build_report, load_results  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
-from benchmark.util import USAGE_LIMIT_REACHED, load_json, model_matches_harness, print_line  # noqa: E402
+from benchmark.util import (  # noqa: E402
+    USAGE_LIMIT_REACHED,
+    load_json,
+    model_matches_harness,
+    print_line,
+)
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
-HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "cursor", "ollama"})
+HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "cursor"})
 
 
 def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
@@ -78,12 +82,6 @@ def _cleanup_backends(
 
 
 def _default_config_path(harness: str) -> Path:
-    if harness == "claude":
-        return REPO_ROOT / "config" / "claude_code_models.json"
-    if harness == "cursor":
-        return REPO_ROOT / "config" / "cursor_models.json"
-    if harness == "ollama":
-        return REPO_ROOT / "config" / "ollama_cloud_models.json"
     return REPO_ROOT / "config" / "models.json"
 
 
@@ -94,8 +92,6 @@ def _default_report_path(harness: str) -> Path:
         return REPO_ROOT / "docs" / "report.cursor.md"
     if harness == "codex":
         return REPO_ROOT / "docs" / "report.codex.md"
-    if harness == "ollama":
-        return REPO_ROOT / "docs" / "report.ollama.md"
     return REPO_ROOT / "docs" / "report.md"
 
 
@@ -116,7 +112,6 @@ def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
         "config",
         "followup_prompt",
         "ollama_warmup_results",
-        "opencode_config",
         "prompt",
         "report",
         "results_dir",
@@ -141,6 +136,22 @@ def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
     return True, ""
 
 
+def _model_row_to_cli_variant(model: dict[str, Any]) -> dict[str, Any]:
+    variant = dict(model)
+    main_model = variant.get("main_model") or variant.get("id")
+    if not isinstance(main_model, str) or not main_model:
+        raise ValueError(
+            f"model row {variant.get('slug')!r} needs string id or main_model"
+        )
+    variant["main_model"] = main_model
+    return variant
+
+
+def _ensure_cli_variant_config(config: dict[str, Any]) -> dict[str, Any]:
+    variants = [_model_row_to_cli_variant(m) for m in config.get("models", [])]
+    return {**config, "variants": variants}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Unified benchmark runner: opencode, codex, Claude Code, or Cursor CLI."
@@ -152,14 +163,10 @@ def parse_args() -> argparse.Namespace:
         help="Which agent runner to use (results go under results/<harness>-<slug>/).",
     )
     parser.add_argument(
-        "--config",
+        "--models-config",
+        dest="config",
         default=None,
-        help="Benchmark JSON. Default: config/models.json (opencode/codex) or "
-        "config/claude_code_models.json (claude).",
-    )
-    parser.add_argument(
-        "--opencode-config",
-        default=str(REPO_ROOT / "config" / "opencode.benchmark.json"),
+        help="Path to models.json (shared model registry).",
     )
     parser.add_argument("--prompt", default="prompts/benchmark_prompt.txt")
     parser.add_argument(
@@ -188,19 +195,13 @@ def parse_args() -> argparse.Namespace:
         "--model",
         action="append",
         dest="models",
-        help="Run only these slug(s) (opencode/codex: model slug; claude: variant slug). Repeatable.",
-    )
-    parser.add_argument(
-        "--variant",
-        action="append",
-        default=None,
-        help="(Claude) Same as --model — filter variants by slug. Repeatable.",
+        help="Run only these model slug(s). Repeatable.",
     )
     parser.add_argument(
         "--max-runs",
         type=int,
         default=None,
-        help="Cap how many models to execute this invocation (opencode/codex).",
+        help="Cap how many models to execute this invocation.",
     )
     parser.add_argument(
         "--force",
@@ -213,14 +214,9 @@ def parse_args() -> argparse.Namespace:
         help="Skip execution and only rebuild the report from saved result.json files.",
     )
     parser.add_argument(
-        "--sync-ollama-contexts-only",
-        action="store_true",
-        help="Write the local benchmark opencode config from warmup results and exit (opencode only).",
-    )
-    parser.add_argument(
         "--no-followup",
         action="store_true",
-        help="Disable the second-phase follow-up prompt (opencode/codex).",
+        help="Disable the second-phase follow-up prompt.",
     )
     parser.add_argument(
         "--min-preview-output-tps",
@@ -265,22 +261,14 @@ def parse_args() -> argparse.Namespace:
 def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     """Opencode or codex path (models.json-style config)."""
     config_path = Path(args.config)
-    opencode_config_path = Path(args.opencode_config)
     prompt_path = Path(args.prompt)
     followup_prompt_path = Path(args.followup_prompt)
     results_dir = Path(args.results_dir)
     report_path = Path(args.report)
     warmup_path = Path(args.ollama_warmup_results)
 
-    if args.sync_ollama_contexts_only and harness != "opencode":
-        print(
-            "--sync-ollama-contexts-only is only valid with --harness opencode",
-            file=sys.stderr,
-        )
-        return 1
-
     config = load_json(config_path)
-    config = expand_ollama_cloud_config(config, harness)
+    config = resolve_build_harness_config(config, config_path, harness)
     prompt = prompt_path.read_text().strip()
     followup_prompt = None
     if not args.no_followup and followup_prompt_path.exists():
@@ -298,12 +286,17 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     slug_filter: set[str] = set()
     if args.models:
         slug_filter |= set(args.models)
-    if args.variant:
-        slug_filter |= set(args.variant)
     if slug_filter:
+        registry_models = config.get("_registry_models", config["models"])
         by_slug = {m["slug"]: m for m in config["models"]}
         for s in sorted(slug_filter):
             if s not in by_slug:
+                if any(m.get("slug") == s for m in registry_models):
+                    print(
+                        f"Slug `{s}` is not a {harness} model (check harness in config).",
+                        file=sys.stderr,
+                    )
+                    return 1
                 print(f"Unknown model slug: {s}", file=sys.stderr)
                 return 1
             if not model_matches_harness(by_slug[s], harness):
@@ -320,23 +313,12 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     if not selected_models:
         print(
             f"No models selected for harness={harness!r}. Check runner_type in {config_path} "
-            "or pass --model/--variant.",
+            "or pass --model.",
             file=sys.stderr,
         )
         return 1
 
     warmup_payload = load_ollama_warmup_payload(warmup_path)
-
-    if args.sync_ollama_contexts_only:
-        config_summary = write_local_opencode_config(
-            opencode_config_path,
-            selected_models,
-            warmup_payload,
-            local_api_base=args.local_api_base,
-            local_backend_type=args.local_backend,
-        )
-        print_local_opencode_config_summary(config_summary)
-        return 0
 
     if not args.report_only:
         if harness == "opencode" and shutil.which("opencode") is None:
@@ -356,25 +338,11 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         print_line(f"Local backend: {backend.backend_name} at {api_base}")
 
     if not args.report_only:
-        opencode_models = [
-            m for m in selected_models if m.get("runner_type", "opencode") == "opencode"
-        ]
-        config_summary = write_local_opencode_config(
-            opencode_config_path,
-            opencode_models,
-            warmup_payload,
-            local_api_base=args.local_api_base,
-            local_backend_type=args.local_backend,
-        )
-        print_local_opencode_config_summary(config_summary)
-        opencode_override = opencode_config_path if config_summary.get("path") else None
-
         bench = BenchmarkConfig(
             runner=config["runner"],
             config_path=config_path,
             results_dir=results_dir,
             harness=harness,
-            opencode_config_path=opencode_override,
             timeout_seconds=args.timeout_minutes * 60,
             no_progress_timeout_seconds=args.no_progress_minutes * 60,
             min_preview_output_tps=args.min_preview_output_tps,
@@ -489,17 +457,14 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
     results_dir = Path(args.results_dir)
     report_path = Path(args.report)
 
-    if args.sync_ollama_contexts_only:
+    config = load_json(config_path)
+    config = resolve_build_harness_config(config, config_path, "claude")
+    config = _ensure_cli_variant_config(config)
+    if "variants" not in config:
         print(
-            "--sync-ollama-contexts-only is only valid with --harness opencode",
+            f"Config {config_path} has no models for harness='claude'.",
             file=sys.stderr,
         )
-        return 1
-
-    config = load_json(config_path)
-    config = expand_ollama_cloud_config(config, "claude")
-    if "variants" not in config:
-        print(f"Config {config_path} has no 'variants' key (expected Claude variants).", file=sys.stderr)
         return 1
 
     prompt = prompt_path.read_text().strip()
@@ -510,14 +475,12 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
     wanted: set[str] = set()
     if args.models:
         wanted |= set(args.models)
-    if args.variant:
-        wanted |= set(args.variant)
     if wanted:
         variants = [v for v in all_variants if v["slug"] in wanted]
         missing = wanted - {v["slug"] for v in variants}
         if missing:
             print(
-                f"Unknown variant slug(s): {', '.join(sorted(missing))}",
+                f"Unknown model slug(s): {', '.join(sorted(missing))}",
                 file=sys.stderr,
             )
             return 1
@@ -535,7 +498,8 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             )
             return 1
         print_line(
-            "Note: --harness claude uses variants JSON only; opencode/codex-only CLI flags "
+            "Note: --harness claude uses Claude Code runner semantics; "
+            "opencode/codex-only CLI flags "
             "(warmup, local backend, preview TPS gate, …) are ignored."
         )
         timeout_seconds = args.timeout_minutes * 60
@@ -546,9 +510,11 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
         jobs = args.jobs if args.jobs > 0 else len(variants)
         jobs = max(1, min(jobs, len(variants))) if variants else 1
         followup_path = Path(args.followup_prompt)
-        followup_text = followup_path.read_text().strip() if followup_path.exists() else None
+        followup_text = (
+            followup_path.read_text().strip() if followup_path.exists() else None
+        )
         print_line(
-            f"Claude Code benchmark: {len(variants)} variants, jobs={jobs}, "
+            f"Claude Code benchmark: {len(variants)} models, jobs={jobs}, "
             f"timeout={timeout_seconds}s, isolate_home={isolate_home}"
         )
 
@@ -572,7 +538,9 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
                     runner_command_prefix=runner_command_prefix,
                     isolate_home=isolate_home,
                     harness="claude",
-                    followup_prompt=followup_text if _variant_enables_followup(v) else None,
+                    followup_prompt=(
+                        followup_text if _variant_enables_followup(v) else None
+                    ),
                 )
                 if _phase_hit_usage_limit(payload):
                     abort_flag.set()
@@ -613,17 +581,12 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
     results_dir = Path(args.results_dir)
     report_path = Path(args.report)
 
-    if args.sync_ollama_contexts_only:
-        print(
-            "--sync-ollama-contexts-only is only valid with --harness opencode",
-            file=sys.stderr,
-        )
-        return 1
-
     config = load_json(config_path)
+    config = resolve_build_harness_config(config, config_path, "cursor")
+    config = _ensure_cli_variant_config(config)
     if "variants" not in config:
         print(
-            f"Config {config_path} has no 'variants' key (expected Cursor variants).",
+            f"Config {config_path} has no models for harness='cursor'.",
             file=sys.stderr,
         )
         return 1
@@ -636,14 +599,12 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
     wanted: set[str] = set()
     if args.models:
         wanted |= set(args.models)
-    if args.variant:
-        wanted |= set(args.variant)
     if wanted:
         variants = [v for v in all_variants if v["slug"] in wanted]
         missing = wanted - {v["slug"] for v in variants}
         if missing:
             print(
-                f"Unknown variant slug(s): {', '.join(sorted(missing))}",
+                f"Unknown model slug(s): {', '.join(sorted(missing))}",
                 file=sys.stderr,
             )
             return 1
@@ -651,7 +612,9 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
         variants = [v for v in all_variants if not v.get("skip_by_default")]
 
     if args.max_runs is not None:
-        print_line("Note: --max-runs applies only to opencode/codex; ignoring for cursor.")
+        print_line(
+            "Note: --max-runs applies only to opencode/codex; ignoring for cursor."
+        )
 
     if not args.report_only:
         if shutil.which("agent") is None:
@@ -662,7 +625,8 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
             )
             return 1
         print_line(
-            "Note: --harness cursor uses variants JSON only; opencode/codex-only flags "
+            "Note: --harness cursor uses Cursor runner semantics; "
+            "opencode/codex-only flags "
             "(warmup, local backend, preview TPS gate, …) are ignored."
         )
         timeout_seconds = args.timeout_minutes * 60
@@ -672,9 +636,11 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
         jobs = args.jobs if args.jobs > 0 else len(variants)
         jobs = max(1, min(jobs, len(variants))) if variants else 1
         followup_path = Path(args.followup_prompt)
-        followup_text = followup_path.read_text().strip() if followup_path.exists() else None
+        followup_text = (
+            followup_path.read_text().strip() if followup_path.exists() else None
+        )
         print_line(
-            f"Cursor CLI benchmark: {len(variants)} variants, jobs={jobs}, "
+            f"Cursor CLI benchmark: {len(variants)} models, jobs={jobs}, "
             f"timeout={timeout_seconds}s"
         )
 
@@ -697,7 +663,9 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
                     force=args.force,
                     runner_command_prefix=runner_command_prefix,
                     harness="cursor",
-                    followup_prompt=followup_text if _variant_enables_followup(v) else None,
+                    followup_prompt=(
+                        followup_text if _variant_enables_followup(v) else None
+                    ),
                 )
                 if _phase_hit_usage_limit(payload):
                     abort_flag.set()
@@ -741,7 +709,7 @@ def main() -> int:
 
     args = normalize_benchmark_paths(args)
 
-    if harness in {"opencode", "codex", "ollama"}:
+    if harness in {"opencode", "codex"}:
         return _run_model_harness(args, harness)
     if harness == "claude":
         return _run_claude_harness(args)

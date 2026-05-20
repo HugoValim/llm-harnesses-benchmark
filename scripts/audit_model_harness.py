@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print runner_type for an audit_models.json variant slug."""
+"""Print first configured harness for a model slug."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.audit_report import audit_variant_runner_type  # noqa: E402
-from benchmark.util import load_json  # noqa: E402
+from benchmark.audit_report import audit_model_harness  # noqa: E402
+from benchmark.util import load_json, load_optional_json  # noqa: E402
 
 
 def main() -> int:
     if len(sys.argv) != 3:
         print(
-            "usage: audit_variant_runner_type.py CONFIG SLUG",
+            "usage: audit_model_harness.py HARNESSES_CONFIG SLUG",
             file=sys.stderr,
         )
         return 2
@@ -24,7 +24,8 @@ def main() -> int:
     slug = sys.argv[2]
     try:
         config = load_json(config_path)
-        print(audit_variant_runner_type(config, slug))
+        models_config = load_optional_json(config_path.parent / "models.json")
+        print(audit_model_harness(config, slug, models_config=models_config))
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

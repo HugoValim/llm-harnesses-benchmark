@@ -2,14 +2,15 @@
 """Role 1: per-project AI audit dispatch.
 
 Reads benchmark outputs under ``results/<harness>-<slug>/project`` and
-dispatches an LLM auditor (Claude Code variant) against each, using the
+dispatches an LLM auditor registry row against each, using the
 rubric template at ``prompts/audit_prompt_template.txt``. Audit outputs land
 in ``audit-reports/<auditor_slug>/<target_slug>/`` (one ``report.md`` per
 (auditor, target) pair).
 
-After dispatch, rebuilds ``audit-reports/comparison.md`` from every
-``report.md`` on disk via :func:`benchmark.audit_report.build_comparison_table`
-and :func:`build_statistical_summary`.
+After dispatch, rebuilds ``audit-reports/<auditor_slug>/comparison.md`` per
+auditor from that auditor's ``report.md`` files via
+:func:`benchmark.audit_report.build_comparison_table` and
+:func:`build_statistical_summary`.
 
 This script is the per-project leg of the audit pipeline. The cross-auditor
 meta-analysis is its own entry point: ``scripts/run_meta_analysis.py``.
@@ -17,7 +18,7 @@ meta-analysis is its own entry point: ``scripts/run_meta_analysis.py``.
 Auth:
   - Anthropic auditors use Claude subscription auth (``claude login``).
   - Non-Anthropic auditors are routed via ``ollama launch claude --model <tag>``
-    using the variant's ``command_prefix`` field in audit_models.json.
+    using the row's ``command_prefix`` field in config/models.json.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -39,6 +41,7 @@ from benchmark.audit_report import (  # noqa: E402
     build_statistical_summary,
 )
 from benchmark.claude_code_runner import run_variant  # noqa: E402
+from benchmark.config import resolve_audit_harness_config  # noqa: E402
 from benchmark.runner import run_codex_variant  # noqa: E402
 from benchmark.util import USAGE_LIMIT_REACHED, load_json, print_line  # noqa: E402
 
@@ -78,8 +81,8 @@ def _verify_auditor_binaries(auditors: list[dict]) -> tuple[bool, str]:
 
 
 # Config paths ----------------------------------------------------------------
-AUDIT_CONFIG_PATH = REPO_ROOT / "config" / "audit_models.json"
-BENCHMARK_CONFIG_PATH = REPO_ROOT / "config" / "claude_code_models.json"
+AUDIT_CONFIG_PATH = REPO_ROOT / "config" / "models.json"
+BENCHMARK_CONFIG_PATH = REPO_ROOT / "config" / "models.json"
 PROMPT_TEMPLATE_PATH = REPO_ROOT / "prompts" / "audit_prompt_template.txt"
 DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
@@ -167,9 +170,19 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "--audit-config",
+        "--models-config",
         default=str(AUDIT_CONFIG_PATH),
-        help="Path to audit_models.json (auditor registry).",
+        help="Path to models.json (shared model registry).",
+    )
+    parser.add_argument(
+        "--harness",
+        default=None,
+        help="Audit dispatch harness slug from harnesses.json.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Select one audit model slug from models.json.",
     )
     parser.add_argument(
         "--benchmark-config",
@@ -201,12 +214,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--auditor",
-        action="append",
-        default=None,
-        help="Select auditor(s) by slug from audit_models.json. Repeatable. Default: all non-skipped.",
-    )
-    parser.add_argument(
         "--target",
         action="append",
         default=None,
@@ -233,7 +240,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report-only",
         action="store_true",
-        help="Rebuild comparison.md from existing reports without running audits.",
+        help=(
+            "Rebuild each auditor's comparison.md from existing reports "
+            "without running audits."
+        ),
     )
     parser.add_argument(
         "--jobs",
@@ -245,12 +255,51 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _audit_row_to_variant(model: dict[str, Any]) -> dict[str, Any]:
+    auditor = dict(model)
+    main_model = auditor.get("main_model") or auditor.get("id")
+    if not isinstance(main_model, str) or not main_model:
+        raise ValueError(
+            f"audit model row {auditor.get('slug')!r} needs string id or main_model"
+        )
+    auditor["main_model"] = main_model
+    auditor.setdefault("runner_type", auditor.get("harness", "claude"))
+    return auditor
+
+
+def _audit_config_auditors(
+    audit_config: dict[str, Any], harness: str | None
+) -> list[dict[str, Any]]:
+    return [
+        _audit_row_to_variant(model)
+        for model in audit_config.get("models", [])
+        if not model.get("skip_by_default")
+        and (harness is None or model.get("harness", harness) == harness)
+    ]
+
+
+def _all_audit_slugs(audit_config: dict[str, Any]) -> set[str]:
+    registry_models = audit_config.get("_registry_models", audit_config.get("models"))
+    if registry_models is not None:
+        return {
+            str(model["slug"])
+            for model in registry_models
+            if "slug" in model
+        }
+    return set()
+
+
+def _target_metadata_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(config.get("models", []))
+
+
 def resolve_auditors_and_targets(
-    wanted_auditors: set[str] | None,
+    wanted_model: str | None,
     wanted_targets: set[str] | None,
-    audit_config: dict,
-    benchmark_config: dict,
+    audit_config: dict[str, Any],
+    benchmark_config: dict[str, Any],
     benchmark_results_dir: Path,
+    harness: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Resolve auditor and target lists from CLI flags.
 
@@ -261,14 +310,12 @@ def resolve_auditors_and_targets(
     Default (both wanted sets are None): all non-skipped auditors × every
     discovered project.
     """
-    all_auditors = [
-        v for v in audit_config.get("variants", []) if not v.get("skip_by_default")
-    ]
+    all_auditors = _audit_config_auditors(audit_config, harness)
     audit_slugs = {v["slug"] for v in all_auditors}
+    all_audit_slugs = _all_audit_slugs(audit_config)
 
-    config_targets_by_slug = {
-        v["slug"]: v for v in benchmark_config.get("variants", [])
-    }
+    config_target_rows = _target_metadata_rows(benchmark_config)
+    config_targets_by_slug = {v["slug"]: v for v in config_target_rows}
     discovered = discover_project_dirs(benchmark_results_dir, config_targets_by_slug)
     discovered_dirnames = {t["slug"] for t in discovered}
     discovered_model_slugs = {t["model_slug"] for t in discovered}
@@ -288,13 +335,20 @@ def resolve_auditors_and_targets(
             file=sys.stderr,
         )
 
-    if wanted_auditors is not None or wanted_targets is not None:
-        auditors = [v for v in all_auditors if v["slug"] in (wanted_auditors or set())]
+    if wanted_model is not None or wanted_targets is not None:
+        auditors = [v for v in all_auditors if v["slug"] == wanted_model]
         targets = _filter_discovered(discovered, wanted_targets or set())
 
-        missing_auditors = (wanted_auditors or set()) - audit_slugs - {"all"}
+        missing_auditors = {wanted_model} - audit_slugs if wanted_model else set()
         missing_targets = (wanted_targets or set()) - known_target_keys - {"all"}
         if missing_auditors:
+            incompatible = missing_auditors & all_audit_slugs
+            if incompatible and harness is not None:
+                print(
+                    f"Slug `{sorted(incompatible)[0]}` is not a {harness} audit model.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             print(
                 f"Unknown auditor slug(s): {', '.join(sorted(missing_auditors))}",
                 file=sys.stderr,
@@ -307,10 +361,17 @@ def resolve_auditors_and_targets(
         if missing_targets:
             _emit_unknown_targets(missing_targets)
             sys.exit(1)
-        if wanted_auditors is None:
+        if wanted_model is None:
             auditors = all_auditors
         if wanted_targets is None:
             targets = discovered
+        if wanted_model is not None and len(auditors) != 1:
+            print(
+                f"Expected exactly one audit model for slug={wanted_model!r}; "
+                f"found {len(auditors)}.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         return auditors, targets
 
     return all_auditors, discovered
@@ -368,24 +429,29 @@ def _extract_final_report(stream_path: Path, report_path: Path) -> None:
 
 def main() -> int:
     args = parse_args()
-    audit_config_path = Path(args.audit_config)
+    audit_config_path = Path(args.models_config)
     benchmark_config_path = Path(args.benchmark_config)
     prompt_template_path = Path(args.prompt)
     results_dir = Path(args.results_dir)
     benchmark_results_dir = Path(args.benchmark_results_dir)
 
     audit_config = load_json(audit_config_path)
+    if args.harness is not None:
+        audit_config = resolve_audit_harness_config(
+            audit_config, audit_config_path, args.harness
+        )
     benchmark_config = load_json(benchmark_config_path)
     prompt_template = prompt_template_path.read_text()
 
-    wanted_auditors = set(args.auditor) if args.auditor else None
+    wanted_model = args.model
     wanted_targets = set(args.target) if args.target else None
     auditors, targets = resolve_auditors_and_targets(
-        wanted_auditors,
+        wanted_model,
         wanted_targets,
         audit_config,
         benchmark_config,
         benchmark_results_dir,
+        args.harness,
     )
 
     if not auditors:
@@ -515,15 +581,20 @@ def main() -> int:
                     if status == USAGE_LIMIT_REACHED:
                         print_line("Usage limit reached — stopping audit early.")
 
-    # Cross-auditor comparison + regex rollup are written every run (including
-    # --report-only). They are NOT inputs to the AI meta-analyst; they exist
-    # for at-a-glance browsing and post-hoc calibration.
+    # Per-auditor comparison + regex rollup (including --report-only). Scoped
+    # to each auditor's tree; not an input to the AI meta-analyst.
     results_dir.mkdir(parents=True, exist_ok=True)
-    comparison_md = build_comparison_table(results_dir)
-    statistical_md = build_statistical_summary(results_dir)
-    comparison_path = results_dir / "comparison.md"
-    comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
-    print_line(f"Comparison table + statistical summary written: {comparison_path}")
+    for auditor in auditors:
+        auditor_slug = auditor["slug"]
+        auditor_dir = results_dir / auditor_slug
+        auditor_dir.mkdir(parents=True, exist_ok=True)
+        comparison_md = build_comparison_table(auditor_dir)
+        statistical_md = build_statistical_summary(auditor_dir)
+        comparison_path = auditor_dir / "comparison.md"
+        comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
+        print_line(
+            f"Comparison table + statistical summary written: {comparison_path}"
+        )
 
     print_line(
         "Next: run scripts/run_meta_analysis.py to dispatch the cross-auditor "

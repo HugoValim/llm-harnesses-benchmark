@@ -1,6 +1,6 @@
 """Parse audit ``report.md`` outputs and aggregate them.
 
-The auditor (Claude Code variant) writes a markdown report per (auditor,
+The auditor writes a markdown report per (auditor,
 target) pair under ``audit-reports/<auditor>/<target>/report.md``. The
 report follows the rubric layout in ``prompts/audit_prompt_template.txt``
 (sections A-I). This module produces three artifacts from those reports:
@@ -13,7 +13,7 @@ report follows the rubric layout in ``prompts/audit_prompt_template.txt``
   configured benchmark-leader model slugs). **Not the final analysis** —
   this is structured input that the AI meta-analyst consumes.
 - ``run_ai_meta_analysis``: dispatch a configured LLM (harness + model)
-  through ``benchmark.claude_code_runner.run_variant`` to read every audit
+  through the selected harness runner to read every audit
   report and write the actual meta-analysis to ``meta-analysis.md``.
 """
 
@@ -310,26 +310,63 @@ def _split_harness(target: str) -> tuple[str, str]:
     return "unknown", target
 
 
+def _iter_target_reports(
+    auditor_dir: Path, *, auditor_name: str
+) -> Iterable[ParsedReport]:
+    """Yield reports under ``<auditor_dir>/<target>/report.md``."""
+    if not auditor_dir.is_dir():
+        return
+    for target_dir in sorted(auditor_dir.iterdir()):
+        if not target_dir.is_dir():
+            continue
+        report_path = target_dir / "report.md"
+        if not report_path.exists():
+            continue
+        try:
+            text = report_path.read_text()
+        except OSError:
+            continue
+        yield parse_report_scores(
+            text, auditor=auditor_name, target=target_dir.name
+        )
+
+
 def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
-    """Yield one parsed report per ``<auditor>/<target>/report.md`` on disk."""
+    """Yield parsed reports from an audit output tree.
+
+    Supports two layouts:
+
+    - **Auditor-scoped** (``audit-reports/<auditor>/<target>/report.md``):
+      direct children of ``reports_dir`` are targets.
+    - **Root** (``audit-reports/<auditor>/<target>/report.md`` with an extra
+      auditor level): each direct child of ``reports_dir`` is an auditor dir.
+    """
     if not reports_dir.is_dir():
         return
-    for auditor_dir in sorted(reports_dir.iterdir()):
-        if not auditor_dir.is_dir():
-            continue
-        for target_dir in sorted(auditor_dir.iterdir()):
-            if not target_dir.is_dir():
-                continue
-            report_path = target_dir / "report.md"
-            if not report_path.exists():
-                continue
-            try:
-                text = report_path.read_text()
-            except OSError:
-                continue
-            yield parse_report_scores(
-                text, auditor=auditor_dir.name, target=target_dir.name
-            )
+    child_dirs = [c for c in sorted(reports_dir.iterdir()) if c.is_dir()]
+    if not child_dirs:
+        return
+    if any((c / "report.md").exists() for c in child_dirs):
+        yield from _iter_target_reports(reports_dir, auditor_name=reports_dir.name)
+        return
+    for auditor_dir in child_dirs:
+        yield from _iter_target_reports(auditor_dir, auditor_name=auditor_dir.name)
+
+
+def _collect_reports(
+    reports_dir: Path | None = None,
+    *,
+    source_dirs: list[Path] | None = None,
+) -> list[ParsedReport]:
+    """Gather parsed reports from one tree root or an explicit dir list."""
+    if source_dirs is not None:
+        reports: list[ParsedReport] = []
+        for d in source_dirs:
+            reports.extend(_iter_reports(d))
+        return reports
+    if reports_dir is None:
+        return []
+    return list(_iter_reports(reports_dir))
 
 
 def _dimension_labels(reports: list[ParsedReport]) -> list[str]:
@@ -354,14 +391,21 @@ def _fmt(value: float | int | None, *, decimals: int = 1) -> str:
     return str(value)
 
 
-def build_comparison_table(reports_dir: Path) -> str:
+def build_comparison_table(
+    reports_dir: Path | None = None,
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
     """Build the side-by-side ``Auditor | Target | D1..D9 | Total | Tier`` table.
 
     Replaces the broken inline parser in ``run_audit_benchmark.py``. Returns
     a complete markdown document (with H1 heading) so callers can write it
     straight to ``comparison.md``.
+
+    Pass ``source_dirs`` to aggregate across multiple auditor-scoped trees
+  (e.g. meta-analysis inputs). Otherwise pass ``reports_dir``.
     """
-    reports = list(_iter_reports(reports_dir))
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
     header_cells = ["Auditor", "Target"]
     header_cells.extend(f"D{i}" for i in range(1, NUM_DIMENSIONS + 1))
     header_cells.extend(["Total", "Tier"])
@@ -562,7 +606,11 @@ def _max_for_dimension(reports: list[ParsedReport], index: int) -> int | None:
     return None
 
 
-def build_statistical_summary(reports_dir: Path) -> str:
+def build_statistical_summary(
+    reports_dir: Path | None = None,
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
     """Regex-derived harness / model / dimension rollups.
 
     This is **input** for the AI meta-analyst, not the final analysis. The
@@ -575,8 +623,10 @@ def build_statistical_summary(reports_dir: Path) -> str:
     2. For models audited under multiple harnesses, where does harness choice
        move the needle the most?
     3. Which dimensions are universally weak vs harness-specific?
+
+    Pass ``source_dirs`` to aggregate across multiple auditor-scoped trees.
     """
-    reports = list(_iter_reports(reports_dir))
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
     if not reports:
         return "## Statistical summary\n\n*(no reports parsed)*\n"
 
@@ -618,61 +668,113 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 
-def audit_variant_runner_type(config: dict, slug: str) -> str:
-    """Return ``runner_type`` for an audit_models.json variant slug.
+def audit_model_harness(
+    config: dict, slug: str, models_config: dict | None = None
+) -> str:
+    """Return the first registry harness containing model slug.
+
+    Falls back to auto-derived routing for ollama_cloud models: those are
+    auto-included in the claude harness without an explicit harnesses.json entry.
 
     Example:
-        >>> audit_variant_runner_type({"variants": [{"slug": "x"}]}, "x")
+        >>> audit_model_harness({"claude": {"models": {"x": {}}}}, "x")
         'claude'
     """
-    for variant in config.get("variants", []):
-        if variant.get("skip_by_default"):
+    preferred = ["claude", "codex", "opencode", "cursor"]
+    harnesses = preferred + [h for h in config if h not in preferred]
+    for harness in harnesses:
+        entry = config.get(harness)
+        if not isinstance(entry, dict):
             continue
-        if variant.get("slug") == slug:
-            return str(variant.get("runner_type", "claude"))
-    raise ValueError(f"No audit variant with slug={slug!r}")
+        models = entry.get("models")
+        if isinstance(models, dict) and slug in models:
+            return str(harness)
+    # Derive harness from provider when no explicit harnesses.json entry exists.
+    if models_config is not None:
+        from benchmark.config import _PROVIDER_HARNESS_MAP  # avoid circular at module level
+
+        registry = models_config.get("models") or []
+        _preferred = ["claude", "codex", "opencode", "cursor"]
+        for model in registry:
+            if not isinstance(model, dict) or model.get("slug") != slug:
+                continue
+            provider = model.get("provider", "")
+            harnesses = _PROVIDER_HARNESS_MAP.get(provider, frozenset())
+            if harnesses:
+                return min(harnesses, key=lambda h: _preferred.index(h) if h in _preferred else 99)
+            if model.get("opencode_id"):
+                return "opencode"
+    raise ValueError(f"No harness model with slug={slug!r}")
+
+
+def _meta_row_to_variant(model: dict) -> dict:
+    variant = dict(model)
+    main_model = variant.get("main_model") or variant.get("id")
+    if not isinstance(main_model, str) or not main_model:
+        raise ValueError(
+            f"meta model row {variant.get('slug')!r} needs string id or main_model"
+        )
+    variant["main_model"] = main_model
+    variant.setdefault("runner_type", variant.get("harness", "claude"))
+    return variant
+
+
+def _meta_config_variants(meta_config: dict) -> list[dict]:
+    return [
+        _meta_row_to_variant(model)
+        for model in meta_config.get("models", [])
+        if not model.get("skip_by_default")
+    ]
+
+
+def _meta_variant_harness(variant: dict) -> str:
+    value = variant.get("harness") or variant.get("runner_type", "claude")
+    return str(value)
 
 
 def resolve_meta_variant(
     meta_config: dict, harness: str, model_slug: str | None
 ) -> dict:
-    """Look up a meta-analysis variant from a meta-models config.
+    """Look up a meta-analysis model from models config.
 
-    The config schema mirrors ``config/audit_models.json``:
-    ``{"variants": [{"slug": ..., "main_model": ..., "runner_type": ...,
-                     "command_prefix": [...]}]}``.
+    The config is a resolved harness-scoped model list:
+    ``{"models": [{"slug": ..., "id": ..., "harness": ...}]}``.
 
     Selection rules:
-    1. If ``model_slug`` is given, must match a variant's slug exactly.
-    2. Variant's ``runner_type`` field (default ``"claude"``) must equal
-       ``harness``.
-    3. Otherwise the first non-skipped variant with matching runner_type wins.
+    1. If ``model_slug`` is given, must match a model's slug exactly.
+    2. Registry row ``harness`` must equal ``harness``.
+    3. Otherwise the first non-skipped model with matching harness wins.
 
     Raises ``ValueError`` with a descriptive message on mismatch.
     """
-    variants = [
-        v for v in meta_config.get("variants", []) if not v.get("skip_by_default")
-    ]
-    matches_harness = [
-        v for v in variants if v.get("runner_type", "claude") == harness
-    ]
+    variants = _meta_config_variants(meta_config)
+    matches_harness = [v for v in variants if _meta_variant_harness(v) == harness]
     if not matches_harness:
+        if model_slug is not None and any(v["slug"] == model_slug for v in variants):
+            raise ValueError(f"Slug `{model_slug}` is not a {harness} meta model.")
         available = ", ".join(
-            sorted({v.get("runner_type", "claude") for v in variants})
+            sorted({_meta_variant_harness(v) for v in variants})
         ) or "(none)"
         raise ValueError(
-            f"No meta-analysis variant with runner_type={harness!r}. "
-            f"Available runner_types in config: {available}."
+            f"No meta-analysis model with harness={harness!r}. "
+            f"Available harnesses in config: {available}."
         )
     if model_slug is None:
         return matches_harness[0]
-    for v in matches_harness:
-        if v["slug"] == model_slug:
-            return v
+    matches_slug = [v for v in matches_harness if v["slug"] == model_slug]
+    if len(matches_slug) == 1:
+        return matches_slug[0]
+    if len(matches_slug) > 1:
+        raise ValueError(
+            f"Expected exactly one meta-analysis model with slug={model_slug!r} "
+            f"under harness={harness!r}; found {len(matches_slug)}."
+        )
+    if any(v["slug"] == model_slug for v in variants):
+        raise ValueError(f"Slug `{model_slug}` is not a {harness} meta model.")
     slugs = ", ".join(v["slug"] for v in matches_harness)
     raise ValueError(
-        f"No meta-analysis variant with slug={model_slug!r} under "
-        f"runner_type={harness!r}. Available slugs: {slugs}."
+        f"No meta-analysis model with slug={model_slug!r} under "
+        f"harness={harness!r}. Available slugs: {slugs}."
     )
 
 
