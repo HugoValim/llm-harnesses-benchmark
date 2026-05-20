@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
+from benchmark.util import ollama_launch_command_prefix
 from benchmark.config import (
     OPENCODE_YOLO_PERMISSION,
     BenchmarkConfig,
@@ -50,6 +51,7 @@ _ROOT_WORKSPACE_ESCAPE_MARKERS: frozenset[str] = frozenset(
     }
 )
 from benchmark.util import (
+    RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
     count_files,
     format_duration,
@@ -939,7 +941,7 @@ def run_codex_variant(
 
     command_prefix = variant.get("command_prefix")
     if not command_prefix and runner_type == "ollama":
-        command_prefix = ["ollama", "launch", "codex"]
+        command_prefix = ollama_launch_command_prefix("codex")
 
     result_dir = (
         explicit_result_dir.resolve()
@@ -1019,7 +1021,7 @@ def run_codex_variant(
         print_line(f"[{slug}] command_prefix={command_prefix}")
 
     started_at = utc_now()
-    return run_codex_phase(
+    payload = run_codex_phase(
         bench=bench,
         model=codex_model,
         model_slug=slug,
@@ -1034,6 +1036,9 @@ def run_codex_variant(
         override_min_preview_tps=None,
         command_prefix=command_prefix,
     )
+    payload.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)
+    payload.setdefault("harness", harness)
+    return payload
 
 
 def _kill_stale_opencode_processes() -> None:
@@ -1230,6 +1235,8 @@ def run_model(
         preflight_ok, preflight_message = _ensure_local_model_ready(model, bench)
         if not preflight_ok:
             payload = {
+                "result_schema_version": RESULT_SCHEMA_VERSION,
+                "harness": bench.harness,
                 "assistant_output_excerpt": "",
                 "command": [],
                 "elapsed_seconds": 0.0,
@@ -1285,7 +1292,7 @@ def run_model(
     if runner_type in _CODEX_RUNNERS:
         cp = model.get("command_prefix")
         if not cp and runner_type == "ollama":
-            cp = ["ollama", "launch", "codex"]
+            cp = ollama_launch_command_prefix("codex")
         if cp:
             phase1_kwargs["command_prefix"] = cp
     if runner_type not in _CODEX_RUNNERS:
@@ -1328,7 +1335,7 @@ def run_model(
         if runner_type in _CODEX_RUNNERS:
             cp = model.get("command_prefix")
             if not cp and runner_type == "ollama":
-                cp = ["ollama", "launch", "codex"]
+                cp = ollama_launch_command_prefix("codex")
             if cp:
                 phase2_kwargs["command_prefix"] = cp
         if runner_type not in _CODEX_RUNNERS:
@@ -1382,6 +1389,8 @@ def run_model(
     )
     payload = {
         **final_phase,
+        "result_schema_version": RESULT_SCHEMA_VERSION,
+        "harness": bench.harness,
         "elapsed_seconds": total_elapsed,
         "ended_at": utc_now(),
         "model": model,

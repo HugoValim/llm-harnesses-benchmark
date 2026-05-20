@@ -43,7 +43,12 @@ from benchmark.audit_report import (  # noqa: E402
 from benchmark.claude_code_runner import run_variant  # noqa: E402
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
 from benchmark.runner import run_codex_variant  # noqa: E402
-from benchmark.util import USAGE_LIMIT_REACHED, load_json, print_line  # noqa: E402
+from benchmark.util import (  # noqa: E402
+    USAGE_LIMIT_REACHED,
+    load_json,
+    normalize_path_fields,
+    print_line,
+)
 
 
 _CODEX_RUNNER_TYPES: frozenset[str] = frozenset({"codex", "ollama"})
@@ -427,8 +432,22 @@ def _extract_final_report(stream_path: Path, report_path: Path) -> None:
         pass
 
 
+_AUDIT_PATH_FIELDS = (
+    "benchmark_config",
+    "benchmark_results_dir",
+    "models_config",
+    "prompt",
+    "results_dir",
+)
+
+
+def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
+    """Resolve relative CLI filesystem paths against the harness checkout."""
+    return normalize_path_fields(args, REPO_ROOT, _AUDIT_PATH_FIELDS)
+
+
 def main() -> int:
-    args = parse_args()
+    args = normalize_audit_paths(parse_args())
     audit_config_path = Path(args.models_config)
     benchmark_config_path = Path(args.benchmark_config)
     prompt_template_path = Path(args.prompt)

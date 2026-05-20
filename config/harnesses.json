@@ -18,7 +18,7 @@
     "command": "codex",
     "notes": [
       "ChatGPT-linked Codex: plain `codex` on PATH. Authenticate with `codex login` (ChatGPT OAuth) or subscription-backed credentials.",
-      "openai provider -> runner_type=codex. ollama_cloud provider -> runner_type=ollama -> `ollama launch codex`.",
+      "openai provider -> runner_type=ollama -> `ollama launch --yes codex` (non-interactive).",
       "Uses `codex exec --json --ephemeral` with the harness autonomy flags."
     ]
   },
@@ -27,7 +27,7 @@
     "isolate_home": false,
     "notes": [
       "Uses Claude Code CLI in headless mode (-p with --output-format stream-json --dangerously-skip-permissions).",
-      "anthropic provider -> runs claude directly. ollama_cloud provider -> command_prefix=[ollama, launch, claude].",
+      "anthropic provider -> runs claude directly. ollama_cloud provider -> command_prefix=[ollama, launch, --yes, claude].",
       "isolate_home defaults to false so Claude subscription auth (read from ~/.claude/) works."
     ]
   },

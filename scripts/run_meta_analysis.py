@@ -42,7 +42,7 @@ from benchmark.audit_report import (  # noqa: E402
     run_ai_meta_analysis,
 )
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
-from benchmark.util import load_json, print_line  # noqa: E402
+from benchmark.util import load_json, normalize_path_fields, print_line  # noqa: E402
 
 
 MODELS_CONFIG_PATH = REPO_ROOT / "config" / "models.json"
@@ -150,8 +150,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+_META_PATH_FIELDS = (
+    "meta_prompt",
+    "models_config",
+    "results_dir",
+)
+
+
+def normalize_meta_paths(args: argparse.Namespace) -> argparse.Namespace:
+    """Resolve relative CLI filesystem paths against the harness checkout."""
+    return normalize_path_fields(args, REPO_ROOT, _META_PATH_FIELDS)
+
+
 def main() -> int:
-    args = parse_args()
+    args = normalize_meta_paths(parse_args())
     models_config_path = Path(args.models_config)
     results_dir = Path(args.results_dir)
     meta_prompt_path = Path(args.meta_prompt)

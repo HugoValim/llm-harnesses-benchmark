@@ -16,15 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.backends import LocalModelBackend, OllamaBackend, create_backend  # noqa: E402
-from benchmark.claude_code_report import (  # noqa: E402
-    build_variant_report as build_claude_variant_report,
-    load_variant_results as load_claude_variant_results,
-)
 from benchmark.claude_code_runner import run_variant as run_claude_variant  # noqa: E402
-from benchmark.cursor_report import (  # noqa: E402
-    build_variant_report as build_cursor_variant_report,
-    load_variant_results as load_cursor_variant_results,
-)
 from benchmark.cursor_runner import run_variant as run_cursor_variant  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
@@ -38,6 +30,7 @@ from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
     load_json,
     model_matches_harness,
+    normalize_path_fields,
     print_line,
 )
 
@@ -95,11 +88,14 @@ def _default_report_path(harness: str) -> Path:
     return REPO_ROOT / "docs" / "report.md"
 
 
-def _resolve_repo_path(path_value: str) -> Path:
-    path = Path(path_value)
-    if path.is_absolute():
-        return path.resolve()
-    return (REPO_ROOT / path).resolve()
+_BENCHMARK_PATH_FIELDS = (
+    "config",
+    "followup_prompt",
+    "ollama_warmup_results",
+    "prompt",
+    "report",
+    "results_dir",
+)
 
 
 def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
@@ -108,17 +104,7 @@ def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
     Example:
         ``--results-dir results`` becomes ``<repo>/results``.
     """
-    path_fields = (
-        "config",
-        "followup_prompt",
-        "ollama_warmup_results",
-        "prompt",
-        "report",
-        "results_dir",
-    )
-    for field in path_fields:
-        setattr(args, field, str(_resolve_repo_path(getattr(args, field))))
-    return args
+    return normalize_path_fields(args, REPO_ROOT, _BENCHMARK_PATH_FIELDS)
 
 
 def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
@@ -569,8 +555,8 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             )
             return 1
 
-    all_results = load_claude_variant_results(config, results_dir, harness="claude")
-    report_path.write_text(build_claude_variant_report(config, all_results))
+    all_results = load_results(config, results_dir, harness="claude")
+    report_path.write_text(build_report(config, all_results, harness="claude"))
     print_line(f"Report updated: {report_path}")
     return 0
 
@@ -692,8 +678,8 @@ def _run_cursor_harness(args: argparse.Namespace) -> int:
             print_line("Aborting: usage limit reached. Retry after limit resets.")
             return 1
 
-    all_results = load_cursor_variant_results(config, results_dir, harness="cursor")
-    report_path.write_text(build_cursor_variant_report(config, all_results))
+    all_results = load_results(config, results_dir, harness="cursor")
+    report_path.write_text(build_report(config, all_results, harness="cursor"))
     print_line(f"Report updated: {report_path}")
     return 0
 

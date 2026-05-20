@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.config import resolve_harness_config  # noqa: E402
+from benchmark.util import uses_ollama_launch_codex  # noqa: E402
 
 
 def _write_minimal_harnesses(config_dir: Path, harnesses: list[str]) -> None:
@@ -51,7 +52,9 @@ class TestOllamaCloudRouting(unittest.TestCase):
     def test_ollama_cloud_claude_gets_ollama_launch_prefix(self) -> None:
         models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
         rows = _resolve(self.config_dir, models, "claude")
-        self.assertEqual(rows[0]["command_prefix"], ["ollama", "launch", "claude"])
+        self.assertEqual(
+            rows[0]["command_prefix"], ["ollama", "launch", "--yes", "claude"]
+        )
 
     def test_ollama_cloud_codex_gets_runner_type_ollama(self) -> None:
         models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
@@ -63,10 +66,41 @@ class TestOllamaCloudRouting(unittest.TestCase):
         rows = _resolve(self.config_dir, models, "codex")
         self.assertNotIn("command_prefix", rows[0])
 
+    def test_uses_ollama_launch_codex_with_yes_prefix(self) -> None:
+        model = {
+            "command_prefix": ["ollama", "launch", "--yes", "codex"],
+            "runner_type": "ollama",
+        }
+        self.assertTrue(uses_ollama_launch_codex(model))
+
     def test_ollama_cloud_id_preserved(self) -> None:
         models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi-k2.6:cloud"}]
         rows = _resolve(self.config_dir, models, "claude")
         self.assertEqual(rows[0]["id"], "kimi-k2.6:cloud")
+
+
+class TestOllamaCloudOpencodeRouting(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.config_dir = Path(self._tmp.name) / "config"
+        self.config_dir.mkdir()
+        _write_minimal_harnesses(self.config_dir, ["claude", "codex", "opencode"])
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_ollama_cloud_appears_in_opencode_harness(self) -> None:
+        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+        rows = _resolve(self.config_dir, models, "opencode")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["runner_type"], "opencode")
+
+    def test_ollama_cloud_opencode_gets_launch_prefix(self) -> None:
+        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+        rows = _resolve(self.config_dir, models, "opencode")
+        self.assertEqual(
+            rows[0]["command_prefix"], ["ollama", "launch", "--yes", "opencode"]
+        )
 
 
 class TestProviderHarnessMapping(unittest.TestCase):

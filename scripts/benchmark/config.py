@@ -16,6 +16,7 @@ from benchmark.util import (
     has_file_matching,
     load_json,
     load_optional_json,
+    ollama_launch_command_prefix,
     print_line,
     save_json,
     save_json_preserve_order,
@@ -226,7 +227,7 @@ _PROVIDER_HARNESS_MAP: dict[str, frozenset[str]] = {
     "anthropic": frozenset({"claude"}),
     "openai": frozenset({"codex"}),
     "cursor": frozenset({"cursor"}),
-    "ollama_cloud": frozenset({"claude", "codex"}),
+    "ollama_cloud": frozenset({"claude", "codex", "opencode"}),
 }
 
 
@@ -239,10 +240,12 @@ def _build_registry_model_row(model: dict[str, Any], harness: str) -> dict[str, 
     provider = row.get("provider", "")
     if provider == "ollama_cloud":
         # codex: runner_type=ollama auto-injects `ollama launch codex`.
-        # claude: prepend `ollama launch claude` as command prefix.
-        row.setdefault("runner_type", "ollama" if harness == "codex" else harness)
-        if harness == "claude":
-            row.setdefault("command_prefix", ["ollama", "launch", "claude"])
+        # claude/opencode: per-model command_prefix for `ollama launch <harness>`.
+        if harness == "codex":
+            row.setdefault("runner_type", "ollama")
+        else:
+            row.setdefault("runner_type", harness)
+            row.setdefault("command_prefix", ollama_launch_command_prefix(harness))
     elif provider == "openai":
         row.setdefault("runner_type", "codex")
     else:
