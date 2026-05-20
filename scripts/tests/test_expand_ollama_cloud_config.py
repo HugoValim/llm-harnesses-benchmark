@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -18,19 +17,38 @@ class TestExpandOllamaCloudConfig(unittest.TestCase):
         cfg = {"runner": {}, "models": [{"slug": "x", "id": "y"}]}
         self.assertIs(expand_ollama_cloud_config(cfg, "codex"), cfg)
 
-    def test_unified_file_codex_claude_ollama(self) -> None:
-        path = REPO_ROOT / "config" / "ollama_cloud_models.json"
-        raw = json.loads(path.read_text())
+    def test_inline_unified_config_codex_claude_ollama(self) -> None:
+        raw = {
+            "ollama_cloud": True,
+            "runner_configs": {
+                "codex": {"command_prefix": ["ollama", "launch", "codex"]},
+                "claude": {"command_prefix": ["ollama", "launch", "claude"]},
+                "opencode": {"command_prefix": ["ollama", "launch", "opencode"]},
+            },
+            "models": [
+                {
+                    "slug": "kimi_k2_6_ollama_cloud",
+                    "id": "kimi-k2.6:cloud",
+                    "label": "Kimi K2.6",
+                    "selection_reason": "Regression fixture.",
+                },
+                {
+                    "slug": "gemma4_ollama_cloud",
+                    "id": "gemma4:31b-cloud",
+                    "label": "Gemma 4",
+                    "selection_reason": "Regression fixture.",
+                },
+            ],
+        }
         codex = expand_ollama_cloud_config(raw, "codex")
-        self.assertEqual(len(codex["models"]), 8)
+        self.assertEqual(len(codex["models"]), 2)
         self.assertEqual(codex["models"][0]["runner_type"], "codex")
         self.assertTrue(codex["models"][0]["label"].endswith(" via Codex"))
         by_slug = {m["slug"]: m for m in codex["models"]}
         self.assertEqual(by_slug["gemma4_ollama_cloud"]["id"], "gemma4:31b-cloud")
-        self.assertNotIn("gemini_3_flash_preview_ollama_cloud", by_slug)
 
         claude = expand_ollama_cloud_config(raw, "claude")
-        self.assertEqual(len(claude["variants"]), 8)
+        self.assertEqual(len(claude["variants"]), 2)
         self.assertEqual(claude["variants"][0]["main_model"], "kimi-k2.6:cloud")
         self.assertTrue(claude["variants"][0]["label"].endswith(" via Claude Code"))
 

@@ -50,7 +50,6 @@ class TestPhasePayload(unittest.TestCase):
             model={"slug": "demo", "id": "provider/model"},
             session_id="session-child",
             paths={
-                "opencode_config": "config/opencode.benchmark.json",
                 "project_dir": "/tmp/result/project",
                 "prompt": "/tmp/result/prompt.txt",
                 "stderr": "/tmp/result/stderr.log",
