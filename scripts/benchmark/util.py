@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import hashlib
 import json
 import os
 import signal
 import subprocess
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,10 @@ from typing import Any
 # Canonical stall_reason / result status when a provider signals quota or
 # rate limits (Claude subscription, OpenRouter, Ollama Cloud, …).
 USAGE_LIMIT_REACHED = "usage_limit_reached"
+
+# Bump when the on-disk result.json schema changes in a way that consumers
+# (reports, audits, meta-analysis) need to detect.
+RESULT_SCHEMA_VERSION = 2
 
 _USAGE_LIMIT_PHRASES = (
     "usage limit",
@@ -214,6 +220,35 @@ def write_project_context(project_dir: Path) -> None:
     (project_dir / "AGENTS.md").write_text(text)
 
 
+def resolve_under_repo(repo_root: Path, path_value: str | Path) -> Path:
+    """Resolve ``path_value`` against ``repo_root`` if it isn't already absolute.
+
+    Used by the benchmark/audit/meta entrypoints so that relative CLI flags
+    (e.g. ``--results-dir results``) resolve under the harness checkout
+    instead of the caller's cwd.
+    """
+    path = Path(path_value)
+    if path.is_absolute():
+        return path.resolve()
+    return (repo_root / path).resolve()
+
+
+def normalize_path_fields(
+    args: argparse.Namespace, repo_root: Path, fields: Iterable[str]
+) -> argparse.Namespace:
+    """Resolve each named string field on ``args`` under ``repo_root``.
+
+    Skips fields that are ``None`` so optional flags stay optional. Mutates
+    and returns ``args`` for fluent use at parse time.
+    """
+    for field in fields:
+        value = getattr(args, field, None)
+        if value is None:
+            continue
+        setattr(args, field, str(resolve_under_repo(repo_root, value)))
+    return args
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -284,15 +319,26 @@ def prompt_sha256(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
+def ollama_launch_command_prefix(integration: str) -> list[str]:
+    """Non-interactive ``ollama launch`` argv prefix for benchmark subprocesses."""
+    return ["ollama", "launch", "--yes", integration]
+
+
+def ollama_launch_integration(command_prefix: list[Any]) -> str | None:
+    """Return the integration name from an ``ollama launch`` prefix, if present."""
+    if len(command_prefix) < 3 or command_prefix[0] != "ollama" or command_prefix[1] != "launch":
+        return None
+    idx = 3 if len(command_prefix) > 2 and command_prefix[2] == "--yes" else 2
+    if len(command_prefix) <= idx:
+        return None
+    integration = command_prefix[idx]
+    return integration if isinstance(integration, str) else None
+
+
 def uses_ollama_launch_codex(model: dict[str, Any]) -> bool:
     """True when the model is routed through ``ollama launch codex``."""
     cp = model.get("command_prefix") or []
-    return (
-        len(cp) >= 3
-        and cp[0] == "ollama"
-        and cp[1] == "launch"
-        and cp[2] == "codex"
-    )
+    return ollama_launch_integration(cp) == "codex"
 
 
 def model_matches_harness(model: dict[str, Any], harness: str) -> bool:
@@ -390,6 +436,49 @@ def shorten_text(text: str, limit: int = 100) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
+
+
+def _deduce_harness(row: dict[str, Any]) -> str | None:
+    """Best-effort harness detection from a v1 result row."""
+    if "model_usage" in row or "subagent_invocation_counts" in row:
+        return "claude"
+    if "tool_use_counts" in row and "main_model" in row:
+        return "cursor"
+    if "model" in row or "opencode_session_id" in row:
+        harness = str(
+            row.get("paths", {}).get("project_dir", "")
+        ).split("/")[-1].split("-")[0]
+        if harness in ("opencode", "codex"):
+            return harness
+        return "opencode"
+    return None
+
+
+def migrate_to_v2(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a result row to schema version 2 in-place and return it (idempotent).
+
+    Adds ``result_schema_version``, ``harness``, and a ``phases`` list when
+    missing.  Harness-specific fields (model_usage, tool_use_counts, tokens,
+    subagent_invocations, …) are preserved as-is.
+    """
+    if row.get("result_schema_version") == RESULT_SCHEMA_VERSION:
+        return row
+
+    row.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)
+    if "harness" not in row:
+        row["harness"] = _deduce_harness(row)
+
+    if "phases" not in row:
+        row["phases"] = [
+            {
+                "phase": "phase1",
+                "status": row.get("status", "unknown"),
+                "elapsed_seconds": row.get("elapsed_seconds"),
+                "file_count": row.get("file_count"),
+            }
+        ]
+
+    return row
 
 
 def http_request(
