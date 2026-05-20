@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import select
 import subprocess
 import time
 from collections import Counter, defaultdict
@@ -12,7 +11,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.util import (
+    RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
     contains_usage_limit,
     count_files,
@@ -22,7 +23,6 @@ from benchmark.util import (
     prompt_sha256,
     save_json,
     shorten_text,
-    terminate_process_group,
     utc_now,
     validate_benchmark_workspace,
     write_project_context,
@@ -40,10 +40,6 @@ class CursorStreamResult:
     final_result_event: dict[str, Any] | None = None
     tool_use_counts: Counter = field(default_factory=Counter)
     assistant_turns: int = 0
-
-
-def _kill_group(process: subprocess.Popen[str]) -> None:
-    terminate_process_group(process)
 
 
 def build_command(
@@ -123,6 +119,97 @@ def _result_indicates_success(event: dict[str, Any] | None) -> bool:
     return subtype in ("success", None)
 
 
+class _CursorCliAdapter(CliStreamAdapter[CursorStreamResult]):
+    """Event parser + result builder for the Cursor Agent CLI stream-json format."""
+
+    _error_loop_threshold = 5
+
+    def __init__(self, model_slug: str) -> None:
+        self.model_slug = model_slug
+        self._assistant_turns = 0
+        self._tool_use_counts: Counter = Counter()
+        self._final_result_event: dict[str, Any] | None = None
+        self._consecutive_error_events = 0
+
+    def on_event(self, event: dict[str, Any], now: float) -> EventDecision:
+        etype = event.get("type")
+        if etype == "assistant":
+            self._assistant_turns += 1
+        if etype == "tool_call":
+            tc = event.get("tool_call") or {}
+            self._tool_use_counts[_tool_call_label(tc)] += 1
+
+        is_terminal = False
+        if etype == "result":
+            self._final_result_event = event
+            is_terminal = True
+
+        description = _describe_event(event)
+
+        is_error = bool(event.get("is_error")) or (
+            etype == "result" and event.get("subtype") not in ("success", None)
+        )
+        if is_error:
+            if contains_usage_limit(json.dumps(event)):
+                return EventDecision(
+                    description=description,
+                    is_terminal=is_terminal,
+                    mark_activity=False,
+                    abort_reason=USAGE_LIMIT_REACHED,
+                )
+            self._consecutive_error_events += 1
+            if self._consecutive_error_events >= self._error_loop_threshold:
+                return EventDecision(
+                    description=description,
+                    is_terminal=is_terminal,
+                    mark_activity=False,
+                    abort_reason=(
+                        f"{self._consecutive_error_events} consecutive errors"
+                    ),
+                )
+            return EventDecision(
+                description=description,
+                is_terminal=is_terminal,
+                mark_activity=False,
+            )
+
+        if etype == "user":
+            # Cursor emits user-role tool results — don't reset the error
+            # counter and don't count as activity (matches pre-refactor behavior).
+            return EventDecision(
+                description=description,
+                is_terminal=is_terminal,
+                mark_activity=False,
+            )
+
+        self._consecutive_error_events = 0
+        return EventDecision(description=description, is_terminal=is_terminal)
+
+    def heartbeat_detail(self) -> str:
+        return f"turns={self._assistant_turns}"
+
+    def build_result(
+        self,
+        *,
+        stdout: str,
+        stderr: str,
+        timed_out: bool,
+        stalled: bool,
+        stall_reason: str | None,
+    ) -> CursorStreamResult:
+        return CursorStreamResult(
+            stdout=stdout,
+            stderr=stderr,
+            timed_out=timed_out,
+            stalled=stalled,
+            stall_reason=stall_reason,
+            usage_limit_reached=(stall_reason == USAGE_LIMIT_REACHED),
+            final_result_event=self._final_result_event,
+            tool_use_counts=self._tool_use_counts,
+            assistant_turns=self._assistant_turns,
+        )
+
+
 def stream_process(
     process: subprocess.Popen[str],
     stdout_path: Path,
@@ -132,151 +219,15 @@ def stream_process(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
 ) -> CursorStreamResult:
-    stdout_chunks: list[str] = []
-    stderr_chunks: list[str] = []
-    last_heartbeat = 0.0
-    heartbeat_interval = 10.0
-    started = time.monotonic()
-    last_activity = started
-    last_activity_detail = "process started"
-    last_file_count = count_files(project_dir)
-    consecutive_error_events = 0
-    error_loop_threshold = 5
-    final_result_event: dict[str, Any] | None = None
-    terminal_result_seen_at: float | None = None
-    terminal_grace_seconds = 5.0
-    tool_use_counts: Counter = Counter()
-    assistant_turns = 0
-
-    def _build(
-        timed_out: bool, stalled: bool, stall_reason: str | None
-    ) -> CursorStreamResult:
-        return CursorStreamResult(
-            stdout="".join(stdout_chunks),
-            stderr="".join(stderr_chunks),
-            timed_out=timed_out,
-            stalled=stalled,
-            stall_reason=stall_reason,
-            usage_limit_reached=(stall_reason == USAGE_LIMIT_REACHED),
-            final_result_event=final_result_event,
-            tool_use_counts=tool_use_counts,
-            assistant_turns=assistant_turns,
-        )
-
-    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
-        while True:
-            now = time.monotonic()
-            elapsed = now - started
-
-            if elapsed >= timeout_seconds:
-                _kill_group(process)
-                return _build(True, False, None)
-
-            streams = [s for s in (process.stdout, process.stderr) if s is not None]
-            ready, _, _ = (
-                select.select(streams, [], [], 1.0) if streams else ([], [], [])
-            )
-
-            for stream in ready:
-                chunk = stream.readline()
-                if chunk == "":
-                    continue
-                if stream is process.stdout:
-                    stdout_chunks.append(chunk)
-                    stdout_file.write(chunk)
-                    stdout_file.flush()
-                    stripped = chunk.strip()
-                    if not stripped:
-                        continue
-                    try:
-                        event = json.loads(stripped)
-                    except json.JSONDecodeError:
-                        last_activity = now
-                        continue
-
-                    etype = event.get("type")
-                    if etype == "assistant":
-                        assistant_turns += 1
-                    if etype == "tool_call":
-                        tc = event.get("tool_call") or {}
-                        tool_use_counts[_tool_call_label(tc)] += 1
-                        last_activity = now
-                    if etype == "result":
-                        final_result_event = event
-                        terminal_result_seen_at = now
-
-                    description = _describe_event(event)
-                    if description:
-                        last_activity_detail = description
-                        print_line(f"[{model_slug}] {description}")
-
-                    is_error = bool(event.get("is_error")) or (
-                        etype == "result" and event.get("subtype") not in ("success", None)
-                    )
-                    if is_error:
-                        if contains_usage_limit(json.dumps(event)):
-                            _kill_group(process)
-                            return _build(False, True, USAGE_LIMIT_REACHED)
-                        consecutive_error_events += 1
-                        if consecutive_error_events >= error_loop_threshold:
-                            _kill_group(process)
-                            return _build(
-                                False,
-                                True,
-                                f"{consecutive_error_events} consecutive errors",
-                            )
-                    elif etype != "user":
-                        consecutive_error_events = 0
-                        last_activity = now
-                else:
-                    stderr_chunks.append(chunk)
-                    stderr_file.write(chunk)
-                    stderr_file.flush()
-                    last_activity = now
-                    stripped = chunk.strip()
-                    if stripped:
-                        last_activity_detail = f"stderr: {shorten_text(stripped)}"
-                        print_line(f"[{model_slug}] {last_activity_detail}")
-
-            if (
-                terminal_result_seen_at is not None
-                and (now - terminal_result_seen_at) >= terminal_grace_seconds
-            ):
-                if process.poll() is None:
-                    _kill_group(process)
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        pass
-                print_line(
-                    f"[{model_slug}] terminal result observed; finalizing after "
-                    f"{terminal_grace_seconds:.0f}s grace"
-                )
-                return _build(False, False, None)
-
-            if now - last_heartbeat >= heartbeat_interval:
-                file_count = count_files(project_dir)
-                if file_count != last_file_count:
-                    last_file_count = file_count
-                    last_activity = now
-                    last_activity_detail = f"project file count changed to {file_count}"
-                print_line(
-                    f"[{model_slug}] heartbeat elapsed={format_duration(elapsed)} "
-                    f"files={file_count} turns={assistant_turns} {last_activity_detail}"
-                )
-                last_heartbeat = now
-
-            idle = now - last_activity
-            if idle >= no_progress_timeout_seconds:
-                _kill_group(process)
-                return _build(
-                    False,
-                    True,
-                    f"no progress for {format_duration(idle)}; last: {last_activity_detail}",
-                )
-
-            if process.poll() is not None and not ready:
-                return _build(False, False, None)
+    return run_cli_stream_loop(
+        process,
+        _CursorCliAdapter(model_slug),
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        project_dir=project_dir,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+    )
 
 
 def _phase_status(
@@ -391,6 +342,8 @@ def run_variant(
     file_count = count_files(project_dir)
 
     payload: dict[str, Any] = {
+        "result_schema_version": RESULT_SCHEMA_VERSION,
+        "harness": "cursor",
         "slug": slug,
         "label": variant.get("label"),
         "main_model": variant["main_model"],
