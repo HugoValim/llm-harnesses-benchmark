@@ -6,23 +6,19 @@ Canonical vocabulary used by maintainers and agents in this repository.
 
 ## harness
 
-One of three execution backends: `opencode`, `codex`, or `claude`. Selected with `--harness` on `run_benchmark.py`. Governs which CLI is shelled out to (`opencode run`, `codex exec`, or `claude -p`), how output events are streamed (opencode/codex NDJSON vs Claude `stream-json`), and which config file and runner module are loaded.
+One execution backend declared in `config/harnesses.json`: `opencode`, `codex`, `claude`, or `cursor`. Selected with `--harness` on `run_benchmark.py`, `run_audit.py`, and `run_meta_analysis.py`. Governs which CLI is shelled out to (`opencode run`, `codex exec`, `claude -p`, or `agent -p`) and how output events are streamed.
 
 ## model
 
-A single LLM entry in `config/models.json` (opencode/codex registry). Required fields: `slug`, `id`, `label`, `provider`, `selection_reason`. Optional: `runner_type` (`opencode` default | `codex`), `command_prefix`, `enable_followup`, `skip_by_default`, `opencode_model_options`. The `slug` is the canonical identifier used in result directory names (`<harness>-<slug>`).
-
-## variant
-
-A Claude Code execution profile in `config/claude_code_models.json`. Same concept as a model but richer: `slug`, `label`, `main_model`, optional `subagent`, `command_prefix`, `env_overrides`, `isolate_home`. Selected with `--variant` on the `claude` harness. The slug is used in result directory names (`claude-<slug>`).
+A single LLM identity in `config/models.json`. Required fields: `slug`, `label`, `provider`, and `selection_reason`. Harness-specific runnable IDs, command prefixes, and runner options live in `config/harnesses.json`. Selected with `--model`. The `slug` is the canonical identifier used in result directory names (`<harness>-<slug>`) and audit report paths.
 
 ## target
 
-The generated project produced by one (harness, model/variant) run. Lives at `results/<harness>-<slug>/project/`. This is the artefact under evaluation — the Django + Channels + Ollama chat SPA the coding agent wrote. Referenced by its parent directory name (e.g. `claude-claude_sonnet_4_6`) when selecting audit runs.
+The generated project produced by one `(harness, model)` run. Lives at `results/<harness>-<slug>/project/`. This is the artefact under evaluation — the Django + Channels + Ollama chat SPA the coding agent wrote. Referenced by its parent directory name (e.g. `claude-claude_sonnet_4_6`) when selecting audit runs.
 
 ## auditor
 
-A model entry from `config/audit_models.json` used in the Role 1 audit pass (`run_audit.py`). Same schema as a variant. An auditor reads a target's `project/` directory, applies the rubric from `prompts/audit_prompt_template.txt`, and writes `audit-reports/<auditor_slug>/<target_slug>/report.md`.
+A model selected for the Role 1 audit pass (`run_audit.py`). An auditor reads a target's `project/` directory, applies the rubric from `prompts/audit_prompt_template.txt`, and writes `audit-reports/<auditor_slug>/<target_slug>/report.md`.
 
 ## result directory
 
@@ -42,7 +38,7 @@ The `status` field in `result.json`. One of: `completed`, `completed_with_errors
 
 ## slug
 
-The short, unique identifier for a model or variant. Used as a filesystem-safe key in result directory names, audit-report paths, CLI flags (`--model`, `--variant`, `--auditor`, `--target`), and report rows. Defined in the relevant config JSON; must be unique within a registry.
+The short, unique identifier for a model. Used as a filesystem-safe key in result directory names, audit-report paths, CLI flags (`--model`, `--target`), and report rows. Defined once in `config/models.json`.
 
 ## phase
 
