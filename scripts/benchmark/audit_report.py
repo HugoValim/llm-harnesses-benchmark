@@ -18,8 +18,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from benchmark.result_layout import split_target_slug
+
 NUM_DIMENSIONS = 9
-HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "ollama", "opencode")
 TIERS: tuple[str, ...] = ("A", "B", "C", "D")
 
 # Default dimension labels, used as fallback when a report's B-section is
@@ -164,10 +165,8 @@ def parse_report_scores(
 
 def _split_harness(target: str) -> tuple[str, str]:
     """Split ``claude-foo_bar`` into ``("claude", "foo_bar")``."""
-    for prefix in HARNESS_PREFIXES:
-        if target.startswith(f"{prefix}-"):
-            return prefix, target[len(prefix) + 1 :]
-    return "unknown", target
+    harness, slug = split_target_slug(target)
+    return harness or "unknown", slug
 
 
 def _iter_target_reports(

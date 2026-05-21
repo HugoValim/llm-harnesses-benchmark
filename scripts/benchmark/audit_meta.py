@@ -10,8 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# Duplicated from audit_report to avoid circular import via re-exports.
-_HARNESS_PREFIXES: tuple[str, ...] = ("claude", "codex", "ollama", "opencode")
+from benchmark.result_layout import RECOGNIZED_TARGET_PREFIXES
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -147,7 +146,7 @@ def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
         name = child.name
         if name.startswith("_"):
             continue
-        if any(name.startswith(f"{p}-") for p in _HARNESS_PREFIXES):
+        if any(name.startswith(f"{p}-") for p in RECOGNIZED_TARGET_PREFIXES):
             continue
         if not any(child.glob("*/report.md")):
             continue

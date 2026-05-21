@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.config import summarize_project
+from benchmark.result_layout import target_result_json
 from benchmark.util import (
     USAGE_LIMIT_REACHED,
     format_value,
@@ -73,7 +74,7 @@ def _load_model_results(
     for model in config["models"]:
         if not model_matches_harness(model, harness):
             continue
-        result_path = results_dir / f"{harness}-{model['slug']}" / "result.json"
+        result_path = target_result_json(results_dir, harness, model['slug'])
         if result_path.exists():
             row = migrate_to_v2(load_json(result_path))
             row["ollama_warmup"] = warmup_results.get(model["slug"])
@@ -114,7 +115,7 @@ def _load_variant_results(
     rows: list[dict[str, Any]] = []
     for v in config.get("variants", []):
         slug = v["slug"]
-        rp = results_dir / f"{harness}-{slug}" / "result.json"
+        rp = target_result_json(results_dir, harness, slug)
         if rp.exists():
             try:
                 rows.append(migrate_to_v2(json.loads(rp.read_text())))
