@@ -20,7 +20,7 @@ Each variant writes under `results/claude-<slug>/`.
 | glm_5_1_ollama_cloud | completed | 896s | 47 | 157 | 0 |
 | qwen3_5_ollama_cloud | completed | 4570s | 45 | 264 | 0 |
 | nemotron_3_super_ollama_cloud | completed | 1098s | 36 | 170 | 0 |
-| gemma4_ollama_cloud | failed | 578s | 2 | 5 | 0 |
+| gemma4_ollama_cloud | completed | 1604s | 35 | 88 | 0 |
 | minimax_m2_7_ollama_cloud | completed | 4730s | 45 | 282 | 0 |
 
 ## Phase Breakdown
@@ -73,12 +73,6 @@ Each variant writes under `results/claude-<slug>/`.
 |---|---|---:|---:|---:|
 | phase1 | completed | 1065s | 159 | 36 |
 | phase2 | completed | 33s | 11 | 36 |
-
-### gemma4_ollama_cloud
-
-| Phase | Status | Time | Turns | Files |
-|---|---|---:|---:|---:|
-| phase1 | failed | 578s | 0 | 2 |
 
 ### minimax_m2_7_ollama_cloud
 
@@ -133,6 +127,12 @@ Extracted from Claude Code's `modelUsage` field.
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
 | nemotron-3-super:cloud | 10,877,348 | 28,689 | 0 | 0 |
+
+### gemma4_ollama_cloud
+
+| Model | Input | Output | Cache Read | Cache Create |
+|---|---:|---:|---:|---:|
+| gemma4:31b-cloud | 5,840,260 | 17,831 | 0 | 0 |
 
 ### minimax_m2_7_ollama_cloud
 
