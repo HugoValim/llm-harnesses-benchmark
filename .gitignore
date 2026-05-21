@@ -14,6 +14,10 @@ __pycache__/
 *.pyo
 .venv/
 .python-version
+_quality_probe/venv/
+
+# Local agent / IDE
+.claude/
 
 # Django
 db.sqlite3

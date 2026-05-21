@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import run_audit  # noqa: E402
-from run_audit import resolve_auditors_and_targets  # noqa: E402
+from run_audit import build_audit_prompt, resolve_auditors_and_targets  # noqa: E402
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
 from benchmark.util import load_json  # noqa: E402
 
@@ -265,6 +265,41 @@ def test_report_only_with_model_skips_auditor_without_reports(
     )
 
     assert run_audit.main() == 1
+
+
+def test_build_audit_prompt_interpolates_static_analysis_path(tmp_path: Path) -> None:
+    template = (
+        "model={model_slug} project={project_dir} "
+        "output={output_path} qa={static_analysis_path}"
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    output = tmp_path / "report.md"
+    qa = tmp_path / "static-analysis.json"
+
+    prompt = build_audit_prompt(
+        template,
+        project_dir=project,
+        model_slug="demo_model",
+        output_path=output,
+        static_analysis_path=qa,
+    )
+
+    assert "model=demo_model" in prompt
+    assert f"project={project.resolve()}" in prompt
+    assert f"output={output.resolve()}" in prompt
+    assert f"qa={qa.resolve()}" in prompt
+    # When the placeholder is unset, the literal must not leak through.
+    assert "{static_analysis_path}" not in prompt
+
+
+def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
+    # Backward-compatibility safety: callers that don't pass the path still
+    # produce a usable prompt; the placeholder is left as-is so the auditor
+    # treats D10 as unverified by the audit-v3.2 rubric.
+    template = "qa={static_analysis_path}"
+    prompt = build_audit_prompt(template, Path("/tmp/p"), "m", output_path=None)
+    assert prompt == "qa={static_analysis_path}"
 
 
 def test_default_models_registry_resolves_audit_harnesses() -> None:

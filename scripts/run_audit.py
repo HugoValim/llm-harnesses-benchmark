@@ -98,8 +98,10 @@ DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
-from benchmark.result_layout import (
+from benchmark.quality_probe import probe as run_quality_probe  # noqa: E402
+from benchmark.result_layout import (  # noqa: E402
     audit_report_md,
+    audit_static_analysis_json,
     audit_stream_ndjson,
     audit_target_dir,
     split_target_slug,
@@ -244,6 +246,15 @@ def parse_args() -> argparse.Namespace:
         help=f"Stall detection threshold (default: {DEFAULT_NO_PROGRESS_MINUTES}).",
     )
     parser.add_argument("--force", action="store_true", help="Re-run even if cached.")
+    parser.add_argument(
+        "--skip-quality-probe",
+        action="store_true",
+        help=(
+            "Skip the ruff/mypy/bandit/radon static-analysis probe that "
+            "produces static-analysis.json for the D10 rubric dimension. "
+            "When skipped, D10 is graded as 'unverified' (8/10 default)."
+        ),
+    )
     parser.add_argument(
         "--report-only",
         action="store_true",
@@ -426,12 +437,22 @@ def build_audit_prompt(
     project_dir: Path,
     model_slug: str,
     output_path: Path | None = None,
+    static_analysis_path: Path | None = None,
 ) -> str:
-    """Interpolate placeholders into the audit prompt template."""
+    """Interpolate placeholders into the audit prompt template.
+
+    ``{static_analysis_path}`` resolves to the path the probe wrote (or the
+    expected path when the probe was skipped) — the auditor opens it as
+    evidence for D10 per the audit-v3.2 rubric.
+    """
     prompt = template.replace("{project_dir}", str(project_dir.resolve()))
     prompt = prompt.replace("{model_slug}", model_slug)
     if output_path is not None:
         prompt = prompt.replace("{output_path}", str(output_path.resolve()))
+    if static_analysis_path is not None:
+        prompt = prompt.replace(
+            "{static_analysis_path}", str(static_analysis_path.resolve())
+        )
     return prompt
 
 
@@ -483,6 +504,35 @@ _AUDIT_PATH_FIELDS = (
 def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
     """Resolve relative CLI filesystem paths against the harness checkout."""
     return normalize_path_fields(args, REPO_ROOT, _AUDIT_PATH_FIELDS)
+
+
+def _maybe_run_quality_probe(
+    *,
+    project_dir: Path,
+    out_path: Path,
+    skip: bool,
+    force: bool,
+    job_slug: str,
+) -> None:
+    """Run the static-analysis probe; failures land in the JSON, never raise.
+
+    Cached: if ``out_path`` already exists and ``force`` is False, reuse it.
+    ``skip=True`` short-circuits — the audit prompt will see a missing file
+    and grade D10 as unverified (8/10 default).
+    """
+    if skip:
+        print_line(f"[{job_slug}] quality probe skipped (--skip-quality-probe)")
+        return
+    if out_path.exists() and not force:
+        print_line(f"[{job_slug}] quality probe cached -> {out_path}")
+        return
+    try:
+        payload = run_quality_probe(project_dir, out_path, repo_root=REPO_ROOT)
+    except Exception as exc:  # noqa: BLE001 — never abort audit on probe issues
+        print_line(f"[{job_slug}] quality probe crashed: {exc!r}")
+        return
+    status = payload.get("status", "unknown")
+    print_line(f"[{job_slug}] quality probe status={status} -> {out_path}")
 
 
 def main() -> int:
@@ -581,11 +631,23 @@ def main() -> int:
 
             project_dir = target["project_dir"]
             model_slug_for_prompt = target.get("model_slug", target_slug)
+            static_analysis_path = audit_static_analysis_json(
+                results_dir, auditor_slug, target_slug
+            )
+            _maybe_run_quality_probe(
+                project_dir=project_dir,
+                out_path=static_analysis_path,
+                skip=args.skip_quality_probe,
+                force=args.force,
+                job_slug=job_slug,
+            )
+
             audit_prompt = build_audit_prompt(
                 prompt_template,
                 project_dir,
                 model_slug_for_prompt,
                 output_path=audit_report_md(results_dir, auditor_slug, target_slug),
+                static_analysis_path=static_analysis_path,
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)

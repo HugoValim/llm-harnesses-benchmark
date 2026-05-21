@@ -1,0 +1,32 @@
+# Conda environment for the python-benchmark harness.
+#
+#   conda env create -f environment.yaml
+#   conda activate python-benchmark
+#
+# Python deps cover: harness scripts, pytest regression suite, and the
+# pinned audit-time quality probe (_quality_probe/requirements.txt).
+# Node supports scripts/browser_probe.mjs (headless Chromium via CDP).
+#
+# Not installable here (must be on PATH / host separately):
+#   chromium — browser probe spawns the `chromium` binary (e.g. apt install chromium)
+#   opencode, codex, claude, cursor agent, ollama — benchmark agent CLIs
+#   Docker Engine + Compose plugin — runtime verification docker steps
+#   Provider API keys / subscriptions — cloud model runs
+
+name: python-benchmark
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10,<3.13
+  - pip
+  - nodejs>=20
+  - git
+  - curl
+  - pip:
+      # scripts/tests (AGENTS.md: pytest scripts/tests)
+      - pytest>=8,<10
+      # _quality_probe/requirements.txt — pinned for apples-to-apples audits
+      - ruff==0.6.9
+      - mypy==1.11.2
+      - bandit==1.7.10
+      - radon==6.0.1
