@@ -3,8 +3,14 @@
 #   conda env create -f environment.yaml
 #   conda activate python-benchmark
 #
-# Python deps cover: harness scripts, pytest regression suite, and the
-# pinned audit-time quality probe (_quality_probe/requirements.txt).
+# Python deps: harness scripts + pytest only. Audit-time static-analysis tools
+# (ruff/mypy/bandit/radon) live in an isolated venv at _quality_probe/venv/
+# — created automatically by run_audit.py; do NOT pip install
+# _quality_probe/requirements.txt into this conda env.
+#
+# PYTHONNOUSERSITE keeps ~/.local packages out of pip's resolver so installs
+# here do not warn about unrelated user-site deps (anthropic, pip-audit, etc.).
+#
 # Node supports scripts/browser_probe.mjs (headless Chromium via CDP).
 #
 # Not installable here (must be on PATH / host separately):
@@ -25,8 +31,5 @@ dependencies:
   - pip:
       # scripts/tests (AGENTS.md: pytest scripts/tests)
       - pytest>=8,<10
-      # _quality_probe/requirements.txt — pinned for apples-to-apples audits
-      - ruff==0.6.9
-      - mypy==1.11.2
-      - bandit==1.7.10
-      - radon==6.0.1
+variables:
+  PYTHONNOUSERSITE: "1"
