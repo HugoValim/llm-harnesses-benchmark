@@ -1,4 +1,4 @@
-Prompt-Version: audit-v3.2
+Prompt-Version: audit-v3.3
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
@@ -39,7 +39,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 6. Channels AsyncWebsocketConsumer for streaming
 7. OLLAMA_HOST and OLLAMA_MODEL via env (default `http://localhost:11434` / `qwen2.5:7b`); no OpenRouter key required
 8. No secrets in source / .env / Dockerfile / compose / README. Django `SECRET_KEY` must come from the environment with no hardcoded fallback (compose-generated value is OK). OLLAMA_HOST and OLLAMA_MODEL are not secrets but must be configurable from env, not hardcoded only in source
-9. Real, working Ollama integration via `langchain-ollama` `ChatOllama`; direct `ollama` Python client is not accepted for v3.0
+9. Real, working Ollama integration via `langchain-ollama` `ChatOllama`; direct `ollama` Python client is not accepted for benchmark-v3.2
 10. Token streaming from model → WebSocket
 11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LLM/Ollama wiring (mocked), template rendering
 12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
@@ -55,7 +55,7 @@ All U1-U8 rows from the benchmark-ai-code REFERENCE apply to this audit. Opt-out
 
 - None. U1-U8 are all applicable: the spec requires Docker (U7), env-var configuration (U6), a WebSocket disconnect path (U2), real-time Ollama integration (U1, U3), a service-layer split between consumer and LLM client (U4), structured logging (U5), and a clean dependency manifest (U8).
 
-The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric. **U2 (`disconnect`)** — when the consumer has no `disconnect` method or a bare-`pass` `disconnect`, classify **CF#11** (section F mandatory). Apply the -3 in **§4** (D4) OR cite it in **§6** (D6) when D4 deductions are exhausted — **never both**. CF#11 always appears in section F when the condition holds.
+The per-dimension deduction triggers below cite the U-row they map to in parentheses (e.g. "(U2)"). Each U-row fires at most once across the rubric. **U2 (`disconnect`)** — when the consumer has no `disconnect` method or a bare-`pass` `disconnect`, classify **CF#11** (section F mandatory). Apply the -3 in **§4** (D4) OR cite it in **§6** (D6) when D4 deductions are exhausted — **never both**. Count at most one CF#11 per generated project unless distinct consumer classes independently implement broken disconnect methods. Do not count each route, symptom, test, or ledger mention as a separate CF#11. CF#11 always appears in section F when the condition holds.
 
 ## Dimension weight lock (authoritative — do not alter these maxes)
 
@@ -73,7 +73,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D10 | Code quality (tool-backed) | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocates 10 points into D10 so the rubric grades craftsmanship (lint / types / complexity / security findings) alongside file presence. D1-D9 deduction triggers below are otherwise unchanged from v3.1.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the rubric grades craftsmanship (lint / types / complexity / security findings) alongside file presence. v3.3 keeps the weights fixed and clarifies prompt-version, disconnect, and maintainability-index scoring.
 
 ## Benchmark anchors (scoring calibration)
 
@@ -93,7 +93,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocates 10 points into D10 so the ru
    - Unused dependency declared in requirements.txt / pyproject.toml but not imported in source (U8): -2.
    - No `.env.example` (or equivalent) documenting OLLAMA_HOST / OLLAMA_MODEL (U6): -2.
    - `ASGI_APPLICATION` missing from settings: -2.
-   - Missing verification summary with command results: -2.
+   - Missing verification summary with command results: -2. Generic "validated" prose without concrete commands and pass/fail/blocker results counts as missing.
 
 2. **LLM integration correctness** (0-20)
    - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
@@ -128,7 +128,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocates 10 points into D10 so the ru
 6. **Streaming & frontend wiring** (0-10)
    - Single template dump (no {% include %} / partials): -3.
    - Tailwind CLI not actually wired (no source CSS, no static built CSS, no CLI invocation): -3.
-   - No HTMX WebSocket extension wired to the streaming route: -4.
+   - No HTMX WebSocket extension wired to the streaming route, or app-owned raw `new WebSocket(...)` JavaScript used as the streaming path instead: -4.
    - Token-by-token UI updates not visible (only full-message swap): -2.
    - No chunk-by-chunk test assertion that the streaming path yields multiple chunks (tests only assert final joined string): -2.
    - Consumer buffers all chunks before first WebSocket send (e.g. collects the full async generator into a list/string before the first `send`, short of the explicit CF#3 anti-pattern): -2.
@@ -149,13 +149,14 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocates 10 points into D10 so the ru
    - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -1.
    - No structured logging configured (print-only, no `logging` setup) (U5): -1.
    - Non-root container user: best practice only — no deduction.
+   - These are low-weight expected hardening checks; apply them consistently even when the main app works.
 
 10. **Code quality (tool-backed)** (0-10)
     Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **8/10**; skip the rest of D10.
     - `ruff.total_errors / (lines_of_code / 1000)` > 5 (i.e. >5 lint errors per kLOC): -2. Cite the top 3 offender file:line:code entries.
     - `mypy.total_errors` > 10: -2. Cite the top 3 offenders.
     - Any function in `radon_cc.top_offenders` with `complexity` >= 20 (grade D/E/F): -2. Cite file:function:complexity.
-    - `radon_mi.modules_below_65` > 0: -1. Cite the file with the lowest MI.
+    - `radon_mi.modules_below_65` > 0 for production source modules after excluding `tests/`, `tests.py`, `test_*.py`, and `*_test.py`: -1. Cite the source file with the lowest MI. If only test files are below 65, no D10 deduction; mention it as a non-scoring note only if useful.
     - `bandit.high` > 0: -2. Cite each high-severity finding. (Skip if the same finding already capped D8 at 0 via CF#1 — no double deduction across dimensions.)
     - `bandit.medium` > 2: -1. (Stacks with the line above only when distinct findings.)
     - Bare `except Exception:` / bare `except:` count > 2 across the project (grep `{project_dir}` for evidence; cite the file:line of the 3rd+ occurrence): -1.
@@ -178,8 +179,8 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 8 | Spec required env-driven input but submission hardcodes the value (e.g. OLLAMA_HOST / OLLAMA_MODEL only readable from Python source, never from env) | D2 LLM integration / D7 Architecture | `file:line` of the hardcoded value |
 | 9 | Tests pass against an anti-pattern (e.g. tests assert buffered output instead of streaming chunks, or mock a hallucinated API surface) — tests give a false-green | D3 Test quality | `test_*.py:line` showing the wrong assertion shape |
 | 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
-| 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
-| 12 | The v3.0 benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
+| 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path. Count at most one CF#11 per generated project unless distinct consumer classes independently violate this. | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
+| 12 | The current benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
 | 13 | Catastrophic code quality from the static-analysis probe: `ruff.total_errors > 50` OR `mypy.total_errors > 50` OR `bandit.high > 0` OR any `radon_cc` function with `complexity >= 30` (grade F). The submission ships code that fails an objective tool gate by a wide margin. | D10 Code quality (tool-backed) | `static-analysis.json:<tool>` with the offending count and top 3 offenders |
 
 Operating rules:
@@ -217,7 +218,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **compute** from token counts × the model's row in `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md`; never copy a harness-reported cost
    - Pricing-Source (default `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.2`; primary benchmark prompt must be `benchmark-v3.1`; follow-up prompt must be `benchmark-followup-v3.0` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.3`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from `result.json` or `prompt.txt` hash; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from `result.json` or `followup-prompt.txt` hash; `n/a` if unavailable)

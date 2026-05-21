@@ -94,7 +94,7 @@ class TestAuditPaths(unittest.TestCase):
         )
 
     def test_audit_static_analysis_json(self) -> None:
-        # Evidence file for the audit-v3.2 D10 dimension lives next to report.md.
+        # Evidence file for the audit-v3.3 D10 dimension lives next to report.md.
         self.assertEqual(
             audit_static_analysis_json(self.root, "auditor", "target"),
             Path("/tmp/audit-reports/auditor/target/static-analysis.json"),

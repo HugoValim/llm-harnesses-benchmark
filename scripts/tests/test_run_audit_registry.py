@@ -58,9 +58,7 @@ def test_old_audit_selector_flags_are_removed(
 
 def test_resolve_audit_model_from_shared_registry(tmp_path: Path) -> None:
     benchmark_results_dir = tmp_path / "results"
-    (benchmark_results_dir / "opencode-target_model" / "project").mkdir(
-        parents=True
-    )
+    (benchmark_results_dir / "opencode-target_model" / "project").mkdir(parents=True)
     audit_config = {
         "runner": {"command": "claude"},
         "models": [
@@ -152,9 +150,7 @@ def test_cli_preserves_audit_output_path(
     prompt_path = tmp_path / "audit_prompt.txt"
     prompt_path.write_text("{project_dir} {model_slug} {output_path}")
     benchmark_results_dir = tmp_path / "results"
-    (benchmark_results_dir / "opencode-target_model" / "project").mkdir(
-        parents=True
-    )
+    (benchmark_results_dir / "opencode-target_model" / "project").mkdir(parents=True)
     audit_reports_dir = tmp_path / "audit-reports"
     seen_result_dirs: list[Path] = []
 
@@ -169,6 +165,7 @@ def test_cli_preserves_audit_output_path(
         run_audit, "_verify_auditor_binaries", lambda auditors: (True, "")
     )
     from benchmark.harnesses import HARNESS_REGISTRY, Harness
+
     fake_harness = Harness(
         name="claude",
         run_variant=fake_run_variant,
@@ -296,7 +293,7 @@ def test_build_audit_prompt_interpolates_static_analysis_path(tmp_path: Path) ->
 def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
     # Backward-compatibility safety: callers that don't pass the path still
     # produce a usable prompt; the placeholder is left as-is so the auditor
-    # treats D10 as unverified by the audit-v3.2 rubric.
+    # treats D10 as unverified by the audit-v3.3 rubric.
     template = "qa={static_analysis_path}"
     prompt = build_audit_prompt(template, Path("/tmp/p"), "m", output_path=None)
     assert prompt == "qa={static_analysis_path}"

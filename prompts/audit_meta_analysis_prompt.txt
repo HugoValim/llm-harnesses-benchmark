@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.4
+Prompt-Version: meta-v3.5
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -177,7 +177,7 @@ Run all six checks and record the verdict per check, then an overall verdict:
   - **PASS** if median D10 ≥ 6/10 (cohort writes code that mostly clears the toolchain).
   - **WARN** if 4 ≤ median D10 < 6 — note the dominant trigger (cite the most-cited `static-analysis.json` field across deductions) and recommend a `[prompt]` bump if the brief did not state the toolchain bar, or a `[rubric]` loosen if the bar is reasonable but unmet.
   - **FAIL** if median D10 < 4 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
-  - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2); list affected runs in the appendix and do NOT let Check 6 influence the overall verdict.
+  - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3); list affected runs in the appendix and do NOT let Check 6 influence the overall verdict.
 
 Overall verdict:
 - **PASS** — all six checks pass (treat `insufficient-data` on Check 5 or Check 6 as neutral, not a failure)
@@ -223,7 +223,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.2` and whose underlying benchmark prompt metadata is `benchmark-v3.1` (and `benchmark-followup-v3.0` when follow-up is present). Reports tagged `audit-v3.0` or `audit-v3.1` are excluded from cross-cell comparison until re-audited under `audit-v3.2` (D10 is not derivable from a v3.1 report). Likewise, `benchmark-v3.0` submissions audited under `audit-v3.2` should be flagged because the older brief did not tell the model the toolchain bar — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.3` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0`, `audit-v3.1`, or `audit-v3.2` are excluded from cross-cell comparison until re-audited under `audit-v3.3`. Likewise, older benchmark submissions audited under `audit-v3.3` should be flagged because the older brief did not include the strengthened HTMX, disconnect, and verification-summary requirements — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
   - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.

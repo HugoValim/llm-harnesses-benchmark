@@ -1,4 +1,4 @@
-Prompt-Version: benchmark-v3.1
+Prompt-Version: benchmark-v3.2
 
 Build a Python web application using Django and Django Channels. This is a controlled benchmark task: implement the requested app inside the current working directory and record evidence for what you verified. First make a short implementation plan for yourself, then implement without asking for confirmation. Do not stop with only a plan.
 
@@ -21,6 +21,12 @@ Required deliverables (all must be present; these map directly to the audit rubr
 16. `.env.example` documenting `OLLAMA_HOST` and `OLLAMA_MODEL` with their defaults.
 17. A short verification summary in README or a dedicated `VERIFY.md` listing commands run, pass/fail result, and any environment blocker.
 
+Explicitly disallowed alternatives:
+- Do not implement browser streaming with app-owned raw `new WebSocket(...)` or `WebSocket(...)` JavaScript. Use HTMX `hx-ext="ws"` plus `ws-connect` / `ws-send` wiring in rendered HTML. Small unrelated JavaScript for UI polish is OK, but the streaming path must be the HTMX WebSocket extension.
+- Do not use Tailwind CDN, PostCSS-only setup, django-tailwind, Bootstrap, or hand-written CSS as a replacement for the official Tailwind CLI. Include source CSS, built static CSS, and the exact CLI build command.
+- Do not import or use the direct `ollama` Python package for the app's LLM path. Use only `langchain_ollama.ChatOllama`; tests may fake the project-owned service boundary.
+- Do not write secret-shaped placeholder values such as dummy `SECRET_KEY`, `DJANGO_SECRET_KEY`, tokens, or passwords in source, README, `.env*`, Dockerfile, or compose. Show environment variable names and commands that generate values instead.
+
 Use the tools available in this runtime. If a tool call fails, recover and continue implementing. Do not depend on a specific agent harness tool name.
 
 Use Django's `startproject` and `startapp` generators to scaffold the project. Configure only the apps needed for the chat UI plus Django Channels. The chat history can live in memory per browser session or per consumer; a database is not required for the chat itself, but Django's default sqlite database is fine if migrations are needed for framework boot.
@@ -32,6 +38,8 @@ Security and config requirements:
 - Docker/production `DEBUG` must default to `False`; local development may enable it only through an environment variable.
 - Docker/production `ALLOWED_HOSTS` must not be `["*"]`; read a narrowed list from env or default to localhost values.
 - Do not print secret values or copy secret file contents into the repo.
+- `.env.example` should document non-secret config only, unless a secret-shaped variable is left blank with no placeholder default.
+- Docker compose should read `DJANGO_SECRET_KEY` / `SECRET_KEY` from the environment or require it with shell-style validation, not provide a literal fallback.
 - Keep Django's default security middleware, including CSRF and SecurityMiddleware, unless a documented framework reason requires otherwise.
 
 LLM integration requirements:
@@ -41,14 +49,21 @@ LLM integration requirements:
 - Maintain multi-turn chat context for the active conversation.
 - Surface an understandable UI error if Ollama is unreachable or streaming fails.
 - Add a preflight or health-check path that can report Ollama reachability without exposing secrets.
+- Implement a real `disconnect(self, close_code)` path for the consumer. It should clean up group membership, active stream state, or per-consumer resources as applicable; a bare `pass` disconnect is invalid.
 
 Testing and tooling requirements:
 - Tests must mock the LLM client with a named fake class or fixture and assert multiple streamed chunks, not only the final concatenated message.
 - Include a consumer test with `WebsocketCommunicator`.
 - Include view/template tests that prove the SPA and partials render.
+- Include a template or integration assertion that the HTMX WebSocket extension is loaded and `ws-connect` / `ws-send` are wired to the WebSocket route.
 - Configure coverage, ruff, mypy, bandit, and pip-audit in reproducible project files.
 - The generated project must also **pass** the configured toolchain: `ruff check`, `ruff format --check`, `mypy`, and `bandit -r .` must all exit cleanly on the code you ship. Configuration alone is not sufficient — the audit will run these tools against your project and grade the results. Aim for: zero ruff errors, zero mypy errors on the chat app modules, no bandit high-severity findings, and no function with cyclomatic complexity ≥ 20.
 - Document the exact verification commands.
+
+Verification summary format:
+- Write a README section or `VERIFY.md` table with columns for command, result, and evidence or blocker.
+- Include `python --version` or the exact `mise` invocation, dependency install, Tailwind build, `pytest`, `ruff check`, `ruff format --check`, `mypy`, `bandit -r .`, coverage, and `pip-audit` or the exact environment blocker.
+- For any command not run in phase 1, mark it as not run and explain the environment or time constraint. Do not leave the verification summary as a generic TODO.
 
 This is phase 1 of 2. Focus on implementation, tests, project structure, and reproducible evidence. Do not spend time on full browser/Docker runtime validation beyond what is needed to keep implementation moving.
 
