@@ -14,24 +14,8 @@ from benchmark.util import load_json  # noqa: E402
 
 HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
 MODELS_CONFIG = REPO_ROOT / "config" / "models.json"
-PIPELINE_SCRIPT = REPO_ROOT / "scripts" / "run_full_benchmark.sh"
 PIPELINE_PY = REPO_ROOT / "scripts" / "run_full_benchmark.py"
-OLLAMA_CLOUD_WRAPPER = REPO_ROOT / "scripts" / "run_ollama_cloud_benchmark.sh"
 MODEL_HARNESS_SCRIPT = REPO_ROOT / "scripts" / "audit_model_harness.py"
-
-
-def test_run_full_benchmark_sh_passes_bash_n() -> None:
-    subprocess.run(["bash", "-n", str(PIPELINE_SCRIPT)], check=True)
-
-
-def test_run_full_benchmark_sh_delegates_to_python() -> None:
-    text = PIPELINE_SCRIPT.read_text(encoding="utf-8")
-    assert "run_full_benchmark.py" in text
-    assert "exec python3" in text
-
-
-def test_run_ollama_cloud_benchmark_sh_passes_bash_n() -> None:
-    subprocess.run(["bash", "-n", str(OLLAMA_CLOUD_WRAPPER)], check=True)
 
 
 def test_run_full_benchmark_py_passes_compile() -> None:

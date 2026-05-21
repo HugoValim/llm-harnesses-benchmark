@@ -38,8 +38,7 @@ python-benchmark/
 │   └── audit_prompt_template.txt          # LLM-powered audit rubric
 ├── scripts/
 │   ├── run_benchmark.py                   # unified entrypoint: --harness opencode|codex|claude
-│   ├── run_full_benchmark.sh              # full matrix (all harnesses) + audit + meta
-│   ├── run_ollama_cloud_benchmark.sh      # convenience wrapper → run_full_benchmark.sh
+│   ├── run_full_benchmark.py              # full matrix (all harnesses) + audit + meta
 │   ├── run_audit.py                       # Role 1: per-project LLM audits (rubric reports)
 │   ├── run_meta_analysis.py               # Role 2: cross-auditor meta-analysis
 │   ├── run_audit_benchmark.py             # deprecated shim → run_audit.py + run_meta_analysis.py
@@ -107,7 +106,6 @@ python scripts/run_benchmark.py --harness claude --variant claude_sonnet_4_6
 
 # End-to-end full benchmark + audit + meta-analysis (Ollama Cloud matrix on
 # opencode/codex/claude + Opus/GPT-5.5 baselines; see scripts/run_full_benchmark.py)
-./scripts/run_full_benchmark.sh
 python scripts/run_full_benchmark.py --list-steps
 
 # Audit only: all `results/*/project` with chosen auditor slug from config/audit_models.json
@@ -134,7 +132,7 @@ Aggregate report: **`docs/report.claude-code.md`** (default).
 
 **Auth / isolation** — same as before: `runner.isolate_home` in `config/claude_code_models.json`; subscription vs `ANTHROPIC_API_KEY`.
 
-**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Use **`./scripts/run_full_benchmark.sh`** for the full build + audit + meta pipeline (the legacy `run_ollama_cloud_benchmark.sh` delegates to it).
+**Ollama Cloud** — shared tags (`*:cloud`) and per-harness shims live in **`config/ollama_cloud_models.json`**; `run_benchmark.py` expands it to `variants` (Claude) or `models` (opencode/codex/`--harness ollama`). Use **`python scripts/run_full_benchmark.py`** for the full build + audit + meta pipeline.
 
 ### Opencode / Codex (`--harness opencode` | `--harness codex`)
 
