@@ -2,7 +2,7 @@
 
 Runs a pinned, reproducible toolchain (``ruff`` / ``mypy`` / ``bandit`` /
 ``radon cc`` / ``radon mi``) against one generated project and writes a
-compact JSON evidence file the LLM auditor can cite for the audit-v3.2
+compact JSON evidence file the LLM auditor can cite for the audit-v3.3
 D10 (Code quality, tool-backed) dimension.
 
 The probe venv lives at ``_quality_probe/venv/`` and is shared across all
@@ -157,9 +157,13 @@ def _run_all_tools(
     radon_mi = _run_radon_mi(python, project_dir)
     versions = _tool_versions(python)
     loc = _count_lines_of_code(project_dir)
-    overall_status = "ok" if any(
-        t.get("status") == "ok" for t in (ruff, mypy, bandit, radon_cc, radon_mi)
-    ) else "error"
+    overall_status = (
+        "ok"
+        if any(
+            t.get("status") == "ok" for t in (ruff, mypy, bandit, radon_cc, radon_mi)
+        )
+        else "error"
+    )
     return {
         "status": overall_status,
         "project_dir": str(project_dir),
@@ -253,7 +257,9 @@ def _ruff_offender_row(diag: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_MYPY_LINE_RE = re.compile(r"^(?P<file>[^:]+):(?P<line>\d+):(?:\d+:)?\s+(?P<level>error|note):\s+(?P<msg>.+)$")
+_MYPY_LINE_RE = re.compile(
+    r"^(?P<file>[^:]+):(?P<line>\d+):(?:\d+:)?\s+(?P<level>error|note):\s+(?P<msg>.+)$"
+)
 
 
 def _run_mypy(
@@ -428,23 +434,63 @@ def _parse_radon_mi_output(stdout: str, stderr: str) -> dict[str, Any]:
         data = json.loads(stdout or "{}")
     except json.JSONDecodeError:
         return {"status": "error", "stderr": stderr.strip() or stdout[:500]}
-    offenders: list[dict[str, Any]] = []
-    below_65 = 0
-    for filename, entry in data.items():
-        if not isinstance(entry, dict):
-            continue
-        mi_value = float(entry.get("mi") or 0)
-        if mi_value < 65:
-            below_65 += 1
-            offenders.append(
-                {"file": filename, "mi": round(mi_value, 2), "rank": str(entry.get("rank") or "")}
-            )
-    offenders.sort(key=lambda r: r["mi"])
+    source_offenders, test_offenders = _split_radon_mi_offenders(data)
     return {
         "status": "ok",
-        "modules_below_65": below_65,
-        "top_offenders": offenders[:TOP_OFFENDER_CAP],
+        "modules_below_65": len(source_offenders),
+        "test_modules_below_65": len(test_offenders),
+        "top_offenders": source_offenders[:TOP_OFFENDER_CAP],
+        "test_top_offenders": test_offenders[:TOP_OFFENDER_CAP],
     }
+
+
+def _split_radon_mi_offenders(
+    data: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    source_offenders: list[dict[str, Any]] = []
+    test_offenders: list[dict[str, Any]] = []
+    for filename, entry in data.items():
+        offender = _low_mi_offender(filename, entry)
+        if offender is None:
+            continue
+        if _is_test_module_path(filename):
+            test_offenders.append(offender)
+        else:
+            source_offenders.append(offender)
+    source_offenders.sort(key=lambda r: r["mi"])
+    test_offenders.sort(key=lambda r: r["mi"])
+    return source_offenders, test_offenders
+
+
+def _low_mi_offender(filename: str, entry: Any) -> dict[str, Any] | None:
+    if not isinstance(entry, dict):
+        return None
+    mi_value = float(entry.get("mi") or 0)
+    if mi_value >= 65:
+        return None
+    return _radon_mi_offender(filename, mi_value, entry)
+
+
+def _radon_mi_offender(
+    filename: str, mi_value: float, entry: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "file": filename,
+        "mi": round(mi_value, 2),
+        "rank": str(entry.get("rank") or ""),
+    }
+
+
+def _is_test_module_path(filename: str) -> bool:
+    normalized = filename.replace("\\", "/")
+    name = normalized.rsplit("/", 1)[-1]
+    parts = normalized.split("/")
+    return (
+        "tests" in parts
+        or name == "tests.py"
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+    )
 
 
 def _count_lines_of_code(project_dir: Path) -> int:
@@ -455,7 +501,9 @@ def _count_lines_of_code(project_dir: Path) -> int:
             if not name.endswith(".py"):
                 continue
             try:
-                with open(Path(root) / name, encoding="utf-8", errors="ignore") as handle:
+                with open(
+                    Path(root) / name, encoding="utf-8", errors="ignore"
+                ) as handle:
                     total += sum(1 for _ in handle)
             except OSError:
                 continue

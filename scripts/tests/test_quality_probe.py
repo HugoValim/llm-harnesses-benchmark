@@ -93,7 +93,9 @@ class TestMypyParser(unittest.TestCase):
         self.assertEqual(result["top_offenders"][1]["line"], 42)
 
     def test_empty_source_is_ok_zero(self) -> None:
-        result = _parse_mypy_output("", "error: There are no Python source files in the current directory")
+        result = _parse_mypy_output(
+            "", "error: There are no Python source files in the current directory"
+        )
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["total_errors"], 0)
 
@@ -155,7 +157,7 @@ class TestRadonCCParser(unittest.TestCase):
 
 
 class TestRadonMIParser(unittest.TestCase):
-    def test_counts_modules_below_65(self) -> None:
+    def test_counts_source_modules_below_65(self) -> None:
         payload = json.dumps(
             {
                 "chat/consumers.py": {"mi": 42.5, "rank": "B"},
@@ -168,6 +170,22 @@ class TestRadonMIParser(unittest.TestCase):
         self.assertEqual(result["modules_below_65"], 2)
         self.assertEqual(result["top_offenders"][0]["file"], "chat/utils.py")
         self.assertLess(result["top_offenders"][0]["mi"], 65)
+
+    def test_reports_test_modules_separately_from_source_mi(self) -> None:
+        payload = json.dumps(
+            {
+                "chat/tests.py": {"mi": 10.0, "rank": "C"},
+                "tests/test_views.py": {"mi": 20.0, "rank": "C"},
+                "chat/views_test.py": {"mi": 30.0, "rank": "C"},
+                "chat/test_helpers.py": {"mi": 40.0, "rank": "B"},
+                "chat/service.py": {"mi": 90.0, "rank": "A"},
+            }
+        )
+        result = _parse_radon_mi_output(payload, "")
+        self.assertEqual(result["modules_below_65"], 0)
+        self.assertEqual(result["test_modules_below_65"], 4)
+        self.assertEqual(result["top_offenders"], [])
+        self.assertEqual(result["test_top_offenders"][0]["file"], "chat/tests.py")
 
 
 if __name__ == "__main__":
