@@ -42,6 +42,10 @@ from benchmark.audit_report import (  # noqa: E402
 )
 from benchmark.harnesses import get_harness  # noqa: E402
 from benchmark.audit_meta import discover_auditor_subdirs  # noqa: E402
+from benchmark.timeouts import (  # noqa: E402
+    DEFAULT_NO_PROGRESS_MINUTES,
+    DEFAULT_TIMEOUT_MINUTES,
+)
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
 # Runner imports go through the Harness registry; no direct imports needed.
 from benchmark.util import (  # noqa: E402
@@ -230,14 +234,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout-minutes",
         type=int,
-        default=30,
-        help="Per-audit timeout (default: 30). Audits are shorter than builds.",
+        default=DEFAULT_TIMEOUT_MINUTES,
+        help=f"Per-audit timeout (default: {DEFAULT_TIMEOUT_MINUTES}).",
     )
     parser.add_argument(
         "--no-progress-minutes",
         type=int,
-        default=6,
-        help="Stall detection threshold (default: 6).",
+        default=DEFAULT_NO_PROGRESS_MINUTES,
+        help=f"Stall detection threshold (default: {DEFAULT_NO_PROGRESS_MINUTES}).",
     )
     parser.add_argument("--force", action="store_true", help="Re-run even if cached.")
     parser.add_argument(

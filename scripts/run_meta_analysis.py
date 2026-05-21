@@ -42,6 +42,10 @@ from benchmark.audit_report import (  # noqa: E402
     run_ai_meta_analysis,
 )
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
+from benchmark.timeouts import (  # noqa: E402
+    DEFAULT_NO_PROGRESS_MINUTES,
+    DEFAULT_TIMEOUT_MINUTES,
+)
 from benchmark.util import load_json, normalize_path_fields, print_line  # noqa: E402
 
 
@@ -133,14 +137,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--meta-timeout-minutes",
         type=int,
-        default=30,
-        help="Timeout for the meta-analysis run (default: 30).",
+        default=DEFAULT_TIMEOUT_MINUTES,
+        help=f"Timeout for the meta-analysis run (default: {DEFAULT_TIMEOUT_MINUTES}).",
     )
     parser.add_argument(
         "--no-progress-minutes",
         type=int,
-        default=6,
-        help="Stall detection threshold (default: 6).",
+        default=DEFAULT_NO_PROGRESS_MINUTES,
+        help=f"Stall detection threshold (default: {DEFAULT_NO_PROGRESS_MINUTES}).",
     )
     parser.add_argument(
         "--force",

@@ -33,6 +33,10 @@ from benchmark.harnesses.stall_policy import (
     TOOL_LOOP_THRESHOLD,
 )
 from benchmark.phase_result import build_phase_payload
+from benchmark.timeouts import (
+    DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
+    DEFAULT_TIMEOUT_SECONDS,
+)
 from benchmark.result_layout import target_dir as layout_target_dir
 from benchmark.session_export import export_opencode_session
 from benchmark.stream_state import ActionKind, EventStreamState
@@ -658,8 +662,8 @@ def run_codex_variant(
     variant: dict[str, Any],
     prompt: str,
     results_dir: Path,
-    timeout_seconds: int = 5400,
-    no_progress_timeout_seconds: int = 360,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
     harness: str = "codex",
     explicit_result_dir: Path | None = None,

@@ -11,6 +11,7 @@ from typing import Sequence
 
 from benchmark.audit_meta import audit_model_harness
 from benchmark.config import resolve_build_harness_config
+from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -124,6 +125,7 @@ def run_build_step(
         str(results_dir),
         "--report",
         step.report_path,
+        *timeout_cli_flags(),
         *extra_args,
     ]
     if dry_run:
@@ -234,6 +236,7 @@ def phase_audit(
         "all",
         "-j",
         "3",
+        *timeout_cli_flags(),
     ]
     if dry_run:
         print_line(" ".join(cmd))
@@ -254,8 +257,7 @@ def phase_meta_analysis(
     cmd = [
         sys.executable,
         str(SCRIPTS_DIR / "run_meta_analysis.py"),
-        "--no-progress-minutes",
-        "15",
+        *meta_timeout_cli_flags(),
         "--models-config",
         str(models_config),
         "--results-dir",

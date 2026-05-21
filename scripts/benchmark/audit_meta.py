@@ -10,7 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from benchmark.result_layout import RECOGNIZED_TARGET_PREFIXES
+from benchmark.result_layout import HARNESS_PREFIXES
+from benchmark.timeouts import (
+    DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
+    DEFAULT_TIMEOUT_SECONDS,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -146,7 +150,7 @@ def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
         name = child.name
         if name.startswith("_"):
             continue
-        if any(name.startswith(f"{p}-") for p in RECOGNIZED_TARGET_PREFIXES):
+        if any(name.startswith(f"{p}-") for p in HARNESS_PREFIXES):
             continue
         if not any(child.glob("*/report.md")):
             continue
@@ -191,8 +195,8 @@ def run_ai_meta_analysis(
     harness: str,
     runner_command_prefix: list[str] | None = None,
     isolate_home: bool = False,
-    timeout_seconds: int = 30 * 60,
-    no_progress_timeout_seconds: int = 6 * 60,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
 ) -> dict:
     """Dispatch an LLM to write the meta-analysis markdown file.

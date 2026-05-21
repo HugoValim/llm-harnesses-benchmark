@@ -13,6 +13,10 @@ from typing import Any
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
+from benchmark.timeouts import (
+    DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
+    DEFAULT_TIMEOUT_SECONDS,
+)
 from benchmark.result_layout import target_dir as layout_target_dir
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
@@ -258,8 +262,8 @@ def run_variant(
     variant: dict[str, Any],
     prompt: str,
     results_dir: Path,
-    timeout_seconds: int = 5400,
-    no_progress_timeout_seconds: int = 360,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
     runner_command_prefix: list[str] | None = None,
     harness: str = "cursor",

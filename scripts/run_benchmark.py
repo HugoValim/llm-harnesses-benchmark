@@ -33,7 +33,10 @@ from benchmark.util import (  # noqa: E402
     print_line,
 )
 
-DEFAULT_NO_PROGRESS_MINUTES = 6
+from benchmark.timeouts import (  # noqa: E402
+    DEFAULT_NO_PROGRESS_MINUTES,
+    DEFAULT_TIMEOUT_MINUTES,
+)
 HARNESS_CHOICES = frozenset(list_harnesses())
 
 
@@ -169,7 +172,9 @@ def parse_args() -> argparse.Namespace:
         "--ollama-warmup-results",
         default=str(REPO_ROOT / "results" / "ollama_warmup.json"),
     )
-    parser.add_argument("--timeout-minutes", type=int, default=90)
+    parser.add_argument(
+        "--timeout-minutes", type=int, default=DEFAULT_TIMEOUT_MINUTES
+    )
     parser.add_argument(
         "--no-progress-minutes",
         type=int,

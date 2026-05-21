@@ -142,7 +142,7 @@ Per-project artifacts land in `results/<harness>-<slug>/project/_runtime_verific
 
 - **Subprocess isolation:** All runners use `start_new_session=True` so process groups can be killed cleanly. `kill_process_group()` sends SIGTERM, waits 10s, then SIGKILL.
 - **NDJSON streaming:** opencode and Claude Code both emit newline-delimited JSON events. The harness reads line-by-line via `select.select()`, writes to disk, and parses in real time for heartbeat logging and stall detection.
-- **Stall detection:** If no stdout/stderr activity and no file count change occur for `no_progress_timeout_seconds`, the run is aborted. Error loops (5 consecutive error events) also trigger abort.
+- **Stall detection:** If no stdout/stderr activity and no file count change occur for `no_progress_timeout_seconds` (default 15 minutes), the run is aborted. Error loops (5 consecutive error events) also trigger abort. Default wall-clock timeout per agent run is 50 minutes (`scripts/benchmark/timeouts.py`).
 - **Preview TPS gating:** opencode runs can be aborted early if average output tokens/sec over the first N steps falls below a threshold (`--min-preview-output-tps`).
 - **Home isolation:** Claude Code model rows can set `isolate_home: true` to replace `$HOME` with the result dir during the run. This prevents user-level `~/.claude/agents/*.md` from leaking in, but breaks subscription auth (requires `ANTHROPIC_API_KEY`).
 - **GPU memory management:** When using local backends, the harness unloads competing backends before preflight and unloads models post-run to prevent OOM.
