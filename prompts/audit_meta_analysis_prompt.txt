@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.3
+Prompt-Version: meta-v3.4
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -35,15 +35,15 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 1. For each directory listed in "Inputs" above, glob `*/report.md` ONCE. Do not re-Glob. Do not re-Read the same report file.
 2. For EACH report extract (read each file at most once):
-   - Per-dimension scores from section B (`D1..D9`, each `score/max`)
+   - Per-dimension scores from section B (`D1..D10`, each `score/max`)
    - Total from section C (`X/100`); record `null` if absent or malformed
    - Tier from section D (A/B/C/D)
-   - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 12 auto-CF rows)
-   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
+   - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 13 auto-CF rows)
+   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`, `Static-Analysis-Path`, `Static-Analysis-Status`
    - Record `n/a` for any missing field; never invent values
    - After extraction, identify **leader reports** — those whose `<model_slug>` (case-insensitive substring match) contains `gpt_5_5` (GPT 5.5 xhigh) or `claude_opus_4_7` (Opus 4.7). Split into two anchor cohorts; compute per-anchor mean total and per-dimension means, plus a pooled leader mean across both anchors. Carry these forward into Section 1 (executive summary) and Section 8 Check 5 (leader anchor calibration).
 3. Build the per-model cross-harness table (group by model slug; avg/std-dev of total across harnesses).
-4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D9 + total).
+4. Build the harness × dimension cross-tab (rows = harness, cols = D1..D10 + total).
 5. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
 6. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
 7. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
@@ -95,17 +95,34 @@ For every model that appears under >=2 harnesses, one subsection:
 
 #### `<model_slug>`
 
-| Harness | Total | Tier | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | Δ vs model median |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Harness | Total | Tier | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | D10 | Δ vs model median |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 
 - "Δ vs model median" is the delta of this run's total from the median total of this model across its harnesses.
 - One sentence after the table: which dimension moved the needle most, citing report:line.
 
 If a model only appears under one harness, list it in the appendix's "Single-harness models" entry and do NOT include it here.
 
+### 4a. Completion vs. quality gap
+
+Use this table to surface models that earn deliverable points without earning code-quality points — the failure mode the v3.2 rubric was introduced to detect.
+
+| Model slug | Auditor | Harness | D1/15 | D10/10 | D1 ratio | D10 ratio | Gap | Flag |
+|---|---|---|---:|---:|---:|---:|---:|---|
+
+Rules:
+- One row per `(auditor, harness, model_slug)` cell with both D1 and D10 reported (skip rows with `n/a` on either dimension; list those in the appendix).
+- `D1 ratio = D1_score / 15`; `D10 ratio = D10_score / 10`; `Gap = D1 ratio − D10 ratio` (signed, two decimals).
+- **Flag** column:
+  - `gap > 0.30` → `completion-over-quality` (model ships files but the code fails the toolchain)
+  - `gap < -0.30` → `quality-over-completion` (rare — model writes clean code but skips deliverables)
+  - otherwise blank
+- Sort descending by `Gap`.
+- Below the table, in ≤3 sentences, name the worst `completion-over-quality` offender and cite the `static-analysis.json` field that drove the D10 deduction (e.g. `static-analysis.json:ruff.total_errors=87`).
+
 ### 5. Dimension-level signal
 
-For each of the 9 rubric dimensions (D1-D9), one line:
+For each of the 10 rubric dimensions (D1-D10), one line:
 
 - **D<n> — <label>** (max <max>): universal-avg X.X; per-harness avg claude=Y.Y / codex=Z.Z / opencode=W.W. Classify as:
   - **universal blind spot** — all harnesses within 1 point of each other AND below 70% of max
@@ -143,7 +160,7 @@ Rules:
 
 ### 8. Calibration check (rubric fitness, non-blocking)
 
-Run all five checks and record the verdict per check, then an overall verdict:
+Run all six checks and record the verdict per check, then an overall verdict:
 
 - **Check 1 — Cohort median**: median total across all valid runs. PASS if <= 80; WARN if 80 < median <= 85; FAIL if > 85 (rubric too lenient).
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
@@ -156,9 +173,14 @@ Run all five checks and record the verdict per check, then an overall verdict:
     - **FAIL** if anchor mean < 90 — anchor runs scoring far below their reference band; investigate whether the rubric is over-deducting, whether the leaders genuinely regressed, or whether auditors are mis-applying triggers. Recommend a Prompt-Version bump and a re-run.
     - **insufficient-data** if fewer than 2 leader reports exist for that anchor.
   - **Check 5 overall**: PASS if every anchor with ≥2 reports PASSes (treat `insufficient-data` anchors as neutral); WARN if any anchor WARNs and none FAIL; FAIL if any anchor FAILs; `insufficient-data` only when **both** anchors have insufficient-data (then do NOT let Check 5 influence the overall verdict).
+- **Check 6 — D10 floor (code quality)**: median D10 across all valid runs.
+  - **PASS** if median D10 ≥ 6/10 (cohort writes code that mostly clears the toolchain).
+  - **WARN** if 4 ≤ median D10 < 6 — note the dominant trigger (cite the most-cited `static-analysis.json` field across deductions) and recommend a `[prompt]` bump if the brief did not state the toolchain bar, or a `[rubric]` loosen if the bar is reasonable but unmet.
+  - **FAIL** if median D10 < 4 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
+  - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2); list affected runs in the appendix and do NOT let Check 6 influence the overall verdict.
 
 Overall verdict:
-- **PASS** — all five checks pass (treat `insufficient-data` on Check 5 as neutral, not a failure)
+- **PASS** — all six checks pass (treat `insufficient-data` on Check 5 or Check 6 as neutral, not a failure)
 - **WARN** — one or more WARNs, no FAILs
 - **FAIL** — one or more FAILs
 
@@ -189,8 +211,9 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - List of reports where total was absent (excluded from averages).
 - List of reports where section H was malformed or missing (excluded from cost/performance analysis).
 - List of "single-harness models" (model slugs that appear under only 1 harness — excluded from section 4).
-- Full dimension score matrix (auditor × harness × model × D1..D9 + total) — one row per report, including those with `n/a` totals.
-- Per-harness std dev table for each dimension (D1..D9).
+- Full dimension score matrix (auditor × harness × model × D1..D10 + total) — one row per report, including those with `n/a` totals.
+- Per-harness std dev table for each dimension (D1..D10).
+- **Static-analysis evidence index**: one row per target with `Static-Analysis-Path`, `Static-Analysis-Status`, and (when status is `ok`) the headline counts `ruff.total_errors`, `mypy.total_errors`, `bandit.high`, `radon_cc.functions_grade_d_or_worse`. Targets with `n/a` static-analysis are listed separately.
 - Cross-auditor disagreement: for every `(harness, model_slug)` cell audited by >=2 auditors, the per-auditor totals + std-dev. Flag any cell where std-dev exceeds 10 as a calibration concern.
 - Tier distribution histogram across the whole cohort.
 - Leader anchor breakdown: per-report rows for all `gpt_5_5` and `claude_opus_4_7` leader targets (auditor × harness × model × total × tier), plus per-anchor and pooled means.
@@ -200,7 +223,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.1` and whose underlying benchmark prompt metadata is `benchmark-v3.0` (and `benchmark-followup-v3.0` when follow-up is present). Reports tagged `audit-v3.0` are excluded from cross-cell comparison until re-audited under `audit-v3.1`. List mismatches in the appendix and exclude them from rankings.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.2` and whose underlying benchmark prompt metadata is `benchmark-v3.1` (and `benchmark-followup-v3.0` when follow-up is present). Reports tagged `audit-v3.0` or `audit-v3.1` are excluded from cross-cell comparison until re-audited under `audit-v3.2` (D10 is not derivable from a v3.1 report). Likewise, `benchmark-v3.0` submissions audited under `audit-v3.2` should be flagged because the older brief did not tell the model the toolchain bar — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
   - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.

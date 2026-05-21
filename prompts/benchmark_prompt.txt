@@ -1,4 +1,4 @@
-Prompt-Version: benchmark-v3.0
+Prompt-Version: benchmark-v3.1
 
 Build a Python web application using Django and Django Channels. This is a controlled benchmark task: implement the requested app inside the current working directory and record evidence for what you verified. First make a short implementation plan for yourself, then implement without asking for confirmation. Do not stop with only a plan.
 
@@ -47,6 +47,7 @@ Testing and tooling requirements:
 - Include a consumer test with `WebsocketCommunicator`.
 - Include view/template tests that prove the SPA and partials render.
 - Configure coverage, ruff, mypy, bandit, and pip-audit in reproducible project files.
+- The generated project must also **pass** the configured toolchain: `ruff check`, `ruff format --check`, `mypy`, and `bandit -r .` must all exit cleanly on the code you ship. Configuration alone is not sufficient — the audit will run these tools against your project and grade the results. Aim for: zero ruff errors, zero mypy errors on the chat app modules, no bandit high-severity findings, and no function with cyclomatic complexity ≥ 20.
 - Document the exact verification commands.
 
 This is phase 1 of 2. Focus on implementation, tests, project structure, and reproducible evidence. Do not spend time on full browser/Docker runtime validation beyond what is needed to keep implementation moving.
