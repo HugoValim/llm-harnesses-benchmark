@@ -25,6 +25,10 @@ def test_run_full_benchmark_py_passes_compile() -> None:
 def test_audit_model_harness_lookup() -> None:
     config = load_json(HARNESSES_CONFIG)
     models_config = load_json(MODELS_CONFIG)
+    assert (
+        audit_model_harness(config, "deepseek_v4_pro_ollama_cloud", models_config=models_config)
+        == "claude"
+    )
     assert audit_model_harness(config, "kimi_k2_6_ollama_cloud", models_config=models_config) == "claude"
     assert audit_model_harness(config, "codex_gpt_5_5", models_config=models_config) == "codex"
 
@@ -35,7 +39,7 @@ def test_audit_model_harness_cli() -> None:
             sys.executable,
             str(MODEL_HARNESS_SCRIPT),
             str(HARNESSES_CONFIG),
-            "kimi_k2_6_ollama_cloud",
+            "deepseek_v4_pro_ollama_cloud",
         ],
         check=True,
         capture_output=True,

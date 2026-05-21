@@ -14,7 +14,7 @@ Examples:
   python scripts/run_full_benchmark.py
   python scripts/run_full_benchmark.py --force
   python scripts/run_full_benchmark.py --list-steps
-  AUDITOR_SLUG=deepseek_v4_pro_ollama_cloud python scripts/run_full_benchmark.py
+  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python scripts/run_full_benchmark.py
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{step.harness}\t{step.model_slug}\t{step.report_path}")
         return 0
 
-    auditor_slug = env_default("AUDITOR_SLUG", "kimi_k2_6_ollama_cloud")
+    auditor_slug = env_default("AUDITOR_SLUG", "deepseek_v4_pro_ollama_cloud")
     meta_slug_env = os.environ.get("META_ANALYSIS_AUDITOR_SLUG") or None
     meta_harness_env = os.environ.get("META_ANALYSIS_HARNESS") or None
     meta_input_env = os.environ.get("META_ANALYSIS_INPUT_DIR") or None
