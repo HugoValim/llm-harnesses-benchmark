@@ -9,12 +9,16 @@ import signal
 import subprocess
 import threading
 import time
-from shlex import quote as shlex_quote
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
+from benchmark.commands import (
+    build_codex_command,
+    build_opencode_command,
+    write_codex_subagent_toml,
+)
 from benchmark.util import ollama_launch_command_prefix
 from benchmark.config import (
     OPENCODE_YOLO_PERMISSION,
@@ -24,31 +28,27 @@ from benchmark.config import (
     model_enables_followup,
     summarize_project,
 )
+from benchmark.harnesses.stall_policy import (
+    ERROR_LOOP_THRESHOLD,
+    TOOL_LOOP_THRESHOLD,
+)
 from benchmark.phase_result import build_phase_payload
+from benchmark.result_layout import target_dir as layout_target_dir
+from benchmark.session_export import export_opencode_session
 from benchmark.stream_state import ActionKind, EventStreamState
 
 _SKIP_CONFIG_LOCK = threading.Lock()
 
 _CODEX_RUNNERS: frozenset[str] = frozenset({"codex", "ollama"})
-_ROOT_WORKSPACE_ESCAPE_MARKERS: frozenset[str] = frozenset(
-    {
-        "manage.py",
-        "Dockerfile",
-        "docker-compose.yml",
-        "docker-compose.yaml",
-        "compose.yml",
-        "compose.yaml",
-        "package.json",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "bun.lock",
-        "bun.lockb",
-        "requirements.txt",
-        "pyproject.toml",
-        "chat",
-        "templates",
-    }
+
+# Re-export workspace functions for back-compat — callers import from
+# benchmark.runner historically; benchmark.workspace is the canonical home.
+from benchmark.workspace import (  # noqa: E402, F401
+    _ROOT_WORKSPACE_ESCAPE_MARKERS,
+    _escaped_session_directory,
+    _read_opencode_session_directory,
+    detect_workspace_escape,
+    snapshot_root_generated_markers,
 )
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
@@ -68,82 +68,6 @@ from benchmark.util import (
 )
 
 
-def _opencode_args_with_dir(args: list[str], project_dir: Path) -> list[str]:
-    command_args = list(args)
-    command_args[1:1] = ["--dir", str(project_dir.resolve())]
-    return command_args
-
-
-def snapshot_root_generated_markers(root_dir: Path, results_dir: Path) -> frozenset[str]:
-    """Return root-level generated app markers, excluding the benchmark results tree."""
-    if not root_dir.exists():
-        return frozenset()
-    results_name = results_dir.resolve().name
-    return frozenset(
-        child.name
-        for child in root_dir.iterdir()
-        if child.name != results_name and child.name in _ROOT_WORKSPACE_ESCAPE_MARKERS
-    )
-
-
-def _read_opencode_session_directory(session_export_path: Path | None) -> Path | None:
-    if session_export_path is None or not session_export_path.exists():
-        return None
-    try:
-        session_export = json.loads(session_export_path.read_text())
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(session_export, dict):
-        return None
-    info = session_export.get("info")
-    if not isinstance(info, dict):
-        return None
-    directory = info.get("directory")
-    if not isinstance(directory, str) or not directory:
-        return None
-    return Path(directory).resolve()
-
-
-def _escaped_session_directory(
-    session_export_path: Path | None, project_dir: Path
-) -> Path | None:
-    session_directory = _read_opencode_session_directory(session_export_path)
-    if session_directory is None:
-        return None
-    if session_directory == project_dir.resolve():
-        return None
-    return session_directory
-
-
-def detect_workspace_escape(
-    payload: dict[str, Any],
-    *,
-    root_dir: Path,
-    results_dir: Path,
-    project_dir: Path,
-    before_markers: frozenset[str],
-    session_export_path: Path | None = None,
-) -> dict[str, Any]:
-    """Mark phase payload failed when new root markers appear and project output is incomplete."""
-    project_summary = payload.get("project_summary")
-    if not isinstance(project_summary, dict):
-        project_summary = summarize_project(project_dir)
-    current_markers = snapshot_root_generated_markers(root_dir, results_dir)
-    unexpected_paths = sorted(current_markers - before_markers)
-    session_directory = _escaped_session_directory(session_export_path, project_dir)
-    if session_directory is None and (
-        not unexpected_paths or project_summary.get("works_as_intended") == "yes"
-    ):
-        return payload
-    checked = dict(payload)
-    checked["status"] = "failed"
-    checked["workspace_escape_detected"] = True
-    checked["workspace_escape_paths"] = unexpected_paths
-    if session_directory is not None:
-        checked["workspace_escape_session_directory"] = str(session_directory)
-    return checked
-
-
 @dataclass
 class StreamResult:
     """Output from a streamed opencode process."""
@@ -159,170 +83,6 @@ class StreamResult:
 
 def kill_process_group(process: subprocess.Popen[str]) -> None:
     terminate_process_group(process)
-
-
-def build_opencode_command(
-    runner: dict[str, Any],
-    model_id: str,
-    prompt: str,
-    project_dir: Path,
-    continue_session_id: str | None = None,
-    command_prefix: list[str] | None = None,
-) -> list[str]:
-    """Build an opencode CLI command.
-
-    ``command_prefix`` mirrors the codex path: when set to something like
-    ``["ollama", "launch", "opencode"]`` the model id is forwarded to the
-    shim via ``--model`` and the rest of the opencode argv comes after ``--``.
-    The ``-m`` flag is dropped because the shim injects the model itself.
-    """
-    is_ollama_launch = (
-        command_prefix is not None
-        and len(command_prefix) >= 2
-        and command_prefix[0] == "ollama"
-        and command_prefix[1] == "launch"
-    )
-
-    if is_ollama_launch:
-        inner = _opencode_args_with_dir(runner["args"], project_dir)
-        if continue_session_id:
-            inner.extend(["--session", continue_session_id])
-        inner.append(prompt)
-        return [*command_prefix, "--model", model_id, "--", *inner]
-
-    command = [runner["command"], *_opencode_args_with_dir(runner["args"], project_dir)]
-    if continue_session_id:
-        command.extend(["--session", continue_session_id])
-    else:
-        command.extend(["-m", model_id])
-    command.append(prompt)
-    return command
-
-
-def write_codex_subagent_toml(project_dir: Path, subagent: dict[str, Any]) -> Path:
-    """Write a Codex subagent TOML config file inside the project directory.
-
-    Returns the absolute path suitable for passing via -c agents.<name>.config_file=...
-    """
-    agent_name = subagent.get("name", "coder")
-    agent_model = subagent.get("model", "gpt-5.4")
-    agent_effort = subagent.get("reasoning_effort")
-    agent_prompt = subagent.get("prompt", "")
-    toml_path = project_dir / f".codex-{agent_name}.toml"
-    lines = [
-        f'model = "{agent_model}"',
-    ]
-    if agent_effort:
-        lines.append(f'model_reasoning_effort = "{agent_effort}"')
-    if agent_prompt:
-        # Use TOML triple-quote for multi-line strings
-        escaped = agent_prompt.replace('"""', '\\"\\"\\"')
-        lines.append(f'instructions = """{escaped}"""')
-    toml_path.write_text("\n".join(lines) + "\n")
-    return toml_path.resolve()
-
-
-def build_codex_command(
-    model_id: str,
-    project_dir: Path,
-    reasoning_effort: str | None = None,
-    codex_subagent: dict[str, Any] | None = None,
-    command_prefix: list[str] | None = None,
-    auto_compact_token_limit: int | None = None,
-) -> list[str]:
-    """Build a codex exec command for a fully autonomous benchmark run.
-
-    ``command_prefix`` replaces the default ``["codex"]`` leader. When it starts
-    with ``ollama launch``, the model is passed via the shim's ``--model`` and the
-    exec tail is forwarded after ``--`` (no ``-m`` on the inner codex argv), matching
-    :func:`benchmark.claude_code_runner.build_command`.
-
-    ``auto_compact_token_limit`` pins codex's undocumented
-    ``model_auto_compact_token_limit`` config override. Strictly opt-in: when
-    ``None`` (the default) we skip the flag entirely — for ``:cloud`` models
-    routed through ``ollama launch codex`` this knob has been observed to make
-    things worse (phase1 overflow on turn 2). Pass a positive int to enable.
-
-    Neither ``model_auto_compact_token_limit`` nor ``model_context_window``
-    appears to reliably prevent context overflow when codex is routed through
-    ``ollama launch codex``. Setting ``model_context_window`` triggers codex's
-    ``fill_to_context_window`` padding (openai/codex#16068) which can blow the
-    prompt past the real ceiling on turn 1. For long agentic Ollama Cloud runs
-    prefer the claude or opencode harness instead.
-    """
-    prefix = command_prefix if command_prefix else ["codex"]
-    is_ollama_launch = (
-        len(prefix) >= 2 and prefix[0] == "ollama" and prefix[1] == "launch"
-    )
-
-    exec_tail: list[str] = [
-        "exec",
-        "--json",
-        "--ephemeral",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--skip-git-repo-check",
-        "-s",
-        "danger-full-access",
-        "-C",
-        str(project_dir.resolve()),
-    ]
-    if not is_ollama_launch:
-        exec_tail.extend(["-m", model_id])
-    if reasoning_effort:
-        exec_tail.extend(["-c", f"model_reasoning_effort={reasoning_effort}"])
-    if auto_compact_token_limit is not None and auto_compact_token_limit > 0:
-        exec_tail.extend(
-            ["-c", f"model_auto_compact_token_limit={auto_compact_token_limit}"]
-        )
-    if codex_subagent:
-        sub_name = codex_subagent.get("name", "coder")
-        sub_desc = codex_subagent.get(
-            "description", f"Delegate coding tasks to {sub_name}"
-        )
-        toml_path = write_codex_subagent_toml(project_dir, codex_subagent)
-        exec_tail.extend(
-            [
-                "-c",
-                f'agents.{sub_name}.config_file="{toml_path}"',
-                "-c",
-                f'agents.{sub_name}.description="{sub_desc}"',
-            ]
-        )
-    exec_tail.append("-")
-
-    if is_ollama_launch:
-        inner = [*prefix, "--model", model_id, "--", *exec_tail]
-    else:
-        inner = [*prefix, *exec_tail]
-
-    return ["bash", "-lc", " ".join(shlex_quote(a) for a in inner)]
-
-
-def export_opencode_session(
-    session_id: str,
-    export_path: Path,
-    process_env: dict[str, str],
-    model_slug: str,
-) -> Path | None:
-    export_path.parent.mkdir(parents=True, exist_ok=True)
-    error_path = export_path.with_suffix(".stderr.log")
-    completed = subprocess.run(
-        ["opencode", "export", session_id],
-        capture_output=True,
-        text=True,
-        env=process_env,
-        check=False,
-    )
-    if completed.returncode == 0:
-        export_path.write_text(completed.stdout)
-        if completed.stderr:
-            error_path.write_text(completed.stderr)
-        return export_path
-    error_path.write_text(
-        completed.stderr or completed.stdout or "opencode export failed"
-    )
-    print_line(f"[{model_slug}] opencode export failed for session {session_id}")
-    return None
 
 
 def build_followup_prompt(prompt: str, continue_session_id: str | None) -> str:
@@ -495,14 +255,14 @@ def stream_process_output(
     last_activity_detail = "process started"
     last_file_count = count_files(project_dir)
     terminal_stop_grace_seconds = 5.0
-    error_loop_threshold = 5
+    error_loop_threshold = ERROR_LOOP_THRESHOLD
 
     event_state = EventStreamState(
         model_slug=model_slug,
         min_preview_output_tps=min_preview_output_tps,
         min_preview_samples=min_preview_samples,
         error_loop_threshold=error_loop_threshold,
-        tool_loop_threshold=5,
+        tool_loop_threshold=TOOL_LOOP_THRESHOLD,
     )
 
     def _make_result(
@@ -760,8 +520,10 @@ def run_opencode_phase(
         timeout_seconds=bench.timeout_seconds,
         no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
         tokens=metrics["tokens"],
-        latest_preview_output_tps=result.latest_preview_output_tps,
-        preview_average_output_tps=result.preview_average_output_tps,
+        harness_metrics={
+            "preview_output_tokens_per_second": result.latest_preview_output_tps,
+            "preview_output_tokens_per_second_average": result.preview_average_output_tps,
+        },
     )
     payload = detect_workspace_escape(
         payload,
@@ -879,8 +641,10 @@ def run_codex_phase(
         timeout_seconds=bench.timeout_seconds,
         no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
         tokens=metrics["tokens"],
-        latest_preview_output_tps=result.latest_preview_output_tps,
-        preview_average_output_tps=result.preview_average_output_tps,
+        harness_metrics={
+            "preview_output_tokens_per_second": result.latest_preview_output_tps,
+            "preview_output_tokens_per_second_average": result.preview_average_output_tps,
+        },
     )
     payload = detect_workspace_escape(
         payload,
@@ -946,7 +710,7 @@ def run_codex_variant(
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
-        else (results_dir / f"{harness}-{slug}").resolve()
+        else layout_target_dir(results_dir, harness, slug).resolve()
     )
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir = result_dir
@@ -1186,7 +950,7 @@ def run_model(
         skip_stale_kill: When True, do not invoke :func:`_kill_stale_opencode_processes`;
             use once per concurrent opencode batch (see ``run_benchmark``).
     """
-    result_dir = (bench.results_dir / f"{bench.harness}-{model['slug']}").resolve()
+    result_dir = layout_target_dir(bench.results_dir, bench.harness, model['slug']).resolve()
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "opencode-output.ndjson"

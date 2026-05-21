@@ -60,10 +60,13 @@ def build_phase_payload(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
     tokens: dict[str, Any],
-    latest_preview_output_tps: float | None,
-    preview_average_output_tps: float | None,
+    harness_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the result payload dict for one benchmark phase.
+
+    ``harness_metrics`` is a harness-neutral bag whose keys splat into the
+    payload alongside core fields; harnesses that don't emit a metric (e.g.
+    Claude has no preview TPS) simply omit that key.
 
     >>> payload = build_phase_payload(phase_name="phase1", assistant_output="",
     ...     command=[], continued_from_session=None, elapsed_seconds=1.0,
@@ -71,8 +74,7 @@ def build_phase_payload(
     ...     session_id=None, paths={}, project_summary={"works_as_intended": "yes"},
     ...     prompt="", started_at="t", stderr="", stalled=False, stall_reason=None,
     ...     timed_out=False, timeout_seconds=60, no_progress_timeout_seconds=30,
-    ...     tokens={"input": 0, "output": 0, "total": 0},
-    ...     latest_preview_output_tps=None, preview_average_output_tps=None)
+    ...     tokens={"input": 0, "output": 0, "total": 0})
     >>> payload["status"]
     'completed'
     """
@@ -89,7 +91,7 @@ def build_phase_payload(
     total_tokens = tokens.get("total")
     output_tokens = tokens.get("output")
 
-    return {
+    payload: dict[str, Any] = {
         "phase": phase_name,
         "assistant_output_excerpt": assistant_output[:4000],
         "command": command,
@@ -112,8 +114,6 @@ def build_phase_payload(
         "timeout_seconds": timeout_seconds,
         "no_progress_timeout_seconds": no_progress_timeout_seconds,
         "tokens": tokens,
-        "preview_output_tokens_per_second": latest_preview_output_tps,
-        "preview_output_tokens_per_second_average": preview_average_output_tps,
         "tokens_per_second": round(total_tokens / elapsed_seconds, 2)
         if total_tokens and elapsed_seconds
         else None,
@@ -121,3 +121,6 @@ def build_phase_payload(
         if output_tokens and elapsed_seconds
         else None,
     }
+    if harness_metrics:
+        payload.update(harness_metrics)
+    return payload

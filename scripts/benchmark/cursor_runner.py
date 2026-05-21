@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
+from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
+from benchmark.result_layout import target_dir as layout_target_dir
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
@@ -122,7 +124,7 @@ def _result_indicates_success(event: dict[str, Any] | None) -> bool:
 class _CursorCliAdapter(CliStreamAdapter[CursorStreamResult]):
     """Event parser + result builder for the Cursor Agent CLI stream-json format."""
 
-    _error_loop_threshold = 5
+    _error_loop_threshold = ERROR_LOOP_THRESHOLD
 
     def __init__(self, model_slug: str) -> None:
         self.model_slug = model_slug
@@ -269,7 +271,7 @@ def run_variant(
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
-        else (results_dir / f"{harness}-{slug}").resolve()
+        else layout_target_dir(results_dir, harness, slug).resolve()
     )
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"

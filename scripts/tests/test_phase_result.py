@@ -65,8 +65,10 @@ class TestPhasePayload(unittest.TestCase):
             timeout_seconds=10,
             no_progress_timeout_seconds=5,
             tokens={"input": 2, "output": 4, "total": 6},
-            latest_preview_output_tps=1.5,
-            preview_average_output_tps=1.25,
+            harness_metrics={
+                "preview_output_tokens_per_second": 1.5,
+                "preview_output_tokens_per_second_average": 1.25,
+            },
         )
 
         self.assertEqual(
