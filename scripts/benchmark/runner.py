@@ -41,12 +41,7 @@ _SKIP_CONFIG_LOCK = threading.Lock()
 
 _CODEX_RUNNERS: frozenset[str] = frozenset({"codex", "ollama"})
 
-# Re-export workspace functions for back-compat — callers import from
-# benchmark.runner historically; benchmark.workspace is the canonical home.
-from benchmark.workspace import (  # noqa: E402, F401
-    _ROOT_WORKSPACE_ESCAPE_MARKERS,
-    _escaped_session_directory,
-    _read_opencode_session_directory,
+from benchmark.workspace import (
     detect_workspace_escape,
     snapshot_root_generated_markers,
 )

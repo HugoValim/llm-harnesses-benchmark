@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.config import summarize_project  # noqa: E402
-from benchmark.runner import (  # noqa: E402
+from benchmark.workspace import (  # noqa: E402
     detect_workspace_escape,
     snapshot_root_generated_markers,
 )
