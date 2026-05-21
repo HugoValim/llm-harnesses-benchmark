@@ -22,7 +22,6 @@ from benchmark.result_layout import (  # noqa: E402
     target_prompt,
     target_result_json,
     HARNESS_PREFIXES,
-    RECOGNIZED_TARGET_PREFIXES,
 )
 
 
@@ -126,12 +125,11 @@ class TestSplitTargetSlug(unittest.TestCase):
             {"opencode", "codex", "claude", "cursor"},
         )
 
-    def test_legacy_ollama_prefix_is_recognized_for_back_compat(self) -> None:
-        # Older audit-reports/ trees contain ``ollama-<slug>`` directories.
-        self.assertIn("ollama", RECOGNIZED_TARGET_PREFIXES)
+    def test_unrecognized_prefix_treated_as_model_name(self) -> None:
+        # Only canonical harness prefixes split; everything else is one slug.
         self.assertEqual(
             split_target_slug("ollama-gpt_5"),
-            ("ollama", "gpt_5"),
+            (None, "ollama-gpt_5"),
         )
 
 

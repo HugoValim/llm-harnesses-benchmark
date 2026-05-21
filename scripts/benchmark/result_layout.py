@@ -15,14 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Canonical harness identifiers (matches CONTEXT.md). Used when *writing*
-# new target directories.
+# Canonical harness identifiers (matches CONTEXT.md).
 HARNESS_PREFIXES: tuple[str, ...] = ("opencode", "codex", "claude", "cursor")
-
-# Prefixes recognized when *reading* existing target directories. Includes
-# legacy values (e.g. ``ollama``) still present in older audit-reports/
-# trees so split_target_slug() doesn't misparse them as model slugs.
-RECOGNIZED_TARGET_PREFIXES: tuple[str, ...] = HARNESS_PREFIXES + ("ollama",)
 
 
 def target_dir(results_root: Path, harness: str, slug: str) -> Path:
@@ -76,7 +70,7 @@ def split_target_slug(name: str) -> tuple[str | None, str]:
     >>> split_target_slug("plain_name")
     (None, 'plain_name')
     """
-    for prefix in RECOGNIZED_TARGET_PREFIXES:
+    for prefix in HARNESS_PREFIXES:
         head = f"{prefix}-"
         if name.startswith(head):
             return prefix, name[len(head):]

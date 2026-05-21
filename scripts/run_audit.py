@@ -94,8 +94,6 @@ DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
-# Re-export for back-compat; canonical source lives in result_layout.
-from benchmark.result_layout import RECOGNIZED_TARGET_PREFIXES as HARNESS_PREFIXES
 from benchmark.result_layout import (
     audit_report_md,
     audit_stream_ndjson,
