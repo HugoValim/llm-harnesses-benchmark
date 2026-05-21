@@ -47,6 +47,7 @@ from benchmark.timeouts import (  # noqa: E402
     DEFAULT_TIMEOUT_MINUTES,
 )
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
+
 # Runner imports go through the Harness registry; no direct imports needed.
 from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
@@ -299,11 +300,7 @@ def _audit_config_auditors(
 def _all_audit_slugs(audit_config: dict[str, Any]) -> set[str]:
     registry_models = audit_config.get("_registry_models", audit_config.get("models"))
     if registry_models is not None:
-        return {
-            str(model["slug"])
-            for model in registry_models
-            if "slug" in model
-        }
+        return {str(model["slug"]) for model in registry_models if "slug" in model}
     return set()
 
 
@@ -443,7 +440,7 @@ def build_audit_prompt(
 
     ``{static_analysis_path}`` resolves to the path the probe wrote (or the
     expected path when the probe was skipped) — the auditor opens it as
-    evidence for D10 per the audit-v3.2 rubric.
+    evidence for D10 per the audit-v3.3 rubric.
     """
     prompt = template.replace("{project_dir}", str(project_dir.resolve()))
     prompt = prompt.replace("{model_slug}", model_slug)
@@ -655,7 +652,9 @@ def main() -> int:
             try:
                 runner_type = auditor.get("runner_type", "claude")
                 # "ollama" is a legacy alias routed through the codex harness.
-                harness_name = "codex" if runner_type in _CODEX_RUNNER_TYPES else runner_type
+                harness_name = (
+                    "codex" if runner_type in _CODEX_RUNNER_TYPES else runner_type
+                )
                 harness = get_harness(harness_name)
                 run_kwargs: dict[str, Any] = dict(
                     variant=auditor,
@@ -682,7 +681,9 @@ def main() -> int:
                 # stream.ndjson so the comparison table still has something.
                 report_path = audit_report_md(results_dir, auditor_slug, target_slug)
                 if not report_path.exists():
-                    stream_path = audit_stream_ndjson(results_dir, auditor_slug, target_slug)
+                    stream_path = audit_stream_ndjson(
+                        results_dir, auditor_slug, target_slug
+                    )
                     if stream_path.exists():
                         _extract_final_report(stream_path, report_path)
 
@@ -734,9 +735,7 @@ def main() -> int:
         return 1
     for auditor_dir in rollup_dirs:
         comparison_path = _write_auditor_comparison(auditor_dir)
-        print_line(
-            f"Comparison table + statistical summary written: {comparison_path}"
-        )
+        print_line(f"Comparison table + statistical summary written: {comparison_path}")
 
     print_line(
         "Next: run scripts/run_meta_analysis.py to dispatch the cross-auditor "
