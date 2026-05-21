@@ -20,8 +20,7 @@ from benchmark.util import load_json  # noqa: E402
 from run_benchmark import (  # noqa: E402
     REPO_ROOT,
     _default_config_path,
-    _run_claude_harness,
-    _run_cursor_harness,
+    _run_variant_harness,
     _run_model_harness,
     normalize_benchmark_paths,
     parse_args,
@@ -319,7 +318,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                 variant=None,
             )
 
-            exit_code = _run_claude_harness(args)
+            exit_code = _run_variant_harness(args, "claude")
 
             self.assertEqual(exit_code, 0)
             report = (docs_dir / "report.md").read_text()
@@ -373,7 +372,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                 variant=None,
             )
 
-            exit_code = _run_cursor_harness(args)
+            exit_code = _run_variant_harness(args, "cursor")
 
             self.assertEqual(exit_code, 0)
             report = (docs_dir / "report.md").read_text()

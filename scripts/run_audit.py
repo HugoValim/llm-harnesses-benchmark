@@ -40,9 +40,10 @@ from benchmark.audit_report import (  # noqa: E402
     build_comparison_table,
     build_statistical_summary,
 )
-from benchmark.claude_code_runner import run_variant  # noqa: E402
+from benchmark.harnesses import get_harness  # noqa: E402
+from benchmark.audit_meta import discover_auditor_subdirs  # noqa: E402
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
-from benchmark.runner import run_codex_variant  # noqa: E402
+# Runner imports go through the Harness registry; no direct imports needed.
 from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
     load_json,
@@ -93,10 +94,14 @@ DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
-# Harness prefixes recognised when stripping ``results/<harness>-<slug>/`` →
-# ``<slug>``. Anything that doesn't match one of these is treated as a legacy
-# ``results/<slug>/project`` layout and the dirname itself becomes the slug.
-HARNESS_PREFIXES: tuple[str, ...] = ("claude", "cursor", "codex", "ollama", "opencode")
+# Re-export for back-compat; canonical source lives in result_layout.
+from benchmark.result_layout import RECOGNIZED_TARGET_PREFIXES as HARNESS_PREFIXES
+from benchmark.result_layout import (
+    audit_report_md,
+    audit_stream_ndjson,
+    audit_target_dir,
+    split_target_slug,
+)
 
 
 def discover_project_dirs(
@@ -127,13 +132,8 @@ def discover_project_dirs(
         if not project_dir.is_dir():
             continue
         name = entry.name
-        harness = "unknown"
-        model_slug = name
-        for prefix in HARNESS_PREFIXES:
-            if name.startswith(f"{prefix}-"):
-                harness = prefix
-                model_slug = name[len(prefix) + 1 :]
-                break
+        prefix, model_slug = split_target_slug(name)
+        harness = prefix or "unknown"
         target: dict = {
             "slug": name,
             "model_slug": model_slug,
@@ -181,8 +181,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--harness",
-        default=None,
-        help="Audit dispatch harness slug from harnesses.json.",
+        default="claude",
+        help="Audit dispatch harness slug from harnesses.json (default: claude).",
     )
     parser.add_argument(
         "--model",
@@ -296,6 +296,43 @@ def _all_audit_slugs(audit_config: dict[str, Any]) -> set[str]:
 
 def _target_metadata_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     return list(config.get("models", []))
+
+
+def _auditor_dir_has_reports(auditor_dir: Path) -> bool:
+    """True when ``auditor_dir`` contains at least one ``<target>/report.md``."""
+    return auditor_dir.is_dir() and any(auditor_dir.glob("*/report.md"))
+
+
+def _write_auditor_comparison(auditor_dir: Path) -> Path:
+    """Rebuild ``comparison.md`` for one auditor tree; returns the output path."""
+    comparison_md = build_comparison_table(auditor_dir)
+    statistical_md = build_statistical_summary(auditor_dir)
+    comparison_path = auditor_dir / "comparison.md"
+    comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
+    return comparison_path
+
+
+def _auditor_dirs_for_comparison_rollup(
+    results_dir: Path,
+    auditors: list[dict[str, Any]],
+    *,
+    report_only: bool,
+    wanted_model: str | None,
+) -> list[Path]:
+    """Return auditor dirs that should get a comparison.md rebuild.
+
+    ``--report-only`` without ``--model`` rolls up every on-disk auditor tree
+    that already has reports. Otherwise only the selected auditor slug(s) are
+    considered, and trees without any ``report.md`` are skipped.
+    """
+    if report_only and wanted_model is None:
+        return discover_auditor_subdirs(results_dir)
+    dirs: list[Path] = []
+    for auditor in auditors:
+        auditor_dir = results_dir / auditor["slug"]
+        if _auditor_dir_has_reports(auditor_dir):
+            dirs.append(auditor_dir)
+    return dirs
 
 
 def resolve_auditors_and_targets(
@@ -455,15 +492,35 @@ def main() -> int:
     benchmark_results_dir = Path(args.benchmark_results_dir)
 
     audit_config = load_json(audit_config_path)
-    if args.harness is not None:
-        audit_config = resolve_audit_harness_config(
-            audit_config, audit_config_path, args.harness
-        )
+    audit_config = resolve_audit_harness_config(
+        audit_config, audit_config_path, args.harness
+    )
     benchmark_config = load_json(benchmark_config_path)
     prompt_template = prompt_template_path.read_text()
 
     wanted_model = args.model
     wanted_targets = set(args.target) if args.target else None
+
+    if args.report_only and wanted_model is None:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        rollup_dirs = discover_auditor_subdirs(results_dir)
+        if not rollup_dirs:
+            print(
+                f"No auditor trees with reports under {results_dir}.",
+                file=sys.stderr,
+            )
+            return 1
+        for auditor_dir in rollup_dirs:
+            comparison_path = _write_auditor_comparison(auditor_dir)
+            print_line(
+                f"Comparison table + statistical summary written: {comparison_path}"
+            )
+        print_line(
+            "Next: run scripts/run_meta_analysis.py to dispatch the cross-auditor "
+            "AI meta-analysis."
+        )
+        return 0
+
     auditors, targets = resolve_auditors_and_targets(
         wanted_model,
         wanted_targets,
@@ -476,7 +533,7 @@ def main() -> int:
     if not auditors:
         print("No auditors selected.", file=sys.stderr)
         return 1
-    if not targets:
+    if not targets and not args.report_only:
         print("No targets selected.", file=sys.stderr)
         return 1
 
@@ -517,7 +574,7 @@ def main() -> int:
                 print_line(f"[{job_slug}] skipped (usage limit reached)")
                 return job_slug, "skipped", None
 
-            result_dir = results_dir / auditor_slug / target_slug
+            result_dir = audit_target_dir(results_dir, auditor_slug, target_slug)
             result_dir.mkdir(parents=True, exist_ok=True)
 
             project_dir = target["project_dir"]
@@ -526,36 +583,31 @@ def main() -> int:
                 prompt_template,
                 project_dir,
                 model_slug_for_prompt,
-                output_path=result_dir / "report.md",
+                output_path=audit_report_md(results_dir, auditor_slug, target_slug),
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)
 
             try:
                 runner_type = auditor.get("runner_type", "claude")
-                if runner_type in _CODEX_RUNNER_TYPES:
-                    run_result = run_codex_variant(
-                        variant=auditor,
-                        prompt=audit_prompt,
-                        results_dir=results_dir / auditor_slug,
-                        timeout_seconds=timeout_seconds,
-                        no_progress_timeout_seconds=no_progress_timeout_seconds,
-                        force=args.force,
-                        harness=runner_type,
-                        explicit_result_dir=result_dir,
-                    )
-                else:
-                    run_result = run_variant(
-                        variant=auditor,
-                        prompt=audit_prompt,
-                        results_dir=results_dir / auditor_slug,
-                        timeout_seconds=timeout_seconds,
-                        no_progress_timeout_seconds=no_progress_timeout_seconds,
-                        force=args.force,
-                        runner_command_prefix=runner_command_prefix,
-                        isolate_home=isolate_home,
-                        explicit_result_dir=result_dir,
-                    )
+                # "ollama" is a legacy alias routed through the codex harness.
+                harness_name = "codex" if runner_type in _CODEX_RUNNER_TYPES else runner_type
+                harness = get_harness(harness_name)
+                run_kwargs: dict[str, Any] = dict(
+                    variant=auditor,
+                    prompt=audit_prompt,
+                    results_dir=results_dir / auditor_slug,
+                    timeout_seconds=timeout_seconds,
+                    no_progress_timeout_seconds=no_progress_timeout_seconds,
+                    force=args.force,
+                    harness=runner_type,  # preserve original (incl. "ollama") for callee
+                    explicit_result_dir=result_dir,
+                )
+                if harness.name not in _CODEX_RUNNER_TYPES:
+                    run_kwargs["runner_command_prefix"] = runner_command_prefix
+                if harness.accepts_isolate_home:
+                    run_kwargs["isolate_home"] = isolate_home
+                run_result = harness.run_variant(**run_kwargs)
 
                 if run_result.get("status") == USAGE_LIMIT_REACHED:
                     limit_hit.set()
@@ -564,9 +616,9 @@ def main() -> int:
                 # The LLM should have written report.md via the Write tool. If
                 # not, fall back to extracting the last assistant text from
                 # stream.ndjson so the comparison table still has something.
-                report_path = result_dir / "report.md"
+                report_path = audit_report_md(results_dir, auditor_slug, target_slug)
                 if not report_path.exists():
-                    stream_path = result_dir / "stream.ndjson"
+                    stream_path = audit_stream_ndjson(results_dir, auditor_slug, target_slug)
                     if stream_path.exists():
                         _extract_final_report(stream_path, report_path)
 
@@ -600,17 +652,24 @@ def main() -> int:
                     if status == USAGE_LIMIT_REACHED:
                         print_line("Usage limit reached — stopping audit early.")
 
-    # Per-auditor comparison + regex rollup (including --report-only). Scoped
-    # to each auditor's tree; not an input to the AI meta-analyst.
+    # Per-auditor comparison + regex rollup (including --report-only). Only
+    # auditor trees that contain at least one report.md are touched.
     results_dir.mkdir(parents=True, exist_ok=True)
-    for auditor in auditors:
-        auditor_slug = auditor["slug"]
-        auditor_dir = results_dir / auditor_slug
-        auditor_dir.mkdir(parents=True, exist_ok=True)
-        comparison_md = build_comparison_table(auditor_dir)
-        statistical_md = build_statistical_summary(auditor_dir)
-        comparison_path = auditor_dir / "comparison.md"
-        comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
+    rollup_dirs = _auditor_dirs_for_comparison_rollup(
+        results_dir,
+        auditors,
+        report_only=args.report_only,
+        wanted_model=wanted_model,
+    )
+    if not rollup_dirs:
+        print(
+            "No audit reports found to roll up. Run audits first or pass "
+            "--model to select an auditor tree.",
+            file=sys.stderr,
+        )
+        return 1
+    for auditor_dir in rollup_dirs:
+        comparison_path = _write_auditor_comparison(auditor_dir)
         print_line(
             f"Comparison table + statistical summary written: {comparison_path}"
         )

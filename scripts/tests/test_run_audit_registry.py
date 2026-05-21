@@ -168,7 +168,15 @@ def test_cli_preserves_audit_output_path(
     monkeypatch.setattr(
         run_audit, "_verify_auditor_binaries", lambda auditors: (True, "")
     )
-    monkeypatch.setattr(run_audit, "run_variant", fake_run_variant)
+    from benchmark.harnesses import HARNESS_REGISTRY, Harness
+    fake_harness = Harness(
+        name="claude",
+        run_variant=fake_run_variant,
+        run_model=None,
+        cli_binary="claude",
+        accepts_isolate_home=True,
+    )
+    monkeypatch.setitem(HARNESS_REGISTRY, "claude", fake_harness)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -198,6 +206,65 @@ def test_cli_preserves_audit_output_path(
     assert (
         audit_reports_dir / "sonnet_auditor" / "opencode-target_model" / "report.md"
     ).exists()
+
+
+def test_report_only_without_model_skips_empty_auditor_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audit_reports_dir = tmp_path / "audit-reports"
+    kimi_dir = audit_reports_dir / "kimi_k2_6_ollama_cloud" / "claude-foo"
+    kimi_dir.mkdir(parents=True)
+    kimi_dir.joinpath("report.md").write_text("Total score: **80 / 100**")
+    (audit_reports_dir / "claude_opus_4_7").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_audit.py",
+            "--report-only",
+            "--results-dir",
+            str(audit_reports_dir),
+        ],
+    )
+
+    assert run_audit.main() == 0
+    assert (audit_reports_dir / "kimi_k2_6_ollama_cloud" / "comparison.md").exists()
+    assert not (audit_reports_dir / "claude_opus_4_7" / "comparison.md").exists()
+
+
+def test_report_only_with_model_skips_auditor_without_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    models_path = config_dir / "models.json"
+    _write_json(models_path, {"models": [_audit_row(slug="sonnet_auditor")]})
+    _write_json(
+        config_dir / "harnesses.json",
+        {"claude": {"command": "claude", "isolate_home": False}},
+    )
+    audit_reports_dir = tmp_path / "audit-reports"
+    (audit_reports_dir / "sonnet_auditor").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_audit.py",
+            "--report-only",
+            "--models-config",
+            str(models_path),
+            "--harness",
+            "claude",
+            "--model",
+            "sonnet_auditor",
+            "--results-dir",
+            str(audit_reports_dir),
+        ],
+    )
+
+    assert run_audit.main() == 1
 
 
 def test_default_models_registry_resolves_audit_harnesses() -> None:

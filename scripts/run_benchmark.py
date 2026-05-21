@@ -16,14 +16,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.backends import LocalModelBackend, OllamaBackend, create_backend  # noqa: E402
-from benchmark.claude_code_runner import run_variant as run_claude_variant  # noqa: E402
-from benchmark.cursor_runner import run_variant as run_cursor_variant  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
     load_ollama_warmup_payload,
     load_opencode_ollama_api_base,
     resolve_build_harness_config,
 )
+from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
 from benchmark.report import build_report, load_results  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import (  # noqa: E402
@@ -35,7 +34,7 @@ from benchmark.util import (  # noqa: E402
 )
 
 DEFAULT_NO_PROGRESS_MINUTES = 6
-HARNESS_CHOICES = frozenset({"opencode", "codex", "claude", "cursor"})
+HARNESS_CHOICES = frozenset(list_harnesses())
 
 
 def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
@@ -437,18 +436,25 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     return 0
 
 
-def _run_claude_harness(args: argparse.Namespace) -> int:
+def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
+    """Variant-driven benchmark for Claude Code and Cursor CLIs.
+
+    Unified dispatch routed through the Harness registry. Adding a fifth
+    variant-style harness is one ``register()`` call in
+    ``benchmark.harnesses._adapters``, not a third copy of this function.
+    """
+    harness = get_harness(harness_name)
     config_path = Path(args.config)
     prompt_path = Path(args.prompt)
     results_dir = Path(args.results_dir)
     report_path = Path(args.report)
 
     config = load_json(config_path)
-    config = resolve_build_harness_config(config, config_path, "claude")
+    config = resolve_build_harness_config(config, config_path, harness_name)
     config = _ensure_cli_variant_config(config)
     if "variants" not in config:
         print(
-            f"Config {config_path} has no models for harness='claude'.",
+            f"Config {config_path} has no models for harness={harness_name!r}.",
             file=sys.stderr,
         )
         return 1
@@ -474,18 +480,18 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
         variants = [v for v in all_variants if not v.get("skip_by_default")]
 
     if args.max_runs is not None:
-        print_line("Note: --max-runs applies only to opencode/codex; ignoring for claude.")
+        print_line(
+            f"Note: --max-runs applies only to opencode/codex; ignoring for {harness_name}."
+        )
 
     if not args.report_only:
-        if shutil.which("claude") is None:
-            print(
-                "claude (Claude Code CLI) is not available on PATH",
-                file=sys.stderr,
-            )
+        if harness.cli_binary and shutil.which(harness.cli_binary) is None:
+            print(harness.cli_install_hint or f"{harness.cli_binary} not on PATH",
+                  file=sys.stderr)
             return 1
         print_line(
-            "Note: --harness claude uses Claude Code runner semantics; "
-            "opencode/codex-only CLI flags "
+            f"Note: --harness {harness_name} uses {harness_name} runner semantics; "
+            "opencode/codex-only flags "
             "(warmup, local backend, preview TPS gate, …) are ignored."
         )
         timeout_seconds = args.timeout_minutes * 60
@@ -499,9 +505,12 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
         followup_text = (
             followup_path.read_text().strip() if followup_path.exists() else None
         )
+        extra_banner = (
+            f", isolate_home={isolate_home}" if harness.accepts_isolate_home else ""
+        )
         print_line(
-            f"Claude Code benchmark: {len(variants)} models, jobs={jobs}, "
-            f"timeout={timeout_seconds}s, isolate_home={isolate_home}"
+            f"{harness_name} benchmark: {len(variants)} models, jobs={jobs}, "
+            f"timeout={timeout_seconds}s{extra_banner}"
         )
 
         def _variant_enables_followup(v: dict) -> bool:
@@ -514,7 +523,7 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
                 print_line(f"[{v['slug']}] skipped — usage limit active")
                 return v["slug"], None, None
             try:
-                payload = run_claude_variant(
+                run_kwargs: dict[str, Any] = dict(
                     variant=v,
                     prompt=prompt,
                     results_dir=results_dir,
@@ -522,12 +531,14 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
                     no_progress_timeout_seconds=no_progress_timeout_seconds,
                     force=args.force,
                     runner_command_prefix=runner_command_prefix,
-                    isolate_home=isolate_home,
-                    harness="claude",
+                    harness=harness_name,
                     followup_prompt=(
                         followup_text if _variant_enables_followup(v) else None
                     ),
                 )
+                if harness.accepts_isolate_home:
+                    run_kwargs["isolate_home"] = isolate_home
+                payload = harness.run_variant(**run_kwargs)
                 if _phase_hit_usage_limit(payload):
                     abort_flag.set()
                 return v["slug"], payload, None
@@ -555,131 +566,8 @@ def _run_claude_harness(args: argparse.Namespace) -> int:
             )
             return 1
 
-    all_results = load_results(config, results_dir, harness="claude")
-    report_path.write_text(build_report(config, all_results, harness="claude"))
-    print_line(f"Report updated: {report_path}")
-    return 0
-
-
-def _run_cursor_harness(args: argparse.Namespace) -> int:
-    config_path = Path(args.config)
-    prompt_path = Path(args.prompt)
-    results_dir = Path(args.results_dir)
-    report_path = Path(args.report)
-
-    config = load_json(config_path)
-    config = resolve_build_harness_config(config, config_path, "cursor")
-    config = _ensure_cli_variant_config(config)
-    if "variants" not in config:
-        print(
-            f"Config {config_path} has no models for harness='cursor'.",
-            file=sys.stderr,
-        )
-        return 1
-
-    prompt = prompt_path.read_text().strip()
-    results_dir.mkdir(parents=True, exist_ok=True)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
-    all_variants = config["variants"]
-    wanted: set[str] = set()
-    if args.models:
-        wanted |= set(args.models)
-    if wanted:
-        variants = [v for v in all_variants if v["slug"] in wanted]
-        missing = wanted - {v["slug"] for v in variants}
-        if missing:
-            print(
-                f"Unknown model slug(s): {', '.join(sorted(missing))}",
-                file=sys.stderr,
-            )
-            return 1
-    else:
-        variants = [v for v in all_variants if not v.get("skip_by_default")]
-
-    if args.max_runs is not None:
-        print_line(
-            "Note: --max-runs applies only to opencode/codex; ignoring for cursor."
-        )
-
-    if not args.report_only:
-        if shutil.which("agent") is None:
-            print(
-                "agent (Cursor CLI) is not available on PATH. "
-                "Install: curl https://cursor.com/install -fsS | bash",
-                file=sys.stderr,
-            )
-            return 1
-        print_line(
-            "Note: --harness cursor uses Cursor runner semantics; "
-            "opencode/codex-only flags "
-            "(warmup, local backend, preview TPS gate, …) are ignored."
-        )
-        timeout_seconds = args.timeout_minutes * 60
-        no_progress_timeout_seconds = args.no_progress_minutes * 60
-        runner = config.get("runner") or {}
-        runner_command_prefix = runner.get("command_prefix")
-        jobs = args.jobs if args.jobs > 0 else len(variants)
-        jobs = max(1, min(jobs, len(variants))) if variants else 1
-        followup_path = Path(args.followup_prompt)
-        followup_text = (
-            followup_path.read_text().strip() if followup_path.exists() else None
-        )
-        print_line(
-            f"Cursor CLI benchmark: {len(variants)} models, jobs={jobs}, "
-            f"timeout={timeout_seconds}s"
-        )
-
-        def _variant_enables_followup(v: dict) -> bool:
-            return bool(v.get("enable_followup", False))
-
-        abort_flag = threading.Event()
-
-        def _run(v: dict) -> tuple[str, dict | None, str | None]:
-            if abort_flag.is_set():
-                print_line(f"[{v['slug']}] skipped — usage limit active")
-                return v["slug"], None, None
-            try:
-                payload = run_cursor_variant(
-                    variant=v,
-                    prompt=prompt,
-                    results_dir=results_dir,
-                    timeout_seconds=timeout_seconds,
-                    no_progress_timeout_seconds=no_progress_timeout_seconds,
-                    force=args.force,
-                    runner_command_prefix=runner_command_prefix,
-                    harness="cursor",
-                    followup_prompt=(
-                        followup_text if _variant_enables_followup(v) else None
-                    ),
-                )
-                if _phase_hit_usage_limit(payload):
-                    abort_flag.set()
-                return v["slug"], payload, None
-            except Exception:
-                return v["slug"], None, traceback.format_exc()
-
-        if jobs == 1 or len(variants) <= 1:
-            for v in variants:
-                slug, _, err = _run(v)
-                if err:
-                    print_line(f"[{slug}] ERROR:\n{err}")
-        else:
-            with ThreadPoolExecutor(max_workers=jobs) as pool:
-                futures = {pool.submit(_run, v): v["slug"] for v in variants}
-                for fut in as_completed(futures):
-                    slug, payload, err = fut.result()
-                    if err:
-                        print_line(f"[{slug}] ERROR:\n{err}")
-                    elif payload is not None:
-                        print_line(f"[{slug}] worker done")
-
-        if abort_flag.is_set():
-            print_line("Aborting: usage limit reached. Retry after limit resets.")
-            return 1
-
-    all_results = load_results(config, results_dir, harness="cursor")
-    report_path.write_text(build_report(config, all_results, harness="cursor"))
+    all_results = load_results(config, results_dir, harness=harness_name)
+    report_path.write_text(build_report(config, all_results, harness=harness_name))
     print_line(f"Report updated: {report_path}")
     return 0
 
@@ -697,10 +585,8 @@ def main() -> int:
 
     if harness in {"opencode", "codex"}:
         return _run_model_harness(args, harness)
-    if harness == "claude":
-        return _run_claude_harness(args)
-    if harness == "cursor":
-        return _run_cursor_harness(args)
+    if harness in {"claude", "cursor"}:
+        return _run_variant_harness(args, harness)
     print(f"Unknown harness {harness!r}", file=sys.stderr)
     return 1
 
