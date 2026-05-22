@@ -7,6 +7,7 @@ import argparse
 import shutil
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
@@ -65,6 +66,12 @@ def _run_with_result_validation(
 
     for attempt in range(max_retries + 1):
         if attempt > 0:
+            if _previous_attempt_stalled(last_payload):
+                print_line(
+                    f"[{slug}] cooldown {STALL_RETRY_COOLDOWN_SECONDS}s before retry "
+                    f"(prior attempt stalled)"
+                )
+                time.sleep(STALL_RETRY_COOLDOWN_SECONDS)
             print_line(
                 f"[{slug}] validation retry {attempt}/{max_retries}: "
                 f"wiping {result_dir}"
@@ -110,6 +117,28 @@ def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
     if isinstance(phases, list):
         for ph in phases:
             if isinstance(ph, dict) and ph.get("status") == USAGE_LIMIT_REACHED:
+                return True
+    return False
+
+
+STALL_RETRY_COOLDOWN_SECONDS = 60
+
+
+def _previous_attempt_stalled(payload: dict[str, Any] | None) -> bool:
+    """True when the prior run's payload (top-level or any phase) is marked stalled.
+
+    Used to insert a short cooldown before the next retry — back-to-back retries
+    against an upstream that just dropped a stream usually hit the same stuck
+    path; a 60s breather lets the connection recover.
+    """
+    if not payload:
+        return False
+    if payload.get("stalled"):
+        return True
+    phases = payload.get("phases")
+    if isinstance(phases, list):
+        for ph in phases:
+            if isinstance(ph, dict) and ph.get("stalled"):
                 return True
     return False
 
