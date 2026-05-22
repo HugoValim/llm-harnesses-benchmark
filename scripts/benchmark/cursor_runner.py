@@ -29,6 +29,7 @@ from benchmark.util import (
     prompt_sha256,
     save_json,
     shorten_text,
+    stream_log_prefix,
     utc_now,
     validate_benchmark_workspace,
     write_project_context,
@@ -272,6 +273,7 @@ def run_variant(
 ) -> dict[str, Any]:
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
+    log_tag = stream_log_prefix(harness, slug)
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
@@ -300,7 +302,7 @@ def run_variant(
                 USAGE_LIMIT_REACHED,
             ):
                 print_line(
-                    f"[{slug}] cached result status={cached['status']}; "
+                    f"[{log_tag}] cached result status={cached['status']}; "
                     "skipping (use --force to rerun)"
                 )
                 return cached
@@ -315,9 +317,9 @@ def run_variant(
 
     print_line("")
     print_line(f"Starting {slug} -> {variant['main_model']} (Cursor CLI)")
-    print_line(f"[{slug}] results_dir={result_dir}")
+    print_line(f"[{log_tag}] results_dir={result_dir}")
     print_line(
-        f"[{slug}] timeout={timeout_seconds}s "
+        f"[{log_tag}] timeout={timeout_seconds}s "
         f"no_progress_timeout={no_progress_timeout_seconds}s"
     )
 
@@ -337,7 +339,7 @@ def run_variant(
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         project_dir=project_dir,
-        model_slug=slug,
+        model_slug=stream_log_prefix(harness, slug, "phase1"),
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
     )
@@ -398,7 +400,10 @@ def run_variant(
         )
         p2_started_at = utc_now()
         p2_wall_start = time.monotonic()
-        print_line(f"[{slug}] starting phase 2 (follow-up, --continue)")
+        print_line(
+            f"[{stream_log_prefix(harness, slug, 'phase1')}] complete; "
+            "starting phase 2 (follow-up, --continue)"
+        )
         p2_process = subprocess.Popen(
             p2_command,
             cwd=project_dir.resolve(),
@@ -414,7 +419,7 @@ def run_variant(
             stdout_path=followup_stdout_path,
             stderr_path=followup_stderr_path,
             project_dir=project_dir,
-            model_slug=slug,
+            model_slug=stream_log_prefix(harness, slug, "phase2"),
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
         )

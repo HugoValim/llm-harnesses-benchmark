@@ -60,6 +60,7 @@ from benchmark.util import (
     prompt_sha256,
     save_json,
     shorten_text,
+    stream_log_prefix,
     terminate_process_group,
     utc_now,
     validate_benchmark_workspace,
@@ -479,7 +480,7 @@ def run_opencode_phase(
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         project_dir=project_dir,
-        model_slug=f"{model_slug}/{phase_name}",
+        model_slug=stream_log_prefix(bench.harness, model_slug, phase_name),
         backend=bench.backend,
         timeout_seconds=bench.timeout_seconds,
         no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
@@ -599,7 +600,7 @@ def run_codex_phase(
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         project_dir=project_dir,
-        model_slug=f"{model_slug}/{phase_name}",
+        model_slug=stream_log_prefix(bench.harness, model_slug, phase_name),
         backend=None,  # Codex models are cloud-only
         timeout_seconds=bench.timeout_seconds,
         no_progress_timeout_seconds=bench.no_progress_timeout_seconds,
@@ -867,7 +868,7 @@ def _get_ollama_for_eviction() -> Any | None:
     return None
 
 
-def _evict_competing_backend(bench: BenchmarkConfig, model_slug: str) -> None:
+def _evict_competing_backend(bench: BenchmarkConfig, log_tag: str) -> None:
     """Unload models from the other backend to free GPU memory.
 
     Ollama and llama-swap share the same GPU, so before using one backend
@@ -885,14 +886,14 @@ def _evict_competing_backend(bench: BenchmarkConfig, model_slug: str) -> None:
             active = ollama.list_active()
             if active:
                 print_line(
-                    f"[{model_slug}] evicting Ollama models to free GPU: {', '.join(active)}"
+                    f"[{log_tag}] evicting Ollama models to free GPU: {', '.join(active)}"
                 )
                 ollama.unload_all()
                 # Verify eviction succeeded
                 still_active = ollama.list_active()
                 if still_active:
                     print_line(
-                        f"[{model_slug}] WARNING: Ollama still has models loaded after eviction: {', '.join(still_active)}"
+                        f"[{log_tag}] WARNING: Ollama still has models loaded after eviction: {', '.join(still_active)}"
                     )
     elif isinstance(bench.backend, OllamaBackend):
         # llama-swap auto-evicts on TTL but we can't force it.
@@ -907,12 +908,14 @@ def _ensure_local_model_ready(
     """Run preflight for a local model using the configured backend."""
     from benchmark.backends import LlamaSwapBackend
 
+    log_tag = stream_log_prefix(bench.harness, model["slug"])
+
     if bench.backend is None:
-        print_line(f"[{model['slug']}] preflight skipped: no local backend configured")
+        print_line(f"[{log_tag}] preflight skipped: no local backend configured")
         return True, "preflight skipped: no local backend configured"
 
     # Free GPU from the competing backend before loading
-    _evict_competing_backend(bench, model["slug"])
+    _evict_competing_backend(bench, log_tag)
 
     if isinstance(bench.backend, LlamaSwapBackend):
         # llama-swap uses its own model names (e.g. "qwen3:32b"), not Ollama IDs.
@@ -920,15 +923,15 @@ def _ensure_local_model_ready(
         target_model = model.get("llama_swap_model")
         if not target_model:
             print_line(
-                f"[{model['slug']}] preflight skipped: no llama_swap_model configured"
+                f"[{log_tag}] preflight skipped: no llama_swap_model configured"
             )
             return False, "no llama_swap_model configured for this model"
         return bench.backend.ensure_model_ready(
-            target_model, model["slug"], context_limit=None
+            target_model, log_tag, context_limit=None
         )
 
     target_model = model.get("ollama_model_name") or model["id"].split("/", 1)[-1]
-    return bench.backend.ensure_model_ready(target_model, model["slug"], context_limit=None)
+    return bench.backend.ensure_model_ready(target_model, log_tag, context_limit=None)
 
 
 def run_model(
@@ -982,14 +985,15 @@ def run_model(
         _kill_stale_opencode_processes()
 
     started_at = utc_now()
+    log_tag = stream_log_prefix(bench.harness, model["slug"])
     print_line("")
     print_line(
-        f"[{index}/{total}] starting {model['slug']} -> {model['id']} (runner={runner_type})"
+        f"[{index}/{total}] starting {log_tag} -> {model['id']} (runner={runner_type})"
     )
-    print_line(f"[{model['slug']}] results_dir={result_dir}")
-    print_line(f"[{model['slug']}] timeout={bench.timeout_seconds}s")
+    print_line(f"[{log_tag}] results_dir={result_dir}")
+    print_line(f"[{log_tag}] timeout={bench.timeout_seconds}s")
     print_line(
-        f"[{model['slug']}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
+        f"[{log_tag}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
     )
 
     # Preflight for local models
@@ -1077,7 +1081,8 @@ def run_model(
             else None
         )
         print_line(
-            f"[{model['slug']}] primary phase complete; continuing with follow-up prompt"
+            f"[{stream_log_prefix(bench.harness, model['slug'], 'phase1')}] "
+            "complete; continuing with follow-up prompt"
         )
         phase2_kwargs: dict[str, Any] = {
             "bench": bench,
@@ -1127,7 +1132,7 @@ def run_model(
             )
         if wrote:
             print_line(
-                f"[{model['slug']}] marked skip_by_default in {bench.config_path}"
+                f"[{log_tag}] marked skip_by_default in {bench.config_path}"
             )
 
     session_id = final_phase.get("opencode_session_id") or phase1.get(
@@ -1141,7 +1146,7 @@ def run_model(
         )
         exported_session = (
             export_opencode_session(
-                session_id, session_export_path, process_env, model["slug"]
+                session_id, session_export_path, process_env, log_tag
             )
             if isinstance(session_id, str) and session_id
             else None
@@ -1206,7 +1211,7 @@ def run_model(
         active = bench.backend.list_active()
         if active:
             print_line(
-                f"[{model['slug']}] post-run cleanup: unloading {', '.join(active)}"
+                f"[{log_tag}] post-run cleanup: unloading {', '.join(active)}"
             )
             bench.backend.unload_all()
 

@@ -29,6 +29,7 @@ from benchmark.util import (
     prompt_sha256,
     save_json,
     shorten_text,
+    stream_log_prefix,
     utc_now,
     validate_benchmark_workspace,
     write_project_context,
@@ -295,6 +296,7 @@ def run_variant(
     instead of ``results_dir / f"{harness}-{slug}"``.
     """
     slug = variant["slug"]
+    log_tag = stream_log_prefix(harness, slug)
     result_dir = (
         explicit_result_dir.resolve()
         if explicit_result_dir is not None
@@ -323,7 +325,8 @@ def run_variant(
                 USAGE_LIMIT_REACHED,
             ):
                 print_line(
-                    f"[{slug}] cached result status={cached['status']}; skipping (use --force to rerun)"
+                    f"[{log_tag}] cached result status={cached['status']}; "
+                    "skipping (use --force to rerun)"
                 )
                 return cached
         except (json.JSONDecodeError, OSError):
@@ -342,12 +345,13 @@ def run_variant(
     print_line(
         f"Starting {slug} -> {variant['main_model']} (subagent={variant.get('subagent', {}).get('name') if variant.get('subagent') else 'none'})"
     )
-    print_line(f"[{slug}] results_dir={result_dir}")
+    print_line(f"[{log_tag}] results_dir={result_dir}")
     print_line(
-        f"[{slug}] timeout={timeout_seconds}s no_progress_timeout={no_progress_timeout_seconds}s"
+        f"[{log_tag}] timeout={timeout_seconds}s "
+        f"no_progress_timeout={no_progress_timeout_seconds}s"
     )
     if command_prefix:
-        print_line(f"[{slug}] command_prefix={command_prefix}")
+        print_line(f"[{log_tag}] command_prefix={command_prefix}")
 
     isolated_env = os.environ.copy()
     if isolate_home:
@@ -357,11 +361,13 @@ def run_variant(
         # will fail under isolation.
         isolated_env["HOME"] = str(result_dir.resolve())
         print_line(
-            f"[{slug}] HOME isolated to {result_dir} (API-key auth required; subscription auth will fail)"
+            f"[{log_tag}] HOME isolated to {result_dir} "
+            "(API-key auth required; subscription auth will fail)"
         )
     else:
         print_line(
-            f"[{slug}] HOME not isolated — subscription auth via ~/.claude/ works; user-level agents may leak"
+            f"[{log_tag}] HOME not isolated — subscription auth via ~/.claude/ works; "
+            "user-level agents may leak"
         )
 
     # Optional per-variant env overrides — used by deepclaude-style variants that swap
@@ -386,14 +392,15 @@ def run_variant(
                 resolved = os.environ.get(val[1:], "")
                 if not resolved:
                     print_line(
-                        f"[{slug}] WARNING: env override {raw_key} references {val} but it is empty in parent env"
+                        f"[{log_tag}] WARNING: env override {raw_key} references {val} "
+                        "but it is empty in parent env"
                     )
                 isolated_env[raw_key] = resolved
                 applied.append(f"{raw_key}=<{val}>")
             else:
                 isolated_env[raw_key] = val
                 applied.append(f"{raw_key}={val}")
-        print_line(f"[{slug}] env_overrides applied: {', '.join(applied)}")
+        print_line(f"[{log_tag}] env_overrides applied: {', '.join(applied)}")
 
     process = subprocess.Popen(
         command,
@@ -411,7 +418,7 @@ def run_variant(
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         project_dir=project_dir,
-        model_slug=slug,
+        model_slug=stream_log_prefix(harness, slug, "phase1"),
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
     )
@@ -431,7 +438,7 @@ def run_variant(
     if usage_limited:
         status = USAGE_LIMIT_REACHED
         print_line(
-            f"[{slug}] usage limit reached — aborting remaining Claude variants"
+            f"[{log_tag}] usage limit reached — aborting remaining Claude variants"
         )
     elif result.timed_out:
         status = "timeout"
@@ -502,7 +509,10 @@ def run_variant(
         p2_command = build_command(variant["main_model"], followup_prompt, command_prefix)
         p2_started_at = utc_now()
         p2_wall_start = time.monotonic()
-        print_line(f"[{slug}] starting phase 2 (follow-up prompt)")
+        print_line(
+            f"[{stream_log_prefix(harness, slug, 'phase1')}] complete; "
+            "starting phase 2 (follow-up prompt)"
+        )
         p2_process = subprocess.Popen(
             p2_command,
             cwd=project_dir.resolve(),
@@ -518,7 +528,7 @@ def run_variant(
             stdout_path=followup_stdout_path,
             stderr_path=followup_stderr_path,
             project_dir=project_dir,
-            model_slug=slug,
+            model_slug=stream_log_prefix(harness, slug, "phase2"),
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
         )
@@ -633,7 +643,7 @@ def run_variant(
         f"turns={num_turns} delegations={len(payload.get('subagent_invocations', []))}"
     )
     if model_usage:
-        print_line(f"[{slug}] model_usage:")
+        print_line(f"[{log_tag}] model_usage:")
         for model, u in model_usage.items():
             in_tok = u.get("inputTokens", 0)
             out_tok = u.get("outputTokens", 0)

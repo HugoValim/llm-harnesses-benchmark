@@ -368,6 +368,22 @@ def clone_json(value: Any) -> Any:
     return json.loads(json.dumps(value))
 
 
+def stream_log_prefix(
+    harness: str, model_slug: str, phase_name: str | None = None
+) -> str:
+    """Bracket label for live benchmark stream logs.
+
+    >>> stream_log_prefix("opencode", "qwen_local")
+    'opencode:qwen_local'
+    >>> stream_log_prefix("opencode", "qwen_local", "phase2")
+    'opencode:qwen_local/phase2'
+    """
+    base = f"{harness}:{model_slug}"
+    if phase_name:
+        return f"{base}/{phase_name}"
+    return base
+
+
 def print_line(message: str) -> None:
     print(message, flush=True)
 
