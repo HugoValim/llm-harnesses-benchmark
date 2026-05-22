@@ -476,10 +476,12 @@ def migrate_to_v2(row: dict[str, Any]) -> dict[str, Any]:
     Adds ``result_schema_version``, ``harness``, and a ``phases`` list when
     missing.  Harness-specific fields (model_usage, tool_use_counts, tokens,
     subagent_invocations, …) are preserved as-is.
-    """
-    if row.get("result_schema_version") == RESULT_SCHEMA_VERSION:
-        return row
 
+    The body runs even when ``result_schema_version`` is already 2 so that
+    rows missing only ``phases`` (e.g. claude_code_runner phase1-only results)
+    get a synthesized ``phase1`` entry instead of tripping the validator's
+    ``missing_phases`` check.
+    """
     row.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)
     if "harness" not in row:
         row["harness"] = _deduce_harness(row)

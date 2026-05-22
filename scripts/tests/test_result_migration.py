@@ -104,6 +104,26 @@ class TestMigrateToV2(unittest.TestCase):
         row = migrate_to_v2({"status": "ok", "harness": "custom"})
         self.assertEqual(row["harness"], "custom")
 
+    def test_backfills_phases_when_schema_already_v2(self) -> None:
+        # Reproduces the gemma4 false-positive: claude_code_runner serializes
+        # phase1-only completions with result_schema_version=2 but no phases[],
+        # so the validator's missing_phases check trips on an otherwise-OK run.
+        row = migrate_to_v2(
+            {
+                "result_schema_version": RESULT_SCHEMA_VERSION,
+                "harness": "claude",
+                "status": "completed",
+                "elapsed_seconds": 1603.94,
+                "file_count": 27,
+            }
+        )
+        self.assertIn("phases", row)
+        self.assertEqual(len(row["phases"]), 1)
+        self.assertEqual(row["phases"][0]["phase"], "phase1")
+        self.assertEqual(row["phases"][0]["status"], "completed")
+        self.assertEqual(row["phases"][0]["elapsed_seconds"], 1603.94)
+        self.assertEqual(row["phases"][0]["file_count"], 27)
+
 
 if __name__ == "__main__":
     unittest.main()
