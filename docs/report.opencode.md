@@ -1,6 +1,6 @@
 # Benchmark Report
 
-Generated at: 2026-05-22T09:56:15+00:00
+Generated at: 2026-05-22T10:39:54+00:00
 Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
@@ -45,8 +45,8 @@ Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634
 | GLM 5.1 (Ollama Cloud) | ollama_cloud | - | completed | 2660.40 | 116264 | 72.86 | yes | 46 | Django + Channels app, tests, README, and container files detected. |
 | Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | completed | 2908.27 | 119003 | 79.70 | yes | 36 | Django + Channels app, tests, README, and container files detected. |
 | Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | failed | 2953.86 | 122604 | 41.51 | yes | 35 | Exit code -15. Django + Channels app, tests, README, and container files detected. |
-| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | failed | 902.03 | - | - | no | 2 | Exit code -15. Generated files do not resemble the requested Django project. |
-| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | failed | 2608.25 | 66353 | 25.44 | partial | 34 | Exit code -15. Some expected benchmark artifacts exist, but the scaffold looks incomplete. |
 
 ## Per-Run Paths
 
