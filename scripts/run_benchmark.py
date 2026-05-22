@@ -9,8 +9,9 @@ import sys
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -24,6 +25,14 @@ from benchmark.config import (  # noqa: E402
 )
 from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
 from benchmark.report import build_report, load_results  # noqa: E402
+from benchmark.result_validation import (  # noqa: E402
+    MAX_VALIDATION_RETRIES,
+    followup_expected,
+    validate_benchmark_result,
+    validation_retryable,
+    wipe_result_dir,
+)
+from benchmark.result_layout import target_dir as layout_target_dir  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
@@ -38,6 +47,57 @@ from benchmark.timeouts import (  # noqa: E402
     DEFAULT_TIMEOUT_MINUTES,
 )
 HARNESS_CHOICES = frozenset(list_harnesses())
+
+
+def _run_with_result_validation(
+    slug: str,
+    result_dir: Path,
+    model: dict[str, Any],
+    *,
+    expect_followup: bool,
+    max_retries: int,
+    run_once: Callable[[], dict[str, Any] | None],
+) -> dict[str, Any] | None:
+    """Run ``run_once`` up to ``max_retries + 1`` times until validation passes."""
+    if max_retries < 0:
+        raise ValueError(f"max_retries must be >= 0, got {max_retries}")
+    last_payload: dict[str, Any] | None = None
+
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            print_line(
+                f"[{slug}] validation retry {attempt}/{max_retries}: "
+                f"wiping {result_dir}"
+            )
+            wipe_result_dir(result_dir)
+
+        last_payload = run_once()
+        if last_payload is None:
+            return None
+        if not validation_retryable(last_payload):
+            return last_payload
+
+        vr = validate_benchmark_result(
+            result_dir,
+            model=model,
+            followup_expected_flag=expect_followup,
+        )
+        if vr.ok:
+            if attempt > 0:
+                print_line(f"[{slug}] validation passed after retry {attempt}")
+            return last_payload
+
+        print_line(f"[{slug}] validation failed: {vr.summary()}")
+        for issue in vr.issues:
+            print_line(f"  - {issue.code}: {issue.message}")
+
+        if attempt >= max_retries:
+            print_line(
+                f"[{slug}] validation still failing after {max_retries} retries"
+            )
+            return last_payload
+
+    return last_payload
 
 
 def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
@@ -245,7 +305,24 @@ def parse_args() -> argparse.Namespace:
         "to cap to N concurrent runs, or 1 to force sequential. Local-served (provider=ollama) "
         "models always run sequentially regardless of this flag.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--max-validation-retries",
+        type=int,
+        default=MAX_VALIDATION_RETRIES,
+        help=(
+            "After a run, re-run from scratch when validation fails (wipes the result dir). "
+            f"Default: {MAX_VALIDATION_RETRIES} retries ({MAX_VALIDATION_RETRIES + 1} attempts)."
+        ),
+    )
+    parser.add_argument(
+        "--no-result-validation",
+        action="store_true",
+        help="Skip post-run validation and automatic retries.",
+    )
+    args = parser.parse_args()
+    if args.max_validation_retries < 0:
+        parser.error("--max-validation-retries must be >= 0")
+    return args
 
 
 def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
@@ -367,9 +444,55 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             f"no_progress_timeout={bench.no_progress_timeout_seconds}s force={bench.force}"
         )
 
+        validate_runs = not args.no_result_validation
+        max_validation_retries = args.max_validation_retries
+
+        def _dispatch_model(
+            model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
+        ) -> dict[str, Any] | None:
+            if not validate_runs:
+                return run_model(
+                    model,
+                    bench,
+                    index,
+                    total_models,
+                    skip_stale_kill=skip_stale_kill,
+                )
+            result_dir = layout_target_dir(
+                bench.results_dir, bench.harness, model["slug"]
+            )
+            attempt = {"n": 0}
+
+            def _run_once() -> dict[str, Any] | None:
+                active_bench = (
+                    replace(bench, force=True) if attempt["n"] > 0 else bench
+                )
+                attempt["n"] += 1
+                return run_model(
+                    model,
+                    active_bench,
+                    index,
+                    total_models,
+                    skip_stale_kill=skip_stale_kill,
+                )
+
+            expect_followup = followup_expected(
+                model,
+                followup_prompt=bench.followup_prompt,
+                no_followup=args.no_followup,
+            )
+            return _run_with_result_validation(
+                model["slug"],
+                result_dir,
+                model,
+                expect_followup=expect_followup,
+                max_retries=max_validation_retries,
+                run_once=_run_once,
+            )
+
         for index, model in local_jobs:
-            result_payload = run_model(model, bench, index, total_models)
-            if _phase_hit_usage_limit(result_payload):
+            result_payload = _dispatch_model(model, index)
+            if result_payload and _phase_hit_usage_limit(result_payload):
                 abort_flag.set()
                 break
 
@@ -381,10 +504,8 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
                 print_line(f"[{model['slug']}] skipped — usage limit active")
                 return model["slug"], None, None
             try:
-                payload = run_model(
-                    model, bench, index, total_models, skip_stale_kill=True
-                )
-                if _phase_hit_usage_limit(payload):
+                payload = _dispatch_model(model, index, skip_stale_kill=True)
+                if payload and _phase_hit_usage_limit(payload):
                     abort_flag.set()
                 return model["slug"], payload, None
             except Exception:
@@ -393,10 +514,8 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         if not abort_flag.is_set():
             if cloud_workers == 1 or len(cloud_jobs) <= 1:
                 for index, model in cloud_jobs:
-                    result_payload = run_model(
-                        model, bench, index, total_models
-                    )
-                    if _phase_hit_usage_limit(result_payload):
+                    result_payload = _dispatch_model(model, index)
+                    if result_payload and _phase_hit_usage_limit(result_payload):
                         abort_flag.set()
                         break
             else:
@@ -523,28 +642,56 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
 
         abort_flag = threading.Event()
 
+        validate_runs = not args.no_result_validation
+        max_validation_retries = args.max_validation_retries
+
         def _run(v: dict) -> tuple[str, dict | None, str | None]:
             if abort_flag.is_set():
                 print_line(f"[{v['slug']}] skipped — usage limit active")
                 return v["slug"], None, None
             try:
-                run_kwargs: dict[str, Any] = dict(
-                    variant=v,
-                    prompt=prompt,
-                    results_dir=results_dir,
-                    timeout_seconds=timeout_seconds,
-                    no_progress_timeout_seconds=no_progress_timeout_seconds,
-                    force=args.force,
-                    runner_command_prefix=runner_command_prefix,
-                    harness=harness_name,
-                    followup_prompt=(
-                        followup_text if _variant_enables_followup(v) else None
-                    ),
+                result_dir = layout_target_dir(results_dir, harness_name, v["slug"])
+                followup_for_variant = (
+                    followup_text if _variant_enables_followup(v) else None
                 )
-                if harness.accepts_isolate_home:
-                    run_kwargs["isolate_home"] = isolate_home
-                payload = harness.run_variant(**run_kwargs)
-                if _phase_hit_usage_limit(payload):
+                attempt = {"n": 0}
+
+                def _run_once() -> dict[str, Any] | None:
+                    run_kwargs: dict[str, Any] = dict(
+                        variant=v,
+                        prompt=prompt,
+                        results_dir=results_dir,
+                        timeout_seconds=timeout_seconds,
+                        no_progress_timeout_seconds=no_progress_timeout_seconds,
+                        force=args.force or attempt["n"] > 0,
+                        runner_command_prefix=runner_command_prefix,
+                        harness=harness_name,
+                        followup_prompt=followup_for_variant,
+                    )
+                    if harness.accepts_isolate_home:
+                        run_kwargs["isolate_home"] = isolate_home
+                    attempt["n"] += 1
+                    return harness.run_variant(**run_kwargs)
+
+                if validate_runs:
+                    model_row = {
+                        "slug": v["slug"],
+                        "provider": v.get("provider", ""),
+                        "enable_followup": v.get("enable_followup"),
+                    }
+                    expect_followup = bool(followup_for_variant) and not args.no_followup
+                    payload = _run_with_result_validation(
+                        v["slug"],
+                        result_dir,
+                        model_row,
+                        expect_followup=expect_followup,
+                        max_retries=max_validation_retries,
+                        run_once=_run_once,
+                    )
+                else:
+                    payload = _run_once()
+
+                if payload and _phase_hit_usage_limit(payload):
                     abort_flag.set()
                 return v["slug"], payload, None
             except Exception:
