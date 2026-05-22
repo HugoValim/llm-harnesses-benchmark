@@ -41,6 +41,7 @@ python-benchmark/
 │   ├── run_full_benchmark.py
 │   ├── run_audit.py
 │   ├── run_meta_analysis.py
+│   ├── validate_results.py
 │   ├── analyze_results_runtime.py
 │   ├── browser_probe.mjs
 │   └── benchmark/
@@ -87,7 +88,17 @@ Rebuild an aggregate report without launching agents:
 python3 scripts/run_benchmark.py --harness opencode --report-only
 ```
 
-Validate generated projects:
+Check whether a benchmark run finished cleanly (harness status + project scaffold):
+
+```bash
+python3 scripts/validate_results.py --only opencode-claude_sonnet_4_6
+python3 scripts/validate_results.py --remove-on-fail
+```
+
+`run_benchmark.py` runs the same checks after each model and retries from scratch
+up to three times on failure (see `--max-validation-retries` / `--no-result-validation`).
+
+Validate generated projects boot locally and in Docker:
 
 ```bash
 python3 scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6

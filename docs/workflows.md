@@ -23,6 +23,24 @@ Useful flags:
 - `--report-only`: rebuild the report from existing `result.json` files.
 - `--no-followup`: skip `prompts/benchmark_followup_prompt.txt`.
 - `--jobs N`: cap concurrent model runs.
+- `--max-validation-retries N`: after each model run, validate `result.json` and the
+  generated `project/` scaffold; on failure wipe `results/<harness>-<slug>/` and
+  rerun from scratch (default: 3 retries, 4 attempts total). Use
+  `--no-result-validation` to disable.
+
+## Result validation
+
+`scripts/validate_results.py` checks existing benchmark outputs without re-running
+agents:
+
+```bash
+python3 scripts/validate_results.py
+python3 scripts/validate_results.py --only opencode-qwen3_5_ollama_cloud
+python3 scripts/validate_results.py --remove-on-fail
+```
+
+The same rules run automatically at the end of each `run_benchmark.py` model
+invocation unless `--no-result-validation` is set.
 
 Local-served `provider: "ollama"` rows run sequentially even when `--jobs` is
 greater than one.
