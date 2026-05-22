@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +15,7 @@ from benchmark.util import print_line
 
 PREFLIGHT_TIMEOUT_SECONDS = 180.0
 PREFLIGHT_FALLBACK_CONTEXTS = [131072, 98304, 65536, 32768]
+LIST_ACTIVE_CACHE_TTL_SECONDS = 1.0
 
 
 def _api_url(api_base: str, path: str) -> str:
@@ -155,11 +157,28 @@ class LocalModelBackend(ABC):
 class OllamaBackend(LocalModelBackend):
     """Ollama-specific backend using /api/* endpoints."""
 
+    def __init__(self, api_base: str) -> None:
+        super().__init__(api_base)
+        self._list_active_value: list[str] | None = None
+        self._list_active_cached_at: float = float("-inf")
+
     @property
     def backend_name(self) -> str:
         return "ollama"
 
+    def _invalidate_list_active_cache(self) -> None:
+        self._list_active_value = None
+        self._list_active_cached_at = float("-inf")
+
     def list_active(self) -> list[str] | None:
+        # Collapses back-to-back reads (eviction check + unload_all internal
+        # list, post-run cleanup, heartbeat snapshots) into one /api/ps hit.
+        now = time.monotonic()
+        if (
+            self._list_active_value is not None
+            and now - self._list_active_cached_at < LIST_ACTIVE_CACHE_TTL_SECONDS
+        ):
+            return list(self._list_active_value)
         payload = _get_json(_api_url(self.api_base, "/api/ps"), timeout=1.5)
         if not payload:
             return None
@@ -173,6 +192,8 @@ class OllamaBackend(LocalModelBackend):
             name = item.get("name") or item.get("model")
             if isinstance(name, str) and name:
                 names.append(name)
+        self._list_active_value = list(names)
+        self._list_active_cached_at = now
         return names
 
     def unload(self, model: str) -> bool:
@@ -181,6 +202,7 @@ class OllamaBackend(LocalModelBackend):
             {"model": model, "prompt": "", "keep_alive": 0, "stream": False},
             timeout=30.0,
         )
+        self._invalidate_list_active_cache()
         return bool(response and response.get("done_reason") == "unload")
 
     def preload(self, model: str, context: int | None = None) -> tuple[bool, str]:
@@ -198,6 +220,7 @@ class OllamaBackend(LocalModelBackend):
             payload,
             timeout=PREFLIGHT_TIMEOUT_SECONDS,
         )
+        self._invalidate_list_active_cache()
         if not response:
             return False, "no response from ollama"
         if response.get("error"):
