@@ -11,10 +11,10 @@ Environment:
   AUDITOR_SLUG, META_ANALYSIS_AUDITOR_SLUG, META_ANALYSIS_HARNESS, META_ANALYSIS_INPUT_DIR
 
 Examples:
-  python scripts/run_full_benchmark.py
-  python scripts/run_full_benchmark.py --force
-  python scripts/run_full_benchmark.py --list-steps
-  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python scripts/run_full_benchmark.py
+  python3 scripts/run_full_benchmark.py
+  python3 scripts/run_full_benchmark.py --force
+  python3 scripts/run_full_benchmark.py --list-steps
+  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py
 """
 
 from __future__ import annotations
