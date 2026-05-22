@@ -22,7 +22,7 @@ Useful flags:
 - `--force`: rerun even when a terminal `result.json` exists.
 - `--report-only`: rebuild the report from existing `result.json` files.
 - `--no-followup`: skip `prompts/benchmark_followup_prompt.txt`.
-- `--jobs N`: cap concurrent model runs.
+- `--jobs N`: cap concurrent cloud model runs (default: 2; use `--jobs 1` for sequential).
 - `--max-validation-retries N`: after each model run, validate `result.json` and the
   generated `project/` scaffold; on failure wipe `results/<harness>-<slug>/` and
   rerun from scratch (default: 3 retries, 4 attempts total). Use
