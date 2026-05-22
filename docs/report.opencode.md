@@ -1,16 +1,16 @@
 # Benchmark Report
 
-Generated at: 2026-05-21T12:16:59+00:00
-Prompt SHA256: `d6733900a5a9d6c3dbf80ef8f02385cdafabe38dcd69e913f388484c4ed6bf80`
+Generated at: 2026-05-21T13:53:52+00:00
+Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
 
-- `completed`: 5
+- `completed`: 0
 - `completed_with_errors`: 0
-- `failed`: 3
+- `failed`: 0
 - `timeout`: 0
 - `usage_limit_reached`: 0
-- `not_run`: 2
+- `not_run`: 10
 
 ## Runner
 
@@ -18,7 +18,7 @@ Prompt SHA256: `d6733900a5a9d6c3dbf80ef8f02385cdafabe38dcd69e913f388484c4ed6bf80
 
 - Same opencode runner as the Rails profile - chosen for machine-readable JSON events with session IDs and token counts.
 - Models with opencode_id in models.json are auto-included using that ID (typically an OpenRouter path).
-- Verification is performed by scripts/analyze_results_runtime_python.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose.
+- Verification is performed by scripts/analyze_results_runtime.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose.
 
 ## Model Selection
 
@@ -39,14 +39,14 @@ Prompt SHA256: `d6733900a5a9d6c3dbf80ef8f02385cdafabe38dcd69e913f388484c4ed6bf80
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
 | Claude Sonnet 4.6 | anthropic | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | Claude Opus 4.7 | anthropic | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Kimi K2.6 (Ollama Cloud) via OpenCode | ollama_cloud | - | completed | 2934.60 | 107126 | 106.61 | yes | 40 | Django + Channels app, tests, README, and container files detected. |
-| DeepSeek V4 Pro (Ollama Cloud) via OpenCode | ollama_cloud | - | completed | 2469.48 | 123853 | 84.17 | yes | 41 | Django + Channels app, tests, README, and container files detected. |
-| DeepSeek V4 Flash (Ollama Cloud) via OpenCode | ollama_cloud | - | completed | 6342.40 | 111789 | 64.98 | yes | 45 | Django + Channels app, tests, README, and container files detected. |
-| GLM 5.1 (Ollama Cloud) via OpenCode | ollama_cloud | - | failed | 1061.75 | 57531 | 136.64 | yes | 41 | Exit code -15. Django + Channels app, tests, README, and container files detected. |
-| Qwen 3.5 (Ollama Cloud) via OpenCode | ollama_cloud | - | completed | 3809.34 | 130972 | 44.06 | yes | 38 | Django + Channels app, tests, README, and container files detected. |
-| Nemotron 3 Super (Ollama Cloud) via OpenCode | ollama_cloud | - | failed | 1648.38 | 101962 | 97.93 | yes | 35 | Exit code -15. Django + Channels app, tests, README, and container files detected. |
-| Gemma 4 31B (Ollama Cloud) via OpenCode | ollama_cloud | - | completed | 2267.48 | 73583 | 75.60 | yes | 29 | Django + Channels app, tests, README, and container files detected. |
-| MiniMax M2.7 (Ollama Cloud) via OpenCode | ollama_cloud | - | failed | 1597.09 | 78731 | 81.57 | yes | 36 | Exit code -15. Django + Channels app, tests, README, and container files detected. |
+| Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| DeepSeek V4 Pro (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| GLM 5.1 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 
 ## Per-Run Paths
 

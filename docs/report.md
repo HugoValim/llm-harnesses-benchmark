@@ -1,7 +1,7 @@
 # Benchmark Report
 
-Generated at: 2026-05-20T11:17:08+00:00
-Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28`
+Generated at: 2026-05-21T13:53:42+00:00
+Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
 
@@ -10,7 +10,7 @@ Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28
 - `failed`: 0
 - `timeout`: 0
 - `usage_limit_reached`: 0
-- `not_run`: 2
+- `not_run`: 10
 
 ## Runner
 
@@ -18,12 +18,20 @@ Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28
 
 - Same opencode runner as the Rails profile - chosen for machine-readable JSON events with session IDs and token counts.
 - Models with opencode_id in models.json are auto-included using that ID (typically an OpenRouter path).
-- Verification is performed by scripts/analyze_results_runtime_python.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose.
+- Verification is performed by scripts/analyze_results_runtime.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose.
 
 ## Model Selection
 
 - `claude_sonnet_4_6` -> `openrouter/anthropic/claude-sonnet-4.6`: Reference Claude Sonnet model for build, audit, and meta-analysis runs.
 - `claude_opus_4_7` -> `openrouter/anthropic/claude-opus-4.7`: Tier-A Claude baseline for build, audit, and meta-analysis runs.
+- `kimi_k2_6_ollama_cloud` -> `kimi-k2.6:cloud`: Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.
+- `deepseek_v4_pro_ollama_cloud` -> `deepseek-v4-pro:cloud`: DeepSeek V4 Pro served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.
+- `deepseek_v4_flash_ollama_cloud` -> `deepseek-v4-flash:cloud`: DeepSeek V4 Flash served by Ollama Cloud as a fast mid-tier build comparison model.
+- `glm_5_1_ollama_cloud` -> `glm-5.1:cloud`: GLM 5.1 served by Ollama Cloud for long-horizon agentic engineering comparison.
+- `qwen3_5_ollama_cloud` -> `qwen3.5:cloud`: Qwen 3.5 served by Ollama Cloud for agentic Python-stack benchmark coverage.
+- `nemotron_3_super_ollama_cloud` -> `nemotron-3-super:cloud`: NVIDIA Nemotron 3 Super served by Ollama Cloud for reasoning and coding benchmark coverage.
+- `gemma4_ollama_cloud` -> `gemma4:31b-cloud`: Google Gemma 4 31B served by Ollama Cloud for agentic workflow and multimodal benchmark coverage.
+- `minimax_m2_7_ollama_cloud` -> `minimax-m2.7:cloud`: MiniMax M2.7 served by Ollama Cloud as a mid-tier Python-stack benchmark model.
 
 ## Results
 
@@ -31,6 +39,14 @@ Prompt SHA256: `9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
 | Claude Sonnet 4.6 | anthropic | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | Claude Opus 4.7 | anthropic | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| DeepSeek V4 Pro (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| GLM 5.1 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 
 ## Per-Run Paths
 
