@@ -26,7 +26,7 @@ A model selected for the Role 1 audit pass (`run_audit.py`). An auditor reads a 
 
 ## project workspace
 
-The `project/` subdirectory inside a result directory. This is the working directory given to the coding agent — all generated source files must land here. Workspace escape detection alerts when an agent writes files outside this boundary (see `loop_detector.py` and the escape detector in `runner.py`).
+The `project/` subdirectory inside a result directory. This is the working directory given to the coding agent — all generated source files must land here. Workspace escape detection alerts when an agent writes files outside this boundary (see `scripts/benchmark/stream_state.py` and the escape detector in `scripts/benchmark/runner.py`).
 
 ## audit report
 

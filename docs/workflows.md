@@ -1,0 +1,110 @@
+# Workflows
+
+## Benchmark
+
+`scripts/run_benchmark.py` is the main entrypoint. It sends
+`prompts/benchmark_prompt.txt` to the selected harness and writes one result
+directory per model under `results/`.
+
+```bash
+python3 scripts/run_benchmark.py --harness opencode
+python3 scripts/run_benchmark.py --harness codex
+python3 scripts/run_benchmark.py --harness claude
+python3 scripts/run_benchmark.py --harness cursor
+```
+
+Useful flags:
+
+- `--model <slug>`: select one model. Repeat for multiple models.
+- `--models-config <path>`: use a non-default model registry.
+- `--results-dir <path>`: change the benchmark output root.
+- `--report <path>`: change the aggregate markdown report path.
+- `--force`: rerun even when a terminal `result.json` exists.
+- `--report-only`: rebuild the report from existing `result.json` files.
+- `--no-followup`: skip `prompts/benchmark_followup_prompt.txt`.
+- `--jobs N`: cap concurrent model runs.
+
+Local-served `provider: "ollama"` rows run sequentially even when `--jobs` is
+greater than one.
+
+## Full Pipeline
+
+`scripts/run_full_benchmark.py` runs the build matrix, then audit, then
+meta-analysis.
+
+```bash
+python3 scripts/run_full_benchmark.py --list-steps
+python3 scripts/run_full_benchmark.py -- --force
+```
+
+Useful flags:
+
+- `--dry-run`: print subprocess commands without launching agents.
+- `--skip-build`: skip benchmark generation.
+- `--skip-audit`: skip Role 1 audits.
+- `--skip-meta`: skip Role 2 meta-analysis.
+
+Useful environment variables:
+
+- `AUDITOR_SLUG`: audit model slug for Role 1.
+- `META_ANALYSIS_AUDITOR_SLUG`: model slug for Role 2.
+- `META_ANALYSIS_HARNESS`: harness for Role 2 dispatch.
+- `META_ANALYSIS_INPUT_DIR`: audit input directory for Role 2.
+
+## Runtime Verification
+
+`scripts/analyze_results_runtime.py` validates generated Django projects.
+
+```bash
+python3 scripts/analyze_results_runtime.py
+python3 scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
+python3 scripts/analyze_results_runtime.py --max-projects 1
+python3 scripts/analyze_results_runtime.py --install-timeout 1800
+```
+
+Per project, the analyzer discovers `manage.py`, creates an isolated venv under
+`_runtime_verification/`, installs dependencies, runs migrations, boots the dev
+server, runs the browser probe, builds Docker, runs Docker Compose, repeats the
+browser probe, and tears the Compose stack down.
+
+The analyzer injects default `OLLAMA_HOST` and `OLLAMA_MODEL` values when they
+are absent.
+
+## Audit
+
+`scripts/run_audit.py` dispatches one LLM auditor over generated projects and
+writes rubric reports under `audit-reports/`.
+
+```bash
+python3 scripts/run_audit.py \
+  --harness claude \
+  --model claude_opus_4_7 \
+  --target opencode-claude_sonnet_4_6
+```
+
+Useful flags:
+
+- `--harness <slug>`: audit dispatch harness from `config/harnesses.json`.
+- `--model <slug>`: one auditor model from `config/models.json`.
+- `--target <name>`: target result directory or bare model slug. Repeatable.
+- `--benchmark-results-dir <path>`: where benchmark outputs live.
+- `--results-dir <path>`: where audit reports are written.
+- `--skip-quality-probe`: skip local static-analysis probe.
+- `--report-only`: rebuild comparison reports from existing audits.
+- `--jobs N`: run audits concurrently.
+
+## Meta-Analysis
+
+`scripts/run_meta_analysis.py` reads audit reports and writes a cross-auditor
+analysis.
+
+```bash
+python3 scripts/run_meta_analysis.py
+python3 scripts/run_meta_analysis.py --harness claude --model claude_opus_4_7
+```
+
+Useful flags:
+
+- `--meta-input-dir <path-or-name>`: audit report source. Repeatable.
+- `--meta-output-dir <path>`: output directory for meta-analysis files.
+- `--force`: rerun even when cached output exists.
