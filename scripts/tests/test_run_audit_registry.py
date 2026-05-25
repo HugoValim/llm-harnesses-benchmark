@@ -299,6 +299,27 @@ def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
     assert prompt == "qa={static_analysis_path}"
 
 
+def test_build_audit_prompt_interpolates_generation_metrics(tmp_path: Path) -> None:
+    from benchmark.pricing import format_generation_metrics_block
+
+    template = (
+        "Metrics:\n{generation_metrics_block}\n"
+        "Pricing: {pricing_doc_path}\n"
+        "Result: {benchmark_result_path}\n"
+    )
+    block = format_generation_metrics_block({"model_slug": "x", "harness": "claude"})
+    prompt = build_audit_prompt(
+        template,
+        tmp_path / "project",
+        "x",
+        generation_metrics_block=block,
+        pricing_doc_path=REPO_ROOT / "docs" / "PRICING.md",
+        benchmark_result_path=tmp_path / "result.json",
+    )
+    assert "Estimated-Cost-USD" in prompt
+    assert "docs/PRICING.md" in prompt or str((REPO_ROOT / "docs" / "PRICING.md").resolve()) in prompt
+
+
 def test_default_models_registry_resolves_audit_harnesses() -> None:
     config_path = REPO_ROOT / "config" / "models.json"
     raw = load_json(config_path)

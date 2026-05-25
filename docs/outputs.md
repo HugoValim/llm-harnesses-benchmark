@@ -11,7 +11,7 @@ results/<harness>-<slug>/
 Common files:
 
 - `project/`: generated Django project.
-- `result.json`: status, timing, token, cost, and summary metadata.
+- `result.json`: status, timing, tokens, and summary metadata (no USD cost — see audit `generation-metrics.json`).
 - `prompt.txt`: prompt copy when the harness records it.
 - `stream.ndjson`: stream events for Claude-style runs.
 - `stderr.log`: captured stderr for Claude-style runs.
@@ -49,6 +49,7 @@ Common files:
 
 - `report.md`: markdown rubric report.
 - `result.json`: audit run metadata.
+- `generation-metrics.json`: precomputed generation time, tokens, and `estimated_cost_usd` from `docs/PRICING.md` + benchmark `result.json`.
 - `static-analysis.json`: optional local quality probe output.
 - `stream.ndjson`: raw auditor stream.
 - `stderr.log`: auditor stderr.

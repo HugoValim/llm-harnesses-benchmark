@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.result_layout import (  # noqa: E402
+    audit_generation_metrics_json,
     audit_static_analysis_json,
     audit_target_dir,
     audit_report_md,
@@ -98,6 +99,12 @@ class TestAuditPaths(unittest.TestCase):
         self.assertEqual(
             audit_static_analysis_json(self.root, "auditor", "target"),
             Path("/tmp/audit-reports/auditor/target/static-analysis.json"),
+        )
+
+    def test_audit_generation_metrics_json(self) -> None:
+        self.assertEqual(
+            audit_generation_metrics_json(self.root, "auditor", "target"),
+            Path("/tmp/audit-reports/auditor/target/generation-metrics.json"),
         )
 
 

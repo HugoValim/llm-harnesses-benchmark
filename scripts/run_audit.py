@@ -54,6 +54,7 @@ from benchmark.util import (  # noqa: E402
     load_json,
     normalize_path_fields,
     print_line,
+    save_json,
 )
 
 
@@ -100,7 +101,14 @@ DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
 from benchmark.quality_probe import probe as run_quality_probe  # noqa: E402
+from benchmark.pricing import (  # noqa: E402
+    build_generation_metrics,
+    format_generation_metrics_block,
+    pricing_path,
+    validate_section_h_cost,
+)
 from benchmark.result_layout import (  # noqa: E402
+    audit_generation_metrics_json,
     audit_report_md,
     audit_static_analysis_json,
     audit_stream_ndjson,
@@ -147,7 +155,7 @@ def discover_project_dirs(
         }
         extra = config_targets_by_slug.get(model_slug)
         if extra:
-            for k in ("label", "main_model", "selection_reason"):
+            for k in ("label", "main_model", "selection_reason", "provider"):
                 if k in extra:
                     target[k] = extra[k]
         out.append(target)
@@ -435,12 +443,19 @@ def build_audit_prompt(
     model_slug: str,
     output_path: Path | None = None,
     static_analysis_path: Path | None = None,
+    *,
+    benchmark_result_path: Path | None = None,
+    generation_metrics_path: Path | None = None,
+    generation_metrics_block: str | None = None,
+    pricing_doc_path: Path | None = None,
 ) -> str:
     """Interpolate placeholders into the audit prompt template.
 
     ``{static_analysis_path}`` resolves to the path the probe wrote (or the
     expected path when the probe was skipped) — the auditor opens it as
     evidence for D10 per the audit-v3.3 rubric.
+
+    ``{generation_metrics_block}`` carries precomputed cost/tokens for section H.
     """
     prompt = template.replace("{project_dir}", str(project_dir.resolve()))
     prompt = prompt.replace("{model_slug}", model_slug)
@@ -450,6 +465,26 @@ def build_audit_prompt(
         prompt = prompt.replace(
             "{static_analysis_path}", str(static_analysis_path.resolve())
         )
+    if benchmark_result_path is not None:
+        prompt = prompt.replace(
+            "{benchmark_result_path}", str(benchmark_result_path.resolve())
+        )
+    else:
+        prompt = prompt.replace("{benchmark_result_path}", "n/a")
+    if generation_metrics_path is not None:
+        prompt = prompt.replace(
+            "{generation_metrics_path}", str(generation_metrics_path.resolve())
+        )
+    else:
+        prompt = prompt.replace("{generation_metrics_path}", "n/a")
+    if generation_metrics_block is not None:
+        prompt = prompt.replace("{generation_metrics_block}", generation_metrics_block)
+    else:
+        prompt = prompt.replace("{generation_metrics_block}", "n/a")
+    if pricing_doc_path is not None:
+        prompt = prompt.replace("{pricing_doc_path}", str(pricing_doc_path.resolve()))
+    else:
+        prompt = prompt.replace("{pricing_doc_path}", str(pricing_path().resolve()))
     return prompt
 
 
@@ -530,6 +565,39 @@ def _maybe_run_quality_probe(
         return
     status = payload.get("status", "unknown")
     print_line(f"[{job_slug}] quality probe status={status} -> {out_path}")
+
+
+def _maybe_write_generation_metrics(
+    *,
+    target: dict,
+    audit_results_dir: Path,
+    auditor_slug: str,
+    target_slug: str,
+    force: bool,
+    job_slug: str,
+) -> dict:
+    """Compute and write generation-metrics.json from the benchmark result."""
+    metrics_path = audit_generation_metrics_json(
+        audit_results_dir, auditor_slug, target_slug
+    )
+    if metrics_path.exists() and not force:
+        print_line(f"[{job_slug}] generation metrics cached -> {metrics_path}")
+        return load_json(metrics_path)
+
+    benchmark_result_path = target["project_dir"].parent / "result.json"
+    metrics = build_generation_metrics(
+        target_slug=target_slug,
+        model_slug=target.get("model_slug", target_slug),
+        harness=target.get("harness", "unknown"),
+        benchmark_result_path=benchmark_result_path,
+        provider=target.get("provider"),
+    )
+    save_json(metrics_path, metrics)
+    print_line(
+        f"[{job_slug}] generation metrics status={metrics.get('status')} "
+        f"cost={metrics.get('estimated_cost_usd')} -> {metrics_path}"
+    )
+    return metrics
 
 
 def main() -> int:
@@ -639,12 +707,29 @@ def main() -> int:
                 job_slug=job_slug,
             )
 
+            gen_metrics = _maybe_write_generation_metrics(
+                target=target,
+                audit_results_dir=results_dir,
+                auditor_slug=auditor_slug,
+                target_slug=target_slug,
+                force=args.force,
+                job_slug=job_slug,
+            )
+            benchmark_result_path = project_dir.parent / "result.json"
+            generation_metrics_path = audit_generation_metrics_json(
+                results_dir, auditor_slug, target_slug
+            )
+
             audit_prompt = build_audit_prompt(
                 prompt_template,
                 project_dir,
                 model_slug_for_prompt,
                 output_path=audit_report_md(results_dir, auditor_slug, target_slug),
                 static_analysis_path=static_analysis_path,
+                benchmark_result_path=benchmark_result_path,
+                generation_metrics_path=generation_metrics_path,
+                generation_metrics_block=format_generation_metrics_block(gen_metrics),
+                pricing_doc_path=pricing_path(),
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)
@@ -686,6 +771,14 @@ def main() -> int:
                     )
                     if stream_path.exists():
                         _extract_final_report(stream_path, report_path)
+
+                if report_path.exists():
+                    issues = validate_section_h_cost(
+                        report_path.read_text(encoding="utf-8"),
+                        gen_metrics,
+                    )
+                    for issue in issues:
+                        print_line(f"[{job_slug}] WARN section H: {issue}")
 
                 return job_slug, "ok", None
             except Exception:

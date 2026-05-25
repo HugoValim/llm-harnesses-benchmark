@@ -22,7 +22,11 @@ A model selected for the Role 1 audit pass (`run_audit.py`). An auditor reads a 
 
 ## result directory
 
-`results/<harness>-<slug>/` — the per-run output directory. Contains: `project/` (the target), `result.json` (metadata: status, cost, tokens, elapsed), and harness-specific logs (`stream.ndjson` + `stderr.log` for Claude; `opencode-output.ndjson` + `opencode-stderr.log` for opencode/codex). May also include `session-export.json` (opencode) and `prompt.txt` (Claude).
+`results/<harness>-<slug>/` — the per-run output directory. Contains: `project/` (the target), `result.json` (metadata: status, tokens, elapsed — **not** USD cost), and harness-specific logs (`stream.ndjson` + `stderr.log` for Claude; `opencode-output.ndjson` + `opencode-stderr.log` for opencode/codex). May also include `session-export.json` (opencode) and `prompt.txt` (Claude).
+
+## pricing
+
+Repo-owned snapshot at `docs/PRICING.md`. Generation cost is computed in Python during audit dispatch (`scripts/run_audit.py`) and written to `audit-reports/<auditor>/<target>/generation-metrics.json`; section H of `report.md` copies those values verbatim.
 
 ## project workspace
 
@@ -30,7 +34,7 @@ The `project/` subdirectory inside a result directory. This is the working direc
 
 ## audit report
 
-`audit-reports/<auditor_slug>/<target_slug>/report.md` — the LLM-scored rubric written by one auditor against one target. Covers 8 dimensions (Ollama wiring, Channels scaffolding, Docker, tests, etc.) and assigns a Tier 1/2/3 classification. Companion files in the same directory: `result.json`, `stream.ndjson`, `stderr.log`.
+`audit-reports/<auditor_slug>/<target_slug>/report.md` — the LLM-scored rubric written by one auditor against one target. Covers 8 dimensions (Ollama wiring, Channels scaffolding, Docker, tests, etc.) and assigns a Tier 1/2/3 classification. Companion files in the same directory: `result.json`, `generation-metrics.json`, `static-analysis.json`, `stream.ndjson`, `stderr.log`.
 
 ## run status
 

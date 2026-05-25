@@ -40,6 +40,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Tier from section D (A/B/C/D)
    - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 13 auto-CF rows)
    - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`, `Static-Analysis-Path`, `Static-Analysis-Status`
+   - When section H is missing or malformed, prefer the sibling `generation-metrics.json` in the same audit directory (written by the harness from `docs/PRICING.md` + benchmark `result.json`)
    - Record `n/a` for any missing field; never invent values
    - After extraction, identify **leader reports** — those whose `<model_slug>` (case-insensitive substring match) contains `gpt_5_5` (GPT 5.5 xhigh) or `claude_opus_4_7` (Opus 4.7). Split into two anchor cohorts; compute per-anchor mean total and per-dimension means, plus a pooled leader mean across both anchors. Carry these forward into Section 1 (executive summary) and Section 8 Check 5 (leader anchor calibration).
 3. Build the per-model cross-harness table (group by model slug; avg/std-dev of total across harnesses).

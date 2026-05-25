@@ -50,6 +50,14 @@ Run the per-project automated code audit (Role 1 — dispatches an LLM auditor a
 python scripts/run_audit.py
 ```
 
+Validate pricing table coverage and refresh OpenRouter drift checks:
+```bash
+python scripts/validate_pricing.py
+python scripts/fetch_openrouter_pricing.py --check
+```
+
+Generation cost is computed at audit time from `docs/PRICING.md` into `audit-reports/<auditor>/<target>/generation-metrics.json` (not in benchmark `result.json`).
+
 Run the cross-auditor AI meta-analysis (Role 2 — reads every `audit-reports/<auditor>/<target>/report.md` and writes `audit-reports/meta-analysis.md` with best-harness / best-model / cost / dimension verdicts):
 ```bash
 python scripts/run_meta_analysis.py

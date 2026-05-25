@@ -212,18 +212,22 @@ G. **Critical-failure ledger** — for every item in section F, one row of the f
 
 H. **Submission metadata & generation metrics** — one block, `n/a` for any unavailable field:
    - Model
-   - Harness (e.g. claude-code, opencode, codex)
-   - Generation-Time (wall-clock, from `results/<harness>-<slug>/result.json` when present)
-   - Input-Tokens / Output-Tokens / Total-Tokens (from harness run artifact)
-   - Estimated-Cost-USD — **compute** from token counts × the model's row in `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md`; never copy a harness-reported cost
-   - Pricing-Source (default `/home/hugo/.codex/skills/benchmark-ai-code/PRICING.md @ <Last-Updated>`; spec override = official provider pricing URL + access date)
+   - Harness (e.g. claude, opencode, codex, cursor)
+   - Generation-Time (wall-clock seconds — use precomputed value below)
+   - Input-Tokens / Output-Tokens / Total-Tokens (use precomputed values below)
+   - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
+   - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
    - Prompt-Version (MUST equal `audit-v3.3`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
-   - Primary-Prompt-SHA256 (from `result.json` or `prompt.txt` hash; `n/a` if unavailable)
-   - Followup-Prompt-SHA256 (from `result.json` or `followup-prompt.txt` hash; `n/a` if unavailable)
+   - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
+   - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)
    - Static-Analysis-Path (absolute path of `static-analysis.json` consumed for D10; `n/a` when probe failed)
    - Static-Analysis-Status (`ok` when the probe wrote a populated file; `error` or `missing` otherwise — must match D10 unverified note in section E when not `ok`)
+
+   Precomputed metrics (written by the harness to `{generation_metrics_path}` from `{benchmark_result_path}`):
+
+{generation_metrics_block}
 
 I. **Killer strength** (one sentence) + **Killer weakness** (one sentence).
 

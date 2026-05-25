@@ -73,6 +73,17 @@ def audit_static_analysis_json(
     return audit_target_dir(audit_root, auditor_slug, target_slug) / "static-analysis.json"
 
 
+def audit_generation_metrics_json(
+    audit_root: Path, auditor_slug: str, target_slug: str
+) -> Path:
+    """Precomputed generation cost/tokens from the benchmark ``result.json``.
+
+    Written by :func:`run_audit` before LLM auditor dispatch; section H of
+    ``report.md`` must copy values from this file verbatim.
+    """
+    return audit_target_dir(audit_root, auditor_slug, target_slug) / "generation-metrics.json"
+
+
 def split_target_slug(name: str) -> tuple[str | None, str]:
     """Split a target directory name into ``(harness, model_slug)``.
 
