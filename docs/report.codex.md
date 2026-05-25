@@ -1,16 +1,16 @@
 # Benchmark Report
 
-Generated at: 2026-05-21T13:53:43+00:00
+Generated at: 2026-05-25T05:18:25+00:00
 Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
 
-- `completed`: 1
+- `completed`: 9
 - `completed_with_errors`: 0
 - `failed`: 0
 - `timeout`: 0
 - `usage_limit_reached`: 0
-- `not_run`: 10
+- `not_run`: 2
 
 ## Runner
 
@@ -41,14 +41,14 @@ Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634
 | GPT-5.5 xhigh (Codex / ChatGPT) | openai | - | completed | 2414.66 | 2640382 | 3041.46 | yes | 48 | Django + Channels app, tests, README, and container files detected. |
 | GPT-5.4 (Codex / ChatGPT) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | GPT-5.3-Codex (Codex CLI) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| DeepSeek V4 Pro (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| GLM 5.1 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | completed | 2554.92 | 3453514 | 2214.42 | yes | 45 | Django + Channels app, tests, README, and container files detected. |
+| DeepSeek V4 Pro (Ollama Cloud) | ollama_cloud | - | completed | 2966.99 | 6970760 | 3964.67 | yes | 39 | Django + Channels app, tests, README, and container files detected. |
+| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | completed | 3206.34 | 3501712 | 2623.67 | yes | 9883 | Django + Channels app, tests, README, and container files detected. |
+| GLM 5.1 (Ollama Cloud) | ollama_cloud | - | completed | 2455.57 | 4936401 | 4113.50 | yes | 42 | Django + Channels app, tests, README, and container files detected. |
+| Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | completed | 3079.75 | 4000424 | 2193.54 | yes | 42 | Django + Channels app, tests, README, and container files detected. |
+| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | completed | 2021.98 | 5277114 | 7158.71 | yes | 38 | Django + Channels app, tests, README, and container files detected. |
+| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | completed | 1114.27 | 7268667 | 8469.67 | yes | 36 | Django + Channels app, tests, README, and container files detected. |
+| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | completed | 762.42 | 1340693 | 2583.72 | yes | 48 | Django + Channels app, tests, README, and container files detected. |
 
 ## Per-Run Paths
 

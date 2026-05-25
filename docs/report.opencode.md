@@ -1,16 +1,16 @@
 # Benchmark Report
 
-Generated at: 2026-05-22T11:24:36+00:00
+Generated at: 2026-05-25T05:18:23+00:00
 Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
 
-- `completed`: 4
+- `completed`: 8
 - `completed_with_errors`: 0
 - `failed`: 0
 - `timeout`: 0
 - `usage_limit_reached`: 0
-- `not_run`: 6
+- `not_run`: 2
 
 ## Runner
 
@@ -41,12 +41,12 @@ Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634
 | Claude Opus 4.7 | anthropic | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | completed | 2478.28 | 121514 | 153.85 | yes | 39 | Django + Channels app, tests, README, and container files detected. |
 | DeepSeek V4 Pro (Ollama Cloud) | ollama_cloud | - | completed | 1967.34 | 113956 | 109.09 | yes | 39 | Django + Channels app, tests, README, and container files detected. |
-| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| DeepSeek V4 Flash (Ollama Cloud) | ollama_cloud | - | completed | 1392.90 | 65473 | 114.00 | yes | 38 | Django + Channels app, tests, README, and container files detected. |
 | GLM 5.1 (Ollama Cloud) | ollama_cloud | - | completed | 2660.40 | 116264 | 72.86 | yes | 46 | Django + Channels app, tests, README, and container files detected. |
 | Qwen 3.5 (Ollama Cloud) | ollama_cloud | - | completed | 2908.27 | 119003 | 79.70 | yes | 36 | Django + Channels app, tests, README, and container files detected. |
-| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
-| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
+| Nemotron 3 Super (Ollama Cloud) | ollama_cloud | - | completed | 2443.96 | 131341 | 157.66 | yes | 35 | Django + Channels app, tests, README, and container files detected. |
+| Gemma 4 31B (Ollama Cloud) | ollama_cloud | - | completed | 788.62 | 80383 | 172.53 | yes | 34 | Django + Channels app, tests, README, and container files detected. |
+| MiniMax M2.7 (Ollama Cloud) | ollama_cloud | - | completed | 2347.07 | 107902 | 63.26 | yes | 39 | Django + Channels app, tests, README, and container files detected. |
 
 ## Per-Run Paths
 

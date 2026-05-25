@@ -14,13 +14,13 @@ Each variant writes under `results/claude-<slug>/`.
 |---|---:|---:|---:|---:|
 | claude_sonnet_4_6 | not_run | 0s | 0 | 0 | 0 |
 | claude_opus_4_7 | completed | 1721s | 47 | 155 | 0 |
-| kimi_k2_6_ollama_cloud | failed | 2118s | 43 | 234 | 0 |
+| kimi_k2_6_ollama_cloud | completed | 853s | 38 | 130 | 0 |
 | deepseek_v4_pro_ollama_cloud | completed | 2296s | 42 | 219 | 0 |
 | deepseek_v4_flash_ollama_cloud | completed | 1872s | 44 | 196 | 0 |
 | glm_5_1_ollama_cloud | completed | 896s | 47 | 157 | 0 |
 | qwen3_5_ollama_cloud | completed | 4570s | 45 | 264 | 0 |
 | nemotron_3_super_ollama_cloud | completed | 1098s | 36 | 170 | 0 |
-| gemma4_ollama_cloud | completed | 1604s | 35 | 88 | 0 |
+| gemma4_ollama_cloud | completed | 875s | 33 | 102 | 0 |
 | minimax_m2_7_ollama_cloud | completed | 4730s | 45 | 282 | 0 |
 
 ## Phase Breakdown
@@ -36,8 +36,7 @@ Each variant writes under `results/claude-<slug>/`.
 
 | Phase | Status | Time | Turns | Files |
 |---|---|---:|---:|---:|
-| phase1 | completed | 1440s | 151 | 36 |
-| phase2 | failed | 678s | 83 | 43 |
+| phase1 | completed | 853s | 0 | 38 |
 
 ### deepseek_v4_pro_ollama_cloud
 
@@ -74,6 +73,12 @@ Each variant writes under `results/claude-<slug>/`.
 | phase1 | completed | 1065s | 159 | 36 |
 | phase2 | completed | 33s | 11 | 36 |
 
+### gemma4_ollama_cloud
+
+| Phase | Status | Time | Turns | Files |
+|---|---|---:|---:|---:|
+| phase1 | completed | 875s | 0 | 33 |
+
 ### minimax_m2_7_ollama_cloud
 
 | Phase | Status | Time | Turns | Files |
@@ -96,7 +101,7 @@ Extracted from Claude Code's `modelUsage` field.
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| kimi-k2.6:cloud | 6,185,687 | 33,461 | 0 | 0 |
+| kimi-k2.6:cloud | 5,226,869 | 29,486 | 0 | 0 |
 
 ### deepseek_v4_pro_ollama_cloud
 
@@ -132,7 +137,7 @@ Extracted from Claude Code's `modelUsage` field.
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| gemma4:31b-cloud | 5,840,260 | 17,831 | 0 | 0 |
+| gemma4:31b-cloud | 6,714,909 | 28,165 | 0 | 0 |
 
 ### minimax_m2_7_ollama_cloud
 
