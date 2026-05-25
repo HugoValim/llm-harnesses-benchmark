@@ -18,7 +18,7 @@ from benchmark.audit_report import (  # noqa: E402
 def _write_report(target_dir: Path, total: int, tier: str = "A") -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     lines = [f"Total score: **{total} / 100**", f"Practical tier: **{tier}**"]
-    for i in range(1, 10):
+    for i in range(1, 11):
         lines.append(f"| {i} | D{i} label | 5/10 | notes |")
     target_dir.joinpath("report.md").write_text("\n".join(lines))
 
@@ -33,7 +33,7 @@ def test_load_rubric_result(tmp_path: Path) -> None:
     assert result.tier == "B"
     assert result.harness == "claude"
     assert result.model_slug == "foo"
-    assert len(result.dimensions) == 9
+    assert len(result.dimensions) == 10
 
 
 def test_iter_rubric_results(tmp_path: Path) -> None:

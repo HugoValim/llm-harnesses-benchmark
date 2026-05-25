@@ -20,7 +20,7 @@ from typing import Iterable
 
 from benchmark.result_layout import split_target_slug
 
-NUM_DIMENSIONS = 9
+NUM_DIMENSIONS = 10
 TIERS: tuple[str, ...] = ("A", "B", "C", "D")
 
 # Default dimension labels, used as fallback when a report's B-section is
@@ -35,6 +35,7 @@ DEFAULT_DIMENSION_LABELS: tuple[str, ...] = (
     "Architecture",
     "Secrets & config hygiene",
     "Production hardening",
+    "Code quality (tool-backed)",
 )
 
 
@@ -68,6 +69,17 @@ class ParsedReport:
 RubricResult = ParsedReport
 
 
+def audit_report_is_complete(report_path: Path) -> bool:
+    """True when ``report_path`` exists and contains a parseable total /100."""
+    if not report_path.is_file():
+        return False
+    try:
+        text = report_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return parse_report_scores(text).total is not None
+
+
 def load_rubric_result(report_md_path: Path) -> RubricResult:
     """Parse a single ``report.md`` and return a typed :class:`RubricResult`."""
     return parse_report_scores(
@@ -84,12 +96,17 @@ def iter_rubric_results(audit_root: Path) -> Iterable[RubricResult]:
 
 # Regex patterns ---------------------------------------------------------------
 
-# Total score:
+# Total score patterns (v3.3+ formatting drift):
 #  - "Total score: **89 / 100**"
-#  - "Total score\n\n**85 / 100** — Tier A"
-#  - "Total: 89/100"
-_TOTAL_PATTERN = re.compile(
-    r"Total(?:\s+score)?\s*[:\n]+\s*\*{0,2}\s*(\d+)\s*/\s*100",
+#  - "## C. Total score / 100\n\n**95 / 100**"
+#  - "C. **Total score / 100** — **91 / 100**"
+_TOTAL_INLINE_PATTERN = re.compile(
+    r"Total(?:\s+score)?\s*[:\n/—-]+\s*\*{0,2}\s*(\d+)\s*/\s*100",
+    re.IGNORECASE,
+)
+_SCORE_OUT_OF_100 = re.compile(r"\*{0,2}\s*(\d+)\s*/\s*100\s*\*{0,2}")
+_SECTION_C_INLINE_TOTAL = re.compile(
+    r"C\.\s+\*{0,2}Total[^\n]*?[—-]\s*\*{0,2}\s*(\d+)\s*/\s*100",
     re.IGNORECASE,
 )
 
@@ -112,6 +129,10 @@ _DIM_ROW_PATTERN = re.compile(
     r"\|\s*\**\s*(.+?)\s*\**\s*"
     r"\|\s*\**\s*(\d+)\s*/\s*(\d+)\s*\**\s*\|",
     re.MULTILINE,
+)
+_SECTION_C_HEADING = re.compile(
+    r"(?:^|\n)(?:##\s+)?C\.\s+\*{0,2}Total[^\n]*",
+    re.IGNORECASE,
 )
 
 
@@ -136,9 +157,9 @@ def parse_report_scores(
         model_slug=model_slug,
     )
 
-    total_match = _TOTAL_PATTERN.search(report_text)
-    if total_match:
-        report.total = int(total_match.group(1))
+    total_match = _extract_total(report_text)
+    if total_match is not None:
+        report.total = total_match
 
     tier_match = _TIER_PATTERN.search(report_text)
     if tier_match:
@@ -161,6 +182,25 @@ def parse_report_scores(
 
     report.dimensions.sort(key=lambda d: d.index)
     return report
+
+
+def _extract_total(report_text: str) -> int | None:
+    """Parse section C total with fallbacks for common markdown drift."""
+    inline = _TOTAL_INLINE_PATTERN.search(report_text)
+    if inline:
+        return int(inline.group(1))
+
+    section_inline = _SECTION_C_INLINE_TOTAL.search(report_text)
+    if section_inline:
+        return int(section_inline.group(1))
+
+    heading = _SECTION_C_HEADING.search(report_text)
+    if heading:
+        tail = report_text[heading.end() : heading.end() + 400]
+        for match in _SCORE_OUT_OF_100.finditer(tail):
+            return int(match.group(1))
+
+    return None
 
 
 def _split_harness(target: str) -> tuple[str, str]:

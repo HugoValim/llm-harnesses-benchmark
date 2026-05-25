@@ -10,6 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.audit_report import (  # noqa: E402
     DEFAULT_DIMENSION_LABELS,
+    NUM_DIMENSIONS,
     DimensionScore,
     ParsedReport,
     _is_leader_slug,
@@ -43,7 +44,7 @@ def test_leader_ceiling_no_leaders() -> None:
     ]
     c = _leader_ceiling(reports)
     assert c["total"] is None
-    assert all(c[str(i)] is None for i in range(1, 10))
+    assert all(c[str(i)] is None for i in range(1, NUM_DIMENSIONS + 1))
 
 
 def test_leader_ceiling_with_leaders() -> None:
@@ -86,9 +87,13 @@ def test_normalized_scores_section_no_leaders() -> None:
 
 
 def test_normalized_scores_section_with_leaders() -> None:
-    dim_labels = ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9"]
-    dims_leader = [DimensionScore(i, f"D{i}", 10, 10) for i in range(1, 10)]
-    dims_other = [DimensionScore(i, f"D{i}", 5, 10) for i in range(1, 10)]
+    dim_labels = list(DEFAULT_DIMENSION_LABELS)
+    dims_leader = [
+        DimensionScore(i, f"D{i}", 10, 10) for i in range(1, NUM_DIMENSIONS + 1)
+    ]
+    dims_other = [
+        DimensionScore(i, f"D{i}", 5, 10) for i in range(1, NUM_DIMENSIONS + 1)
+    ]
     reports = [
         ParsedReport(
             auditor="a",
