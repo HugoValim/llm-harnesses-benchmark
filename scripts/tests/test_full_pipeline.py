@@ -11,7 +11,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.full_pipeline import (  # noqa: E402
     BASELINE_STEPS,
     OLLAMA_BUILD_HARNESSES,
+    build_benchmark_argv,
     build_matrix,
+    group_build_batches,
     ollama_cloud_slugs,
     reject_forwarded_model_flag,
 )
@@ -52,6 +54,32 @@ def test_reject_forwarded_model_flag() -> None:
     except SystemExit:
         raised = True
     assert raised
+
+
+def test_group_build_batches_batches_by_harness_and_report() -> None:
+    steps = build_matrix(MODELS_CONFIG)
+    batches = group_build_batches(steps)
+    assert len(batches) == 4
+    claude_batches = [b for b in batches if b.harness == "claude"]
+    assert len(claude_batches) == 2
+    assert {b.report_path for b in claude_batches} == {
+        "docs/report.claude-code.md",
+        "docs/report.claude-opus.md",
+    }
+
+
+def test_build_benchmark_argv_includes_jobs() -> None:
+    steps = build_matrix(MODELS_CONFIG)
+    batch = group_build_batches(steps)[0]
+    argv = build_benchmark_argv(
+        batch,
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        jobs=2,
+        extra_args=[],
+    )
+    j_index = argv.index("-j")
+    assert argv[j_index + 1] == "2"
 
 
 def test_list_steps_cli() -> None:

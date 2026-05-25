@@ -14,6 +14,7 @@ Examples:
   python3 scripts/run_full_benchmark.py
   python3 scripts/run_full_benchmark.py --force
   python3 scripts/run_full_benchmark.py --list-steps
+  python3 scripts/run_full_benchmark.py -j 4
   AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py
 """
 
@@ -72,6 +73,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print the Phase 1 build matrix and exit.",
     )
     parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=2,
+        help="Phase 1 concurrency passed to run_benchmark.py (default: 2).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print subprocess commands without running agents.",
@@ -96,7 +104,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs=argparse.REMAINDER,
         help="Flags forwarded to each run_benchmark.py invocation (e.g. --force).",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.jobs < 1:
+        parser.error("--jobs must be >= 1")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             models_config,
             args.results_dir,
             forward,
+            jobs=args.jobs,
             dry_run=args.dry_run,
         )
 

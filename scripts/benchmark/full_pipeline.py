@@ -34,7 +34,7 @@ STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.0"
 
 @dataclass(frozen=True)
 class BuildStep:
-    """One Phase 1 ``run_benchmark.py`` invocation."""
+    """One matrix row (harness + model + report path)."""
 
     harness: str
     model_slug: str
@@ -42,6 +42,15 @@ class BuildStep:
 
     def key(self) -> tuple[str, str]:
         return (self.harness, self.model_slug)
+
+
+@dataclass(frozen=True)
+class BuildBatch:
+    """One Phase 1 ``run_benchmark.py`` invocation (possibly many models)."""
+
+    harness: str
+    report_path: str
+    model_slugs: tuple[str, ...]
 
 
 def ollama_cloud_slugs(registry_models: Sequence[dict]) -> list[str]:
@@ -103,31 +112,79 @@ def reject_forwarded_model_flag(extra_args: Sequence[str]) -> None:
         )
 
 
-def run_build_step(
-    step: BuildStep,
+def group_build_batches(steps: Sequence[BuildStep]) -> list[BuildBatch]:
+    """Group matrix rows by harness + report so ``run_benchmark.py -j`` can parallelize."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, str]] = []
+    for step in steps:
+        key = (step.harness, step.report_path)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(step.model_slug)
+    return [
+        BuildBatch(
+            harness=key[0],
+            report_path=key[1],
+            model_slugs=tuple(groups[key]),
+        )
+        for key in order
+    ]
+
+
+def build_benchmark_argv(
+    batch: BuildBatch,
     *,
     models_config: Path,
     results_dir: Path,
+    jobs: int,
     extra_args: Sequence[str],
-    dry_run: bool,
-) -> None:
-    print_line(f"==> Phase 1 build: harness={step.harness} model={step.model_slug}")
-    cmd = [
+) -> list[str]:
+    """Argv for one Phase 1 ``run_benchmark.py`` subprocess."""
+    if jobs < 1:
+        raise ValueError(f"jobs must be >= 1 (got {jobs})")
+    argv = [
         sys.executable,
         str(SCRIPTS_DIR / "run_benchmark.py"),
         "--harness",
-        step.harness,
-        "--model",
-        step.model_slug,
+        batch.harness,
         "--models-config",
         str(models_config),
         "--results-dir",
         str(results_dir),
         "--report",
-        step.report_path,
+        batch.report_path,
         *timeout_cli_flags(),
-        *extra_args,
     ]
+    for slug in batch.model_slugs:
+        argv.extend(["--model", slug])
+    if "-j" not in extra_args and "--jobs" not in extra_args:
+        argv.extend(["-j", str(jobs)])
+    argv.extend(extra_args)
+    return argv
+
+
+def run_build_batch(
+    batch: BuildBatch,
+    *,
+    models_config: Path,
+    results_dir: Path,
+    jobs: int,
+    extra_args: Sequence[str],
+    dry_run: bool,
+) -> None:
+    slugs = ", ".join(batch.model_slugs)
+    print_line(
+        f"==> Phase 1 build: harness={batch.harness} "
+        f"models={len(batch.model_slugs)} ({slugs})"
+    )
+    cmd = build_benchmark_argv(
+        batch,
+        models_config=models_config,
+        results_dir=results_dir,
+        jobs=jobs,
+        extra_args=extra_args,
+    )
     if dry_run:
         print_line(" ".join(cmd))
         return
@@ -139,15 +196,21 @@ def phase_build(
     results_dir: Path,
     extra_args: Sequence[str],
     *,
+    jobs: int = 2,
     dry_run: bool = False,
 ) -> list[BuildStep]:
     steps = build_matrix(models_config)
-    print_line(f"==> Phase 1 — build matrix ({len(steps)} steps)")
-    for step in steps:
-        run_build_step(
-            step,
+    batches = group_build_batches(steps)
+    print_line(
+        f"==> Phase 1 — build matrix ({len(steps)} models, "
+        f"{len(batches)} invocations, jobs={jobs})"
+    )
+    for batch in batches:
+        run_build_batch(
+            batch,
             models_config=models_config,
             results_dir=results_dir,
+            jobs=jobs,
             extra_args=extra_args,
             dry_run=dry_run,
         )
