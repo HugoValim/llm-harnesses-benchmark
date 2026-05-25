@@ -2,7 +2,7 @@
 
 Runs a pinned, reproducible toolchain (``ruff`` / ``mypy`` / ``bandit`` /
 ``radon cc`` / ``radon mi``) against one generated project and writes a
-compact JSON evidence file the LLM auditor can cite for the audit-v3.3
+compact JSON evidence file the LLM auditor can cite for the audit-v3.4
 D10 (Code quality, tool-backed) dimension.
 
 The probe venv lives at ``_quality_probe/venv/`` and is shared across all
@@ -37,10 +37,8 @@ PROBE_MYPY_CONFIG = "mypy.ini"
 TOP_OFFENDER_CAP = 5
 
 # Dirs that should never be linted: generated, vendored, or fixture trees.
-# Pruned from radon's traversal and passed to ruff/mypy/bandit as excludes.
-_EXCLUDE_DIRS: tuple[str, ...] = (
-    ".venv",
-    "venv",
+# Pruned from os.walk, radon, ruff, mypy, and bandit traversals.
+_BASE_EXCLUDE_DIRS: tuple[str, ...] = (
     ".git",
     "node_modules",
     "__pycache__",
@@ -55,11 +53,80 @@ _EXCLUDE_DIRS: tuple[str, ...] = (
     "dist",
     "build",
     "migrations",
+    "site-packages",
+    "lib",
+    "lib64",
+    "include",
+    "bin",
+    "Scripts",
 )
 
+# LOC above this threshold usually means a venv or vendor tree was scanned.
+_LOC_SANITY_WARN = 50_000
 
-def _exclude_arg_comma() -> str:
-    return ",".join(_EXCLUDE_DIRS)
+
+def _is_venv_dirname(name: str) -> bool:
+    """True for ``venv``, ``env``, and any ``.venv*`` layout."""
+    if name in ("venv", "env"):
+        return True
+    return name.startswith(".venv")
+
+
+def _is_excluded_dirname(name: str) -> bool:
+    if name in _BASE_EXCLUDE_DIRS:
+        return True
+    return _is_venv_dirname(name)
+
+
+def _discover_extra_exclude_dirs(project_dir: Path) -> list[str]:
+    """Walk once and collect venv-like directory names not in the base set."""
+    found: set[str] = set()
+    for root, dirnames, _ in os.walk(project_dir):
+        for name in dirnames:
+            if _is_venv_dirname(name):
+                found.add(name)
+        dirnames[:] = [d for d in dirnames if not _is_excluded_dirname(d)]
+    return sorted(found)
+
+
+def _collect_exclude_dirnames(project_dir: Path) -> tuple[str, ...]:
+    extra = _discover_extra_exclude_dirs(project_dir)
+    merged = list(_BASE_EXCLUDE_DIRS)
+    for name in extra:
+        if name not in merged:
+            merged.append(name)
+    return tuple(merged)
+
+
+def _exclude_arg_comma(exclude_dirs: tuple[str, ...]) -> str:
+    return ",".join(exclude_dirs)
+
+
+def _mypy_exclude_regex(exclude_dirs: tuple[str, ...]) -> str:
+    parts = [re.escape(d) for d in exclude_dirs]
+    parts.extend(r"\.venv[^/]*", r"venv", r"env")
+    return "|".join(parts)
+
+
+def _discover_application_roots(project_dir: Path) -> list[str]:
+    """Return relative dirs containing ``manage.py`` (Django app roots)."""
+    roots: list[str] = []
+    for path in sorted(project_dir.rglob("manage.py")):
+        if any(_is_excluded_dirname(part) for part in path.relative_to(project_dir).parts):
+            continue
+        rel = path.parent.relative_to(project_dir)
+        roots.append("." if rel == Path(".") else str(rel))
+    if not roots:
+        roots.append(".")
+    return sorted(set(roots))
+
+
+def _is_excluded_path(filepath: str) -> bool:
+    normalized = filepath.replace("\\", "/").lstrip("./")
+    for part in normalized.split("/"):
+        if _is_excluded_dirname(part):
+            return True
+    return False
 
 
 def probe(
@@ -150,13 +217,28 @@ def _hash_text(text: str) -> str:
 def _run_all_tools(
     python: Path, project_dir: Path, *, mypy_config: Path | None = None
 ) -> dict[str, Any]:
-    ruff = _run_ruff(python, project_dir)
-    mypy = _run_mypy(python, project_dir, config_file=mypy_config)
-    bandit = _run_bandit(python, project_dir)
-    radon_cc = _run_radon_cc(python, project_dir)
-    radon_mi = _run_radon_mi(python, project_dir)
+    exclude_dirs = _collect_exclude_dirnames(project_dir)
+    skipped_venv_dirs = _discover_extra_exclude_dirs(project_dir)
+    application_roots = _discover_application_roots(project_dir)
+    ruff = _run_ruff(python, project_dir, exclude_dirs=exclude_dirs)
+    mypy = _run_mypy(
+        python, project_dir, config_file=mypy_config, exclude_dirs=exclude_dirs
+    )
+    bandit = _run_bandit(python, project_dir, exclude_dirs=exclude_dirs)
+    radon_cc = _run_radon_cc(python, project_dir, exclude_dirs=exclude_dirs)
+    radon_mi = _run_radon_mi(python, project_dir, exclude_dirs=exclude_dirs)
     versions = _tool_versions(python)
-    loc = _count_lines_of_code(project_dir)
+    loc = _count_lines_of_code(project_dir, exclude_dirs=exclude_dirs)
+    probe_warnings: list[str] = []
+    if skipped_venv_dirs:
+        probe_warnings.append(
+            f"skipped venv-like dirs from application scope: {', '.join(skipped_venv_dirs)}"
+        )
+    if loc > _LOC_SANITY_WARN:
+        probe_warnings.append(
+            f"lines_of_code={loc} exceeds sanity threshold {_LOC_SANITY_WARN}; "
+            "verify exclusions"
+        )
     overall_status = (
         "ok"
         if any(
@@ -167,6 +249,9 @@ def _run_all_tools(
     return {
         "status": overall_status,
         "project_dir": str(project_dir),
+        "application_roots": application_roots,
+        "exclude_dirs": list(exclude_dirs),
+        "probe_warnings": probe_warnings,
         "tool_versions": versions,
         "lines_of_code": loc,
         "ruff": ruff,
@@ -195,7 +280,9 @@ def _bin(python: Path, tool: str) -> str:
     return str(python.parent / tool)
 
 
-def _run_ruff(python: Path, project_dir: Path) -> dict[str, Any]:
+def _run_ruff(
+    python: Path, project_dir: Path, *, exclude_dirs: tuple[str, ...]
+) -> dict[str, Any]:
     # --isolated bypasses any pyproject.toml ruff config in the target so
     # every submission is graded against the same probe-owned rule set.
     # Rule selection: bug-finding only — F (pyflakes), B (bugbear),
@@ -212,7 +299,7 @@ def _run_ruff(python: Path, project_dir: Path) -> dict[str, Any]:
             "--output-format",
             "json",
             "--exclude",
-            _exclude_arg_comma(),
+            _exclude_arg_comma(exclude_dirs),
             "--no-cache",
             ".",
         ],
@@ -221,7 +308,9 @@ def _run_ruff(python: Path, project_dir: Path) -> dict[str, Any]:
         text=True,
         cwd=project_dir,
     )
-    return _parse_ruff_output(completed.stdout, completed.stderr, completed.returncode)
+    return _parse_ruff_output(
+        completed.stdout, completed.stderr, completed.returncode
+    )
 
 
 def _parse_ruff_output(stdout: str, stderr: str, returncode: int) -> dict[str, Any]:
@@ -263,9 +352,13 @@ _MYPY_LINE_RE = re.compile(
 
 
 def _run_mypy(
-    python: Path, project_dir: Path, *, config_file: Path | None = None
+    python: Path,
+    project_dir: Path,
+    *,
+    config_file: Path | None = None,
+    exclude_dirs: tuple[str, ...] = _BASE_EXCLUDE_DIRS,
 ) -> dict[str, Any]:
-    excludes = "|".join(re.escape(d) for d in _EXCLUDE_DIRS)
+    excludes = _mypy_exclude_regex(exclude_dirs)
     argv = [
         _bin(python, "mypy"),
         "--no-error-summary",
@@ -309,7 +402,10 @@ def _parse_mypy_output(stdout: str, stderr: str) -> dict[str, Any]:
     }
 
 
-def _run_bandit(python: Path, project_dir: Path) -> dict[str, Any]:
+def _run_bandit(
+    python: Path, project_dir: Path, *, exclude_dirs: tuple[str, ...]
+) -> dict[str, Any]:
+    exclude_args = ",".join(f"./{d}" for d in exclude_dirs)
     completed = subprocess.run(
         [
             _bin(python, "bandit"),
@@ -319,7 +415,7 @@ def _run_bandit(python: Path, project_dir: Path) -> dict[str, Any]:
             "json",
             "--quiet",
             "-x",
-            ",".join(f"./{d}" for d in _EXCLUDE_DIRS),
+            exclude_args,
         ],
         check=False,
         capture_output=True,
@@ -335,16 +431,20 @@ def _parse_bandit_output(stdout: str, stderr: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"status": "error", "stderr": stderr.strip() or stdout[:500]}
     results = data.get("results") or []
-    counts = {"high": 0, "medium": 0, "low": 0}
+    app_counts = {"high": 0, "medium": 0, "low": 0}
+    noise_counts = {"high": 0, "medium": 0, "low": 0}
     offenders: list[dict[str, Any]] = []
     for entry in results:
         severity = str(entry.get("issue_severity", "")).lower()
-        if severity in counts:
-            counts[severity] += 1
-        if len(offenders) < TOP_OFFENDER_CAP:
+        filename = str(entry.get("filename") or "")
+        excluded = _is_excluded_path(filename)
+        bucket = noise_counts if excluded else app_counts
+        if severity in bucket:
+            bucket[severity] += 1
+        if not excluded and len(offenders) < TOP_OFFENDER_CAP:
             offenders.append(
                 {
-                    "file": str(entry.get("filename") or ""),
+                    "file": filename,
                     "line": int(entry.get("line_number") or 0),
                     "severity": severity,
                     "test_id": str(entry.get("test_id") or ""),
@@ -353,13 +453,27 @@ def _parse_bandit_output(stdout: str, stderr: str) -> dict[str, Any]:
             )
     return {
         "status": "ok",
-        **counts,
-        "total": len(results),
+        "high": app_counts["high"],
+        "medium": app_counts["medium"],
+        "low": app_counts["low"],
+        "total": sum(app_counts.values()),
+        "dependency_noise": {
+            **noise_counts,
+            "total": sum(noise_counts.values()),
+        },
         "top_offenders": offenders,
     }
 
 
-def _run_radon_cc(python: Path, project_dir: Path) -> dict[str, Any]:
+def _radon_exclude_arg(exclude_dirs: tuple[str, ...]) -> str:
+    patterns = [f"{d}/*" for d in exclude_dirs]
+    patterns.extend(".venv*/*", "venv/*", "env/*")
+    return ",".join(patterns)
+
+
+def _run_radon_cc(
+    python: Path, project_dir: Path, *, exclude_dirs: tuple[str, ...]
+) -> dict[str, Any]:
     completed = subprocess.run(
         [
             _bin(python, "radon"),
@@ -367,7 +481,7 @@ def _run_radon_cc(python: Path, project_dir: Path) -> dict[str, Any]:
             "-j",
             "-s",
             "-e",
-            ",".join(f"{d}/*" for d in _EXCLUDE_DIRS),
+            _radon_exclude_arg(exclude_dirs),
             ".",
         ],
         check=False,
@@ -410,7 +524,9 @@ def _parse_radon_cc_output(stdout: str, stderr: str) -> dict[str, Any]:
     }
 
 
-def _run_radon_mi(python: Path, project_dir: Path) -> dict[str, Any]:
+def _run_radon_mi(
+    python: Path, project_dir: Path, *, exclude_dirs: tuple[str, ...]
+) -> dict[str, Any]:
     completed = subprocess.run(
         [
             _bin(python, "radon"),
@@ -418,7 +534,7 @@ def _run_radon_mi(python: Path, project_dir: Path) -> dict[str, Any]:
             "-j",
             "-s",
             "-e",
-            ",".join(f"{d}/*" for d in _EXCLUDE_DIRS),
+            _radon_exclude_arg(exclude_dirs),
             ".",
         ],
         check=False,
@@ -493,10 +609,14 @@ def _is_test_module_path(filename: str) -> bool:
     )
 
 
-def _count_lines_of_code(project_dir: Path) -> int:
+def _count_lines_of_code(
+    project_dir: Path, *, exclude_dirs: tuple[str, ...] | None = None
+) -> int:
+    exclude_dirs = exclude_dirs or _collect_exclude_dirnames(project_dir)
+    excluded = set(exclude_dirs)
     total = 0
     for root, dirnames, filenames in os.walk(project_dir):
-        dirnames[:] = [d for d in dirnames if d not in _EXCLUDE_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in excluded and not _is_venv_dirname(d)]
         for name in filenames:
             if not name.endswith(".py"):
                 continue

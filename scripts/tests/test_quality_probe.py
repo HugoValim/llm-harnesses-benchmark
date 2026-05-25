@@ -19,6 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.quality_probe import (  # noqa: E402
+    _count_lines_of_code,
+    _is_excluded_path,
     _parse_bandit_output,
     _parse_mypy_output,
     _parse_radon_cc_output,
@@ -135,6 +137,48 @@ class TestBanditParser(unittest.TestCase):
         self.assertEqual(result["medium"], 1)
         self.assertEqual(result["low"], 1)
         self.assertEqual(result["total"], 3)
+        self.assertEqual(result["dependency_noise"]["total"], 0)
+
+    def test_dependency_findings_excluded_from_application_counts(self) -> None:
+        payload = json.dumps(
+            {
+                "results": [
+                    {
+                        "issue_severity": "HIGH",
+                        "filename": "./.venv13/lib/site-packages/evil.py",
+                        "line_number": 1,
+                        "test_id": "B101",
+                        "issue_text": "assert used",
+                    },
+                    {
+                        "issue_severity": "HIGH",
+                        "filename": "./chat/views.py",
+                        "line_number": 5,
+                        "test_id": "B105",
+                        "issue_text": "hardcoded password",
+                    },
+                ]
+            }
+        )
+        result = _parse_bandit_output(payload, "")
+        self.assertEqual(result["high"], 1)
+        self.assertEqual(result["dependency_noise"]["high"], 1)
+
+
+class TestExclusionHelpers(unittest.TestCase):
+    def test_venv_path_excluded(self) -> None:
+        self.assertTrue(_is_excluded_path(".venv13/lib/python3.13/site-packages/x.py"))
+        self.assertFalse(_is_excluded_path("chat/views.py"))
+
+    def test_loc_excludes_venv_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.py").write_text("print('hi')\n")
+            venv = root / ".venv13" / "lib"
+            venv.mkdir(parents=True)
+            (venv / "big.py").write_text("x = 1\n" * 5000)
+            loc = _count_lines_of_code(root)
+            self.assertEqual(loc, 1)
 
 
 class TestRadonCCParser(unittest.TestCase):
