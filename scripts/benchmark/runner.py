@@ -25,7 +25,6 @@ from benchmark.config import (
     BenchmarkConfig,
     existing_terminal_result,
     mark_model_skip_by_default,
-    model_enables_followup,
     summarize_project,
 )
 from benchmark.harnesses.stall_policy import (
@@ -1071,7 +1070,6 @@ def run_model(
 
     if (
         bench.followup_prompt
-        and model_enables_followup(model)
         and not phase1.get("timed_out")
         and not phase1.get("stalled")
     ):

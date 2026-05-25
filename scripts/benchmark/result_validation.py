@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benchmark.config import model_enables_followup, summarize_project
+from benchmark.config import summarize_project
 from benchmark.report import _rederive_status
 from benchmark.result_layout import split_target_slug, target_dir
 from benchmark.util import USAGE_LIMIT_REACHED, load_json, migrate_to_v2
@@ -38,16 +38,9 @@ class ValidationResult:
         return "; ".join(f"{i.code}: {i.message}" for i in self.issues)
 
 
-def followup_expected(
-    model: dict[str, Any],
-    *,
-    followup_prompt: str | None,
-    no_followup: bool,
-) -> bool:
-    """True when phase 2 should have completed for this model."""
-    if no_followup or not followup_prompt:
-        return False
-    return model_enables_followup(model)
+def followup_expected(*, followup_prompt: str | None) -> bool:
+    """True when the benchmark follow-up prompt is configured (phase 2 required)."""
+    return bool(followup_prompt and followup_prompt.strip())
 
 
 def wipe_result_dir(result_dir: Path, *, recreate: bool = True) -> None:

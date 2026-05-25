@@ -42,7 +42,7 @@ The short, unique identifier for a model. Used as a filesystem-safe key in resul
 
 ## phase
 
-One of two sequential prompt turns sent to the coding agent. Phase 1 (`prompts/benchmark_prompt.txt`) is the full implementation brief. Phase 2 (`prompts/benchmark_followup_prompt.txt`) instructs the agent to boot the app, run `docker build`, and `docker compose up`. Phase 2 can be disabled per model via `enable_followup: false`.
+One of two sequential prompt turns sent to the coding agent. Phase 1 (`prompts/benchmark_prompt.txt`) is the full implementation brief. Phase 2 (`prompts/benchmark_followup_prompt.txt`) instructs the agent to boot the app, run `docker build`, and `docker compose up`. Every model run executes both phases when phase 1 completes without timeout, stall, or usage-limit failure.
 
 ## runtime verification
 

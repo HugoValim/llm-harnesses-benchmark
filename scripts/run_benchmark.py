@@ -189,6 +189,19 @@ _BENCHMARK_PATH_FIELDS = (
 )
 
 
+def _load_followup_prompt(followup_prompt_path: Path) -> str:
+    """Load the mandatory phase-2 prompt; every benchmark run uses it."""
+    if not followup_prompt_path.is_file():
+        raise FileNotFoundError(
+            f"Follow-up prompt not found: {followup_prompt_path}. "
+            "Phase 2 is required for all models."
+        )
+    text = followup_prompt_path.read_text().strip()
+    if not text:
+        raise ValueError(f"Follow-up prompt is empty: {followup_prompt_path}")
+    return text
+
+
 def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
     """Resolve CLI filesystem paths before runner dispatch.
 
@@ -293,11 +306,6 @@ def parse_args() -> argparse.Namespace:
         help="Skip execution and only rebuild the report from saved result.json files.",
     )
     parser.add_argument(
-        "--no-followup",
-        action="store_true",
-        help="Disable the second-phase follow-up prompt.",
-    )
-    parser.add_argument(
         "--min-preview-output-tps",
         type=float,
         default=5.0,
@@ -366,9 +374,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     config = load_json(config_path)
     config = resolve_build_harness_config(config, config_path, harness)
     prompt = prompt_path.read_text().strip()
-    followup_prompt = None
-    if not args.no_followup and followup_prompt_path.exists():
-        followup_prompt = followup_prompt_path.read_text().strip()
+    followup_prompt = _load_followup_prompt(followup_prompt_path)
     results_dir.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -505,11 +511,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
                     skip_stale_kill=skip_stale_kill,
                 )
 
-            expect_followup = followup_expected(
-                model,
-                followup_prompt=bench.followup_prompt,
-                no_followup=args.no_followup,
-            )
+            expect_followup = followup_expected(followup_prompt=bench.followup_prompt)
             return _run_with_result_validation(
                 model["slug"],
                 result_dir,
@@ -654,10 +656,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
         isolate_home = bool(runner.get("isolate_home", False))
         jobs = args.jobs if args.jobs > 0 else len(variants)
         jobs = max(1, min(jobs, len(variants))) if variants else 1
-        followup_path = Path(args.followup_prompt)
-        followup_text = (
-            followup_path.read_text().strip() if followup_path.exists() else None
-        )
+        followup_text = _load_followup_prompt(Path(args.followup_prompt))
         extra_banner = (
             f", isolate_home={isolate_home}" if harness.accepts_isolate_home else ""
         )
@@ -665,9 +664,6 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             f"{harness_name} benchmark: {len(variants)} models, jobs={jobs}, "
             f"timeout={timeout_seconds}s{extra_banner}"
         )
-
-        def _variant_enables_followup(v: dict) -> bool:
-            return bool(v.get("enable_followup", False))
 
         abort_flag = threading.Event()
 
@@ -680,9 +676,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
                 return v["slug"], None, None
             try:
                 result_dir = layout_target_dir(results_dir, harness_name, v["slug"])
-                followup_for_variant = (
-                    followup_text if _variant_enables_followup(v) else None
-                )
+                followup_for_variant = followup_text
                 attempt = {"n": 0}
 
                 def _run_once() -> dict[str, Any] | None:
@@ -706,9 +700,8 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
                     model_row = {
                         "slug": v["slug"],
                         "provider": v.get("provider", ""),
-                        "enable_followup": v.get("enable_followup"),
                     }
-                    expect_followup = bool(followup_for_variant) and not args.no_followup
+                    expect_followup = followup_expected(followup_prompt=followup_text)
                     payload = _run_with_result_validation(
                         v["slug"],
                         result_dir,

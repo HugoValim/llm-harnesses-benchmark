@@ -21,7 +21,6 @@ Common fields:
 - `provider`: routing key.
 - `id`: provider or CLI model id.
 - `opencode_id`: optional opencode-specific id, commonly an OpenRouter path.
-- `enable_followup`: whether phase 2 should run for that model.
 - `selection_reason`: maintainer note shown in docs/reports.
 - `known_issues`: optional warning for model-specific behavior.
 - `skip_by_default`: optional flag used by preview-speed handling.

@@ -220,19 +220,6 @@ class TestModelFieldPassthrough(unittest.TestCase):
         rows = _resolve(self.config_dir, models, "codex")
         self.assertEqual(rows[0]["codex_reasoning_effort"], "xhigh")
 
-    def test_enable_followup_flows_through(self) -> None:
-        models = [
-            {
-                "slug": "gpt54",
-                "label": "GPT-5.4",
-                "provider": "openai",
-                "id": "gpt-5.4",
-                "enable_followup": True,
-            }
-        ]
-        rows = _resolve(self.config_dir, models, "codex")
-        self.assertTrue(rows[0]["enable_followup"])
-
     def test_missing_id_raises_on_resolve(self) -> None:
         models = [{"slug": "bad", "label": "Bad", "provider": "anthropic"}]
         with self.assertRaises(ValueError):

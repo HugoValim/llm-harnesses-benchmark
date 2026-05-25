@@ -10,7 +10,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.config import model_enables_followup  # noqa: E402
 from benchmark.result_layout import split_target_slug  # noqa: E402
 from benchmark.result_validation import (  # noqa: E402
     followup_expected,
@@ -37,11 +36,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "config" / "models.json",
         help="Optional registry for follow-up expectations per slug.",
-    )
-    parser.add_argument(
-        "--no-followup",
-        action="store_true",
-        help="Do not require phase 2 even when the registry enables it.",
     )
     parser.add_argument(
         "--remove-on-fail",
@@ -72,9 +66,15 @@ def main() -> int:
     followup_prompt_path = REPO_ROOT / "prompts" / "benchmark_followup_prompt.txt"
     followup_prompt = (
         followup_prompt_path.read_text().strip()
-        if followup_prompt_path.exists()
+        if followup_prompt_path.is_file()
         else None
     )
+    if not followup_prompt:
+        print(
+            f"Follow-up prompt missing or empty: {followup_prompt_path}",
+            file=sys.stderr,
+        )
+        return 1
 
     result_paths = sorted(results_dir.glob("*/result.json"))
     if only:
@@ -89,11 +89,7 @@ def main() -> int:
         result_dir = result_path.parent
         harness, slug = split_target_slug(result_dir.name)
         model = registry.get(slug, {})
-        expect_followup = followup_expected(
-            model,
-            followup_prompt=followup_prompt,
-            no_followup=args.no_followup,
-        )
+        expect_followup = followup_expected(followup_prompt=followup_prompt)
         vr = validate_benchmark_result(
             result_dir,
             model=model or None,

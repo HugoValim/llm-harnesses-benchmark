@@ -6,7 +6,6 @@
       "provider": "anthropic",
       "id": "claude-sonnet-4-6",
       "opencode_id": "openrouter/anthropic/claude-sonnet-4.6",
-      "enable_followup": true,
       "selection_reason": "Reference Claude Sonnet model for build, audit, and meta-analysis runs."
     },
     {
@@ -15,7 +14,6 @@
       "provider": "anthropic",
       "id": "claude-opus-4-7",
       "opencode_id": "openrouter/anthropic/claude-opus-4.7",
-      "enable_followup": true,
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
     },
     {
@@ -24,7 +22,6 @@
       "provider": "openai",
       "id": "gpt-5.5",
       "codex_reasoning_effort": "xhigh",
-      "enable_followup": true,
       "selection_reason": "Codex GPT-5.5 with extra-high reasoning. Verify availability with `codex debug models`."
     },
     {
@@ -32,7 +29,6 @@
       "label": "GPT-5.4 (Codex / ChatGPT)",
       "provider": "openai",
       "id": "gpt-5.4",
-      "enable_followup": true,
       "selection_reason": "Codex CLI baseline model. Edit the harness mapping if your catalog uses a different tag."
     },
     {
@@ -40,7 +36,6 @@
       "label": "GPT-5.3-Codex (Codex CLI)",
       "provider": "openai",
       "id": "gpt-5.3-codex",
-      "enable_followup": true,
       "selection_reason": "Codex-tuned baseline model; confirm with `codex debug models`."
     },
     {
@@ -48,7 +43,6 @@
       "label": "Composer 2.5 (Cursor CLI, subscription auth)",
       "provider": "cursor",
       "id": "composer-2.5",
-      "enable_followup": true,
       "selection_reason": "Cursor Composer 2.5 baseline on the Python benchmark."
     },
     {
@@ -56,7 +50,6 @@
       "label": "Composer 2.0 (Cursor CLI, subscription auth)",
       "provider": "cursor",
       "id": "composer-2",
-      "enable_followup": true,
       "selection_reason": "Cursor Composer 2.0 baseline on the Python benchmark."
     },
     {
@@ -71,7 +64,7 @@
       "label": "DeepSeek V4 Pro (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "deepseek-v4-pro:cloud",
-      "known_issues": "Phase 2 follow-up is disabled for the OpenCode mapping because opencode's ai-sdk strips reasoning_content but the DeepSeek API requires it echoed back.",
+      "known_issues": "OpenCode may fail phase 2 when reasoning_content is stripped; Claude/Codex follow-up still runs.",
       "selection_reason": "DeepSeek V4 Pro served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
     },
     {

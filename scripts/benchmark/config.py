@@ -143,7 +143,6 @@ def _expand_ollama_cloud_claude_config(
             "label": f"{entry['label']} via Claude Code",
             "main_model": entry["id"],
             "subagent": None,
-            "enable_followup": entry.get("enable_followup", False),
             "command_prefix": list(command_prefix),
             "selection_reason": str(entry.get("selection_reason", "")),
         }
@@ -166,7 +165,6 @@ def _expand_ollama_cloud_models_config(
             "label": f"{entry['label']} via {via}",
             "provider": "ollama_cloud",
             "runner_type": harness,
-            "enable_followup": entry.get("enable_followup"),
             "command_prefix": list(command_prefix),
             "selection_reason": str(entry.get("selection_reason", "")),
         }
@@ -493,13 +491,4 @@ def mark_model_skip_by_default(config_path: Path, model_slug: str, note: str) ->
     save_json_preserve_order(config_path, payload)
     return True
 
-
-def model_enables_followup(model: dict[str, Any]) -> bool:
-    """Whether a model should run phase 2. Opt-in via enable_followup, defaults by provider."""
-    explicit = model.get("enable_followup")
-    if isinstance(explicit, bool):
-        return explicit
-    # Default: enabled for cloud providers, disabled for local and codex
-    # (codex uses --ephemeral with no session continuity)
-    return model["provider"] not in ("ollama", "codex")
 

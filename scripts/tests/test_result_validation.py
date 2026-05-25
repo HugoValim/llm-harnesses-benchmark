@@ -11,7 +11,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.config import model_enables_followup  # noqa: E402
 from benchmark.result_validation import (  # noqa: E402
     MAX_VALIDATION_RETRIES,
     ValidationIssue,
@@ -75,16 +74,10 @@ def _completed_row(*, works: str = "yes", phases: list | None = None) -> dict:
     }
 
 
-def test_followup_expected_for_ollama_cloud() -> None:
-    model = {"slug": "x", "provider": "ollama_cloud"}
-    assert followup_expected(model, followup_prompt="phase 2", no_followup=False)
-    assert not followup_expected(model, followup_prompt="phase 2", no_followup=True)
-    assert not followup_expected(model, followup_prompt=None, no_followup=False)
-
-
-def test_model_enables_followup_codex_default_off() -> None:
-    model = {"slug": "x", "provider": "codex"}
-    assert not model_enables_followup(model)
+def test_followup_expected_when_prompt_configured() -> None:
+    assert followup_expected(followup_prompt="phase 2")
+    assert not followup_expected(followup_prompt=None)
+    assert not followup_expected(followup_prompt="   ")
 
 
 def test_validate_passes_completed_run(tmp_path: Path) -> None:
@@ -183,7 +176,6 @@ def test_validate_results_remove_on_fail_cli(tmp_path: Path) -> None:
             str(script),
             "--results-dir",
             str(results_dir),
-            "--no-followup",
             "--remove-on-fail",
         ],
         check=False,
