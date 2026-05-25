@@ -45,7 +45,7 @@ Run only the cross-auditor meta-analysis (assumes audits already ran):
 ./scripts/run_ollama_cloud_meta_analysis.sh
 ```
 
-Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair):
+Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair). By default audits **all** discovered `results/` targets and exits non-zero if any lack a scored `report.md` (use `--no-enforce-coverage` to opt out):
 ```bash
 python scripts/run_audit.py
 ```

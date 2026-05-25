@@ -175,10 +175,11 @@ Run all six checks and record the verdict per check, then an overall verdict:
     - **insufficient-data** if fewer than 2 leader reports exist for that anchor.
   - **Check 5 overall**: PASS if every anchor with ≥2 reports PASSes (treat `insufficient-data` anchors as neutral); WARN if any anchor WARNs and none FAIL; FAIL if any anchor FAILs; `insufficient-data` only when **both** anchors have insufficient-data (then do NOT let Check 5 influence the overall verdict).
 - **Check 6 — D10 floor (code quality)**: median D10 across all valid runs.
-  - **PASS** if median D10 ≥ 6/10 (cohort writes code that mostly clears the toolchain).
-  - **WARN** if 4 ≤ median D10 < 6 — note the dominant trigger (cite the most-cited `static-analysis.json` field across deductions) and recommend a `[prompt]` bump if the brief did not state the toolchain bar, or a `[rubric]` loosen if the bar is reasonable but unmet.
+  - **PASS** if 4 ≤ median D10 < 8 (cohort shows meaningful toolchain spread).
+  - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant `static-analysis.json` fields.
+  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.4 D10 triggers or enforcing harness-precomputed D10 reconciliation.
   - **FAIL** if median D10 < 4 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
-  - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3); list affected runs in the appendix and do NOT let Check 6 influence the overall verdict.
+  - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4); list affected runs in the appendix and do NOT let Check 6 influence the overall verdict.
 
 Overall verdict:
 - **PASS** — all six checks pass (treat `insufficient-data` on Check 5 or Check 6 as neutral, not a failure)
@@ -224,7 +225,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.3` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0`, `audit-v3.1`, or `audit-v3.2` are excluded from cross-cell comparison until re-audited under `audit-v3.3`. Likewise, older benchmark submissions audited under `audit-v3.3` should be flagged because the older brief did not include the strengthened HTMX, disconnect, and verification-summary requirements — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.4` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0`, `audit-v3.1`, `audit-v3.2`, or `audit-v3.3` are excluded from cross-cell comparison until re-audited under `audit-v3.4`. Likewise, older benchmark submissions audited under `audit-v3.4` should be flagged because the older brief did not include the strengthened HTMX, disconnect, and verification-summary requirements — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
   - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.

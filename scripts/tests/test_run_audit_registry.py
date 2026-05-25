@@ -290,13 +290,25 @@ def test_build_audit_prompt_interpolates_static_analysis_path(tmp_path: Path) ->
     assert "{static_analysis_path}" not in prompt
 
 
+def test_build_audit_prompt_interpolates_d10_block(tmp_path: Path) -> None:
+    template = "d10={d10_precomputed_block}"
+    project = tmp_path / "project"
+    project.mkdir()
+    prompt = build_audit_prompt(
+        template,
+        project_dir=project,
+        model_slug="demo_model",
+        d10_precomputed_block="Precomputed D10: 8/10",
+    )
+    assert "Precomputed D10: 8/10" in prompt
+    assert "{d10_precomputed_block}" not in prompt
+
+
 def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
-    # Backward-compatibility safety: callers that don't pass the path still
-    # produce a usable prompt; the placeholder is left as-is so the auditor
-    # treats D10 as unverified by the audit-v3.3 rubric.
-    template = "qa={static_analysis_path}"
+    # When static_analysis_path is omitted the literal placeholder remains.
+    template = "qa={static_analysis_path} d10={d10_precomputed_block}"
     prompt = build_audit_prompt(template, Path("/tmp/p"), "m", output_path=None)
-    assert prompt == "qa={static_analysis_path}"
+    assert prompt == "qa={static_analysis_path} d10=n/a — probe skipped; award D10 5/10 unverified."
 
 
 def test_build_audit_prompt_interpolates_generation_metrics(tmp_path: Path) -> None:

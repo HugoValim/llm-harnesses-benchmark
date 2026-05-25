@@ -36,22 +36,25 @@ def test_followup_prompt_v32_rechecks_frontend_wiring() -> None:
     assert "command/result/blocker format" in prompt
 
 
-def test_audit_prompt_v33_matches_current_benchmark_versions() -> None:
+def test_audit_prompt_v34_matches_current_benchmark_versions() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.3")
-    assert "MUST equal `audit-v3.3`" in prompt
+    assert prompt.startswith("Prompt-Version: audit-v3.4")
+    assert "MUST equal `audit-v3.4`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.2`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.2`" in prompt
     assert "Count at most one CF#11 per generated project" in prompt
     assert "`tests.py`, `test_*.py`, and `*_test.py`" in prompt
     assert "If only test files are below 65, no D10 deduction" in prompt
+    assert "{d10_precomputed_block}" in prompt
+    assert "award **5/10** by default" in prompt
+    assert "Tier cap:" in prompt
 
 
 def test_meta_prompt_v35_filters_current_prompt_versions() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
     assert prompt.startswith("Prompt-Version: meta-v3.5")
-    assert "audit `Prompt-Version` is `audit-v3.3`" in prompt
+    assert "audit-v3.4" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.2`" in prompt
     assert "`benchmark-followup-v3.2` when follow-up is present" in prompt

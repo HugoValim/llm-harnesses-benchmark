@@ -1,8 +1,14 @@
-Prompt-Version: audit-v3.3
+Prompt-Version: audit-v3.4
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
-Tool-backed code-quality evidence: {static_analysis_path}. Read this file BEFORE scoring D10. It is a JSON document written by the harness from a controlled `ruff` / `mypy` / `bandit` / `radon cc` / `radon mi` run against the generated project, using pinned tool versions in `_quality_probe/requirements.txt`. If the file is missing or its top-level `status` equals `"error"`, treat D10 as **unverified**, note that in section E, and award **8/10** by default — do not punish a probe failure beyond the soft triggers visible in code.
+Tool-backed code-quality evidence: {static_analysis_path}. Read this file BEFORE scoring D10. It is a JSON document written by the harness from a controlled `ruff` / `mypy` / `bandit` / `radon cc` / `radon mi` run against **application source only** (venv/vendor trees excluded), using pinned tool versions in `_quality_probe/requirements.txt`. Use **application-scoped** counts (`bandit.high`, not `bandit.dependency_noise`). If the file is missing or its top-level `status` equals `"error"`, treat D10 as **unverified**, note that in section E, and award **5/10** by default.
+
+## Harness-precomputed D10 (mandatory)
+
+{d10_precomputed_block}
+
+Copy the precomputed D10 score above into section B row 10. Do **not** score D10 higher than the harness value. You may score lower only with additional file:line evidence from grepping `{project_dir}` that the probe missed (state what and why). Never claim `bandit.high=0` when `static-analysis.json:bandit.high` (application scope) is greater than zero.
 
 ## Source of truth for LLM / Channels / Django API claims
 
@@ -73,11 +79,11 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D10 | Code quality (tool-backed) | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the rubric grades craftsmanship (lint / types / complexity / security findings) alongside file presence. v3.3 keeps the weights fixed and clarifies prompt-version, disconnect, and maintainability-index scoring.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the rubric grades craftsmanship (lint / types / complexity / security findings) alongside file presence. v3.4 tightens saturated dimensions (D2, D7), lowers the D10 unverified default, and requires harness-precomputed D10.
 
 ## Benchmark anchors (scoring calibration)
 
-`gpt_5_5` and `claude_opus_4_7` are benchmark reference anchors for this rubric. A near-perfect, fully spec-compliant submission from these models is expected to land in the **95-97 / 100** band — not 100 by default. Reserve 98-100 for submissions with literally zero rubric trip-ups across all nine dimensions. If you are about to score a non-leader run higher than the anchor band, double-check that the rubric triggers above were applied; auditor-induced score inflation against leaders is the most common calibration failure here.
+`gpt_5_5` and `claude_opus_4_7` are benchmark reference anchors for this rubric. A near-perfect, fully spec-compliant submission from these models is expected to land in the **95-97 / 100** band — not 100 by default. Reserve 98-100 for submissions with literally zero rubric trip-ups across all ten dimensions. If you are about to score a **non-leader** run **>92/100**, you MUST list zero critical failures in section F and cite evidence that every Universal blind spot row was checked. Auditor-induced score inflation against leaders is the most common calibration failure here.
 
 ## Audit dimensions — score each per its weight, total 100
 
@@ -103,7 +109,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -3.
    - No streaming (returns full response): -7.
    - No multi-turn (one-shot only): -3.
-   - Correct entry + real streaming + OLLAMA_HOST/OLLAMA_MODEL env wiring + tokens piped to WS: full marks.
+   - Consumer buffers chunks before first WebSocket send (collects async generator into list/string before first `send`, short of explicit CF#3): -2.
+   - Tests lack chunk-by-chunk streaming assertion anywhere in the suite (only final joined string): -2.
+   - Env vars use insecure Python-side defaults instead of required `os.environ[...]` / explicit startup validation: -2.
+   - Correct entry + real streaming + OLLAMA_HOST/OLLAMA_MODEL env wiring + tokens piped to WS: up to full marks after deductions.
 
 3. **Test quality** (0-15)
    - Tests don't exercise LLM path (constants/import smoke only): -10.
@@ -111,6 +120,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - Tests mock the hallucinated API: -5.
    - No consumer test (WebsocketCommunicator): -3.
    - No view/template test: -2.
+   - **Cap at 12/15** when CF#9 (false-green tests) is present in section F.
 
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
@@ -139,6 +149,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - Consumer wires LLM client inline with no service layer (U4): -3.
    - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
    - View doing template + LLM in one function: -1.
+   - No settings split (base vs prod/docker) when Docker path exists: -1.
+   - Consumer class body exceeds 30 non-blank lines (excluding docstrings): -1.
+   - Service layer lacks a typed/protocol interface or dedicated module boundary: -1.
+   - Floor at 0. A bare `llm_service.py` file alone does not earn full marks.
 
 8. **Secrets & config hygiene** (0-3)
    - Any `SECRET_KEY` / `DJANGO_SECRET_KEY` literal or insecure string fallback in source, Dockerfile, compose, or README: cap this dimension at 0 (treat as CF#1 in ledger).
@@ -152,12 +166,12 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - These are low-weight expected hardening checks; apply them consistently even when the main app works.
 
 10. **Code quality (tool-backed)** (0-10)
-    Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **8/10**; skip the rest of D10.
+    Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. **Start from the harness-precomputed D10 block above** — do not award a higher score. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **5/10**; skip the rest of D10.
     - `ruff.total_errors / (lines_of_code / 1000)` > 5 (i.e. >5 lint errors per kLOC): -2. Cite the top 3 offender file:line:code entries.
     - `mypy.total_errors` > 10: -2. Cite the top 3 offenders.
     - Any function in `radon_cc.top_offenders` with `complexity` >= 20 (grade D/E/F): -2. Cite file:function:complexity.
     - `radon_mi.modules_below_65` > 0 for production source modules after excluding `tests/`, `tests.py`, `test_*.py`, and `*_test.py`: -1. Cite the source file with the lowest MI. If only test files are below 65, no D10 deduction; mention it as a non-scoring note only if useful.
-    - `bandit.high` > 0: -2. Cite each high-severity finding. (Skip if the same finding already capped D8 at 0 via CF#1 — no double deduction across dimensions.)
+    - `bandit.high` > 0 (application scope — ignore `bandit.dependency_noise`): -2. Cite each high-severity finding. (Skip if the same finding already capped D8 at 0 via CF#1 — no double deduction across dimensions.)
     - `bandit.medium` > 2: -1. (Stacks with the line above only when distinct findings.)
     - Bare `except Exception:` / bare `except:` count > 2 across the project (grep `{project_dir}` for evidence; cite the file:line of the 3rd+ occurrence): -1.
     - Floor this dimension at 0.
@@ -181,11 +195,12 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
 | 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path. Count at most one CF#11 per generated project unless distinct consumer classes independently violate this. | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
 | 12 | The current benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
-| 13 | Catastrophic code quality from the static-analysis probe: `ruff.total_errors > 50` OR `mypy.total_errors > 50` OR `bandit.high > 0` OR any `radon_cc` function with `complexity >= 30` (grade F). The submission ships code that fails an objective tool gate by a wide margin. | D10 Code quality (tool-backed) | `static-analysis.json:<tool>` with the offending count and top 3 offenders |
+| 13 | Catastrophic code quality from the static-analysis probe: `ruff.total_errors > 50` OR `mypy.total_errors > 50` OR `bandit.high > 0` (application scope) OR any `radon_cc` function with `complexity >= 30` (grade F). The submission ships code that fails an objective tool gate by a wide margin. | D10 Code quality (tool-backed) | `static-analysis.json:<tool>` with the offending count and top 3 offenders |
 
 Operating rules:
 - D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
 - Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
+- **Tier cap:** when section F lists **≥3 distinct CF types** (by CF number), section D tier cannot exceed **B (61-80)** even if the numeric total would land in A.
 - **Sum check (mandatory):** Before finalising section B, section B must contain exactly **ten** rows, D1-D10 in order, and the denominators in the Score/Max column must sum to exactly 100 (D1=15, D2=20, D3=15, D4=10, D5=10, D6=10, D7=5, D8=3, D9=2, D10=10). If not, correct the table before writing the report. Reports with a non-100 denominator sum or fewer than 10 dimension rows are automatically excluded from cross-run comparison.
 
 ## Required output sections
@@ -194,7 +209,7 @@ Target: under 800 words total. No speculation — code excerpts and package-sour
 
 A. **Quick summary line** (1 sentence: did the submission meet the spec?).
 
-B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. The D10 justification must cite the `static-analysis.json` field used (e.g. `static-analysis.json:ruff.total_errors=42`).
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. The D10 justification must cite the `static-analysis.json` field used (e.g. `static-analysis.json:ruff.total_errors=42`) and match the harness-precomputed D10 unless you scored lower with extra evidence.
 
 C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
 
@@ -218,7 +233,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.3`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.4`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

@@ -27,7 +27,6 @@ import argparse
 import json
 import shutil
 import sys
-import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -39,8 +38,14 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.audit_report import (  # noqa: E402
     build_comparison_table,
     build_statistical_summary,
+    load_rubric_result,
 )
 from benchmark.harnesses import get_harness  # noqa: E402
+from benchmark.audit_coverage import (  # noqa: E402
+    audit_dispatch_needed,
+    find_audit_coverage_gaps,
+    format_coverage_gaps,
+)
 from benchmark.audit_meta import discover_auditor_subdirs  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
@@ -101,6 +106,12 @@ DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
 from benchmark.quality_probe import probe as run_quality_probe  # noqa: E402
+from benchmark.audit_d10 import (  # noqa: E402
+    compute_d10_from_probe,
+    format_d10_precomputed_block,
+    load_static_analysis,
+    reconcile_report_d10,
+)
 from benchmark.pricing import (  # noqa: E402
     build_generation_metrics,
     format_generation_metrics_block,
@@ -110,6 +121,7 @@ from benchmark.pricing import (  # noqa: E402
 from benchmark.result_layout import (  # noqa: E402
     audit_generation_metrics_json,
     audit_report_md,
+    audit_result_json,
     audit_static_analysis_json,
     audit_stream_ndjson,
     audit_target_dir,
@@ -122,6 +134,10 @@ def discover_project_dirs(
     config_targets_by_slug: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Scan ``benchmark_results_dir`` for every ``<name>/project`` subdir.
+
+    This is the authoritative audit target set: ``run_audit.py`` audits every
+    discovered row by default and exits non-zero when any lack a scored
+    ``report.md`` (see ``--no-enforce-coverage``).
 
     Returns one target dict per discovered project, sorted by dir name:
 
@@ -261,7 +277,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Skip the ruff/mypy/bandit/radon static-analysis probe that "
             "produces static-analysis.json for the D10 rubric dimension. "
-            "When skipped, D10 is graded as 'unverified' (8/10 default)."
+            "When skipped, D10 is graded as 'unverified' (5/10 default)."
         ),
     )
     parser.add_argument(
@@ -270,6 +286,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Rebuild each auditor's comparison.md from existing reports "
             "without running audits."
+        ),
+    )
+    parser.add_argument(
+        "--no-enforce-coverage",
+        action="store_true",
+        help=(
+            "Do not require a scored report.md for every results/ target after "
+            "dispatch. Default: exit 1 when any benchmark project lacks a "
+            "complete audit for the selected auditor(s)."
         ),
     )
     parser.add_argument(
@@ -448,12 +473,16 @@ def build_audit_prompt(
     generation_metrics_path: Path | None = None,
     generation_metrics_block: str | None = None,
     pricing_doc_path: Path | None = None,
+    d10_precomputed_block: str | None = None,
 ) -> str:
     """Interpolate placeholders into the audit prompt template.
 
     ``{static_analysis_path}`` resolves to the path the probe wrote (or the
     expected path when the probe was skipped) — the auditor opens it as
-    evidence for D10 per the audit-v3.3 rubric.
+    evidence for D10 per the audit-v3.4 rubric.
+
+    ``{d10_precomputed_block}`` carries harness-computed D10 the auditor must
+    not exceed.
 
     ``{generation_metrics_block}`` carries precomputed cost/tokens for section H.
     """
@@ -464,6 +493,13 @@ def build_audit_prompt(
     if static_analysis_path is not None:
         prompt = prompt.replace(
             "{static_analysis_path}", str(static_analysis_path.resolve())
+        )
+    if d10_precomputed_block is not None:
+        prompt = prompt.replace("{d10_precomputed_block}", d10_precomputed_block)
+    else:
+        prompt = prompt.replace(
+            "{d10_precomputed_block}",
+            "n/a — probe skipped; award D10 5/10 unverified.",
         )
     if benchmark_result_path is not None:
         prompt = prompt.replace(
@@ -550,7 +586,7 @@ def _maybe_run_quality_probe(
 
     Cached: if ``out_path`` already exists and ``force`` is False, reuse it.
     ``skip=True`` short-circuits — the audit prompt will see a missing file
-    and grade D10 as unverified (8/10 default).
+    and grade D10 as unverified (5/10 default).
     """
     if skip:
         print_line(f"[{job_slug}] quality probe skipped (--skip-quality-probe)")
@@ -598,6 +634,33 @@ def _maybe_write_generation_metrics(
         f"cost={metrics.get('estimated_cost_usd')} -> {metrics_path}"
     )
     return metrics
+
+
+def _print_calibration_warnings(auditor_dir: Path) -> None:
+    """Warn when parsed cohort scores suggest rubric saturation."""
+    reports = [
+        load_rubric_result(p)
+        for p in sorted(auditor_dir.glob("*/report.md"))
+        if p.is_file()
+    ]
+    totals = [r.total for r in reports if r.total is not None]
+    if not totals:
+        return
+    totals.sort()
+    median = totals[len(totals) // 2]
+    if median > 85:
+        print_line(
+            f"WARN calibration: median total={median} > 85 for {auditor_dir.name} "
+            "(rubric may be too lenient — see meta-analysis Check 1)"
+        )
+    d2_scores = [r.dim_score(2) for r in reports if r.dim_score(2) is not None]
+    if d2_scores:
+        d2_full = sum(1 for s in d2_scores if s >= 20)
+        if d2_full / len(d2_scores) >= 0.8:
+            print_line(
+                f"WARN calibration: D2 saturated ({d2_full}/{len(d2_scores)} at 20/20) "
+                f"for {auditor_dir.name}"
+            )
 
 
 def main() -> int:
@@ -660,11 +723,18 @@ def main() -> int:
             print(err, file=sys.stderr)
             return 1
 
-    jobs: list[tuple[dict, dict]] = []
-    for auditor in auditors:
-        for target in targets:
-            jobs.append((auditor, target))
+    config_targets_by_slug = {
+        v["slug"]: v for v in _target_metadata_rows(benchmark_config)
+    }
+    all_benchmark_targets = discover_project_dirs(
+        benchmark_results_dir, config_targets_by_slug
+    )
+    if wanted_targets is None:
+        targets = all_benchmark_targets
 
+    jobs: list[tuple[dict, dict]] = [
+        (auditor, target) for auditor in auditors for target in targets
+    ]
     jobs_count = args.jobs if args.jobs > 0 else len(jobs)
     jobs_count = max(1, min(jobs_count, len(jobs))) if jobs else 1
 
@@ -672,6 +742,11 @@ def main() -> int:
         f"Audit benchmark: {len(auditors)} auditors × {len(targets)} targets = "
         f"{len(jobs)} runs, jobs={jobs_count}"
     )
+    print_line(
+        f"Benchmark results: {len(all_benchmark_targets)} project(s) under "
+        f"{benchmark_results_dir}"
+    )
+    enforce_coverage = not args.no_enforce_coverage
 
     if not args.report_only:
         timeout_seconds = args.timeout_minutes * 60
@@ -680,19 +755,26 @@ def main() -> int:
         runner_command_prefix = runner.get("command_prefix")
         isolate_home = bool(runner.get("isolate_home", False))
 
-        limit_hit = threading.Event()
-
         def _run(auditor: dict, target: dict) -> tuple[str, str, str | None]:
             auditor_slug = auditor["slug"]
             target_slug = target["slug"]
             job_slug = f"{auditor_slug}__auditing__{target_slug}"
 
-            if limit_hit.is_set():
-                print_line(f"[{job_slug}] skipped (usage limit reached)")
-                return job_slug, "skipped", None
-
             result_dir = audit_target_dir(results_dir, auditor_slug, target_slug)
             result_dir.mkdir(parents=True, exist_ok=True)
+
+            report_path = audit_report_md(results_dir, auditor_slug, target_slug)
+            audit_result_path = audit_result_json(
+                results_dir, auditor_slug, target_slug
+            )
+            dispatch_force = audit_dispatch_needed(
+                report_path=report_path,
+                audit_result_path=audit_result_path,
+                force=args.force,
+            )
+            if not dispatch_force:
+                print_line(f"[{job_slug}] complete report cached; skipping dispatch")
+                return job_slug, "cached", None
 
             project_dir = target["project_dir"]
             model_slug_for_prompt = target.get("model_slug", target_slug)
@@ -706,6 +788,14 @@ def main() -> int:
                 force=args.force,
                 job_slug=job_slug,
             )
+
+            static_payload = (
+                None
+                if args.skip_quality_probe
+                else load_static_analysis(static_analysis_path)
+            )
+            d10_result = compute_d10_from_probe(static_payload, project_dir=project_dir)
+            d10_block = format_d10_precomputed_block(d10_result)
 
             gen_metrics = _maybe_write_generation_metrics(
                 target=target,
@@ -730,6 +820,7 @@ def main() -> int:
                 generation_metrics_path=generation_metrics_path,
                 generation_metrics_block=format_generation_metrics_block(gen_metrics),
                 pricing_doc_path=pricing_path(),
+                d10_precomputed_block=d10_block,
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)
@@ -747,7 +838,7 @@ def main() -> int:
                     results_dir=results_dir / auditor_slug,
                     timeout_seconds=timeout_seconds,
                     no_progress_timeout_seconds=no_progress_timeout_seconds,
-                    force=args.force,
+                    force=True,
                     harness=runner_type,  # preserve original (incl. "ollama") for callee
                     explicit_result_dir=result_dir,
                 )
@@ -758,13 +849,11 @@ def main() -> int:
                 run_result = harness.run_variant(**run_kwargs)
 
                 if run_result.get("status") == USAGE_LIMIT_REACHED:
-                    limit_hit.set()
                     return job_slug, USAGE_LIMIT_REACHED, None
 
                 # The LLM should have written report.md via the Write tool. If
                 # not, fall back to extracting the last assistant text from
                 # stream.ndjson so the comparison table still has something.
-                report_path = audit_report_md(results_dir, auditor_slug, target_slug)
                 if not report_path.exists():
                     stream_path = audit_stream_ndjson(
                         results_dir, auditor_slug, target_slug
@@ -780,6 +869,23 @@ def main() -> int:
                     for issue in issues:
                         print_line(f"[{job_slug}] WARN section H: {issue}")
 
+                    reconciliation_path = result_dir / "d10-reconciliation.json"
+                    recon = reconcile_report_d10(
+                        report_path,
+                        d10_result,
+                        reconciliation_path=reconciliation_path,
+                    )
+                    if recon.get("patched"):
+                        print_line(
+                            f"[{job_slug}] D10 reconciled: auditor={recon.get('auditor_d10')} "
+                            f"-> harness={recon.get('computed_d10')} "
+                            f"(delta={recon.get('delta')})"
+                        )
+                    elif recon.get("action") == "match":
+                        print_line(
+                            f"[{job_slug}] D10 match harness={recon.get('computed_d10')}"
+                        )
+
                 return job_slug, "ok", None
             except Exception:
                 return job_slug, "error", traceback.format_exc()
@@ -791,9 +897,6 @@ def main() -> int:
                     print_line(f"[{job_slug}] ERROR:\n{err}")
                 else:
                     print_line(f"[{job_slug}] {status}")
-                if status == USAGE_LIMIT_REACHED:
-                    print_line("Usage limit reached — stopping audit early.")
-                    break
         else:
             with ThreadPoolExecutor(max_workers=jobs_count) as pool:
                 futures = {
@@ -807,8 +910,17 @@ def main() -> int:
                         print_line(f"[{job_slug}] ERROR:\n{err}")
                     else:
                         print_line(f"[{job_slug}] {status}")
-                    if status == USAGE_LIMIT_REACHED:
-                        print_line("Usage limit reached — stopping audit early.")
+
+    if enforce_coverage and not args.report_only:
+        gaps = find_audit_coverage_gaps(
+            benchmark_results_dir=benchmark_results_dir,
+            audit_results_dir=results_dir,
+            auditor_slugs=[a["slug"] for a in auditors],
+            required_targets=all_benchmark_targets,
+        )
+        if gaps:
+            print(format_coverage_gaps(gaps), file=sys.stderr)
+            return 1
 
     # Per-auditor comparison + regex rollup (including --report-only). Only
     # auditor trees that contain at least one report.md are touched.
@@ -829,6 +941,7 @@ def main() -> int:
     for auditor_dir in rollup_dirs:
         comparison_path = _write_auditor_comparison(auditor_dir)
         print_line(f"Comparison table + statistical summary written: {comparison_path}")
+        _print_calibration_warnings(auditor_dir)
 
     print_line(
         "Next: run scripts/run_meta_analysis.py to dispatch the cross-auditor "
