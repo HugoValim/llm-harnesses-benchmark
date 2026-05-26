@@ -8,11 +8,13 @@ from pathlib import Path
 
 from benchmark.audit_report import audit_report_is_complete
 from benchmark.result_layout import audit_report_md, audit_result_json
+from benchmark.audit_finalize import INCOMPLETE_REPORT_STATUS
 from benchmark.util import USAGE_LIMIT_REACHED
 
 _RETRYABLE_AUDIT_STATUSES = frozenset(
     {
         USAGE_LIMIT_REACHED,
+        INCOMPLETE_REPORT_STATUS,
         "timeout",
         "failed",
         "error",

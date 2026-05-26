@@ -46,6 +46,10 @@ from benchmark.audit_coverage import (  # noqa: E402
     find_audit_coverage_gaps,
     format_coverage_gaps,
 )
+from benchmark.audit_finalize import (  # noqa: E402
+    ensure_audit_report,
+    mark_audit_result_incomplete,
+)
 from benchmark.audit_meta import discover_auditor_subdirs  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
@@ -524,42 +528,6 @@ def build_audit_prompt(
     return prompt
 
 
-def _extract_final_report(stream_path: Path, report_path: Path) -> None:
-    """Best-effort: extract assistant text from NDJSON as report.
-
-    Supports Claude Code ``type == "assistant"`` events and Codex
-    ``type == "item.completed"`` with ``item.type == "agent_message"``.
-    """
-    chunks: list[str] = []
-    try:
-        with stream_path.open() as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if event.get("type") == "assistant":
-                    msg = event.get("message", {})
-                    for part in msg.get("content", []):
-                        if part.get("type") == "text":
-                            text = part.get("text", "")
-                            if text.strip():
-                                chunks.append(text)
-                elif event.get("type") == "item.completed":
-                    item = event.get("item", {})
-                    if item.get("type") == "agent_message":
-                        text = item.get("text", "")
-                        if isinstance(text, str) and text.strip():
-                            chunks.append(text)
-        if chunks:
-            report_path.write_text("\n\n".join(chunks))
-    except OSError:
-        pass
-
-
 _AUDIT_PATH_FIELDS = (
     "benchmark_config",
     "benchmark_results_dir",
@@ -851,15 +819,24 @@ def main() -> int:
                 if run_result.get("status") == USAGE_LIMIT_REACHED:
                     return job_slug, USAGE_LIMIT_REACHED, None
 
-                # The LLM should have written report.md via the Write tool. If
-                # not, fall back to extracting the last assistant text from
-                # stream.ndjson so the comparison table still has something.
-                if not report_path.exists():
-                    stream_path = audit_stream_ndjson(
-                        results_dir, auditor_slug, target_slug
+                stream_path = audit_stream_ndjson(
+                    results_dir, auditor_slug, target_slug
+                )
+                report_ok, report_reason = ensure_audit_report(
+                    report_path=report_path,
+                    stream_path=stream_path if stream_path.is_file() else None,
+                )
+                if not report_ok:
+                    mark_audit_result_incomplete(audit_result_path)
+                    harness_status = run_result.get("status", "unknown")
+                    return (
+                        job_slug,
+                        "incomplete_report",
+                        (
+                            f"Auditor run finished (harness status={harness_status}) "
+                            f"but {report_reason}. Re-run with --force."
+                        ),
                     )
-                    if stream_path.exists():
-                        _extract_final_report(stream_path, report_path)
 
                 if report_path.exists():
                     issues = validate_section_h_cost(
@@ -890,13 +867,25 @@ def main() -> int:
             except Exception:
                 return job_slug, "error", traceback.format_exc()
 
+        dispatch_failures = 0
+
+        def _log_job_result(job_slug: str, status: str, err: str | None) -> None:
+            nonlocal dispatch_failures
+            if status in ("ok", "cached"):
+                print_line(f"[{job_slug}] {status}")
+                return
+            dispatch_failures += 1
+            if status == "error" and err:
+                print_line(f"[{job_slug}] ERROR:\n{err}")
+            elif err:
+                print(f"[{job_slug}] {status}: {err}", file=sys.stderr, flush=True)
+            else:
+                print(f"[{job_slug}] {status}", file=sys.stderr, flush=True)
+
         if jobs_count == 1 or len(jobs) <= 1:
             for auditor, target in jobs:
                 job_slug, status, err = _run(auditor, target)
-                if err:
-                    print_line(f"[{job_slug}] ERROR:\n{err}")
-                else:
-                    print_line(f"[{job_slug}] {status}")
+                _log_job_result(job_slug, status, err)
         else:
             with ThreadPoolExecutor(max_workers=jobs_count) as pool:
                 futures = {
@@ -906,10 +895,10 @@ def main() -> int:
                 for fut in as_completed(futures):
                     job_slug = futures[fut]
                     _, status, err = fut.result()
-                    if err:
-                        print_line(f"[{job_slug}] ERROR:\n{err}")
-                    else:
-                        print_line(f"[{job_slug}] {status}")
+                    _log_job_result(job_slug, status, err)
+
+        if dispatch_failures:
+            return 1
 
     if enforce_coverage and not args.report_only:
         gaps = find_audit_coverage_gaps(

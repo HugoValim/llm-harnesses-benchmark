@@ -205,6 +205,100 @@ def test_cli_preserves_audit_output_path(
     ).exists()
 
 
+def test_run_audit_fails_when_harness_completes_without_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    models_path = config_dir / "models.json"
+    _write_json(models_path, {"models": [_audit_row()]})
+    _write_json(
+        config_dir / "harnesses.json",
+        {
+            "claude": {
+                "command": "claude",
+                "isolate_home": False,
+                "models": {"sonnet_auditor": {"id": "claude-sonnet-4-6"}},
+            }
+        },
+    )
+    prompt_path = tmp_path / "audit_prompt.txt"
+    prompt_path.write_text("{project_dir} {model_slug} {output_path}")
+    benchmark_results_dir = tmp_path / "results"
+    (benchmark_results_dir / "opencode-target_model" / "project").mkdir(parents=True)
+    audit_reports_dir = tmp_path / "audit-reports"
+    result_dir = audit_reports_dir / "sonnet_auditor" / "opencode-target_model"
+
+    def fake_run_variant(**kwargs: object) -> dict[str, str]:
+        explicit = kwargs["explicit_result_dir"]
+        assert isinstance(explicit, Path)
+        explicit.mkdir(parents=True, exist_ok=True)
+        explicit.joinpath("result.json").write_text(
+            json.dumps({"status": "completed", "exit_code": 0})
+        )
+        explicit.joinpath("stream.ndjson").write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {"type": "thinking", "thinking": "no rubric written"},
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+        return {"status": "completed"}
+
+    monkeypatch.setattr(
+        run_audit, "_verify_auditor_binaries", lambda auditors: (True, "")
+    )
+    from benchmark.harnesses import HARNESS_REGISTRY, Harness
+
+    monkeypatch.setitem(
+        HARNESS_REGISTRY,
+        "claude",
+        Harness(
+            name="claude",
+            run_variant=fake_run_variant,
+            run_model=None,
+            cli_binary="claude",
+            accepts_isolate_home=True,
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_audit.py",
+            "--models-config",
+            str(models_path),
+            "--harness",
+            "claude",
+            "--model",
+            "sonnet_auditor",
+            "--target",
+            "opencode-target_model",
+            "--prompt",
+            str(prompt_path),
+            "--results-dir",
+            str(audit_reports_dir),
+            "--benchmark-results-dir",
+            str(benchmark_results_dir),
+            "--no-enforce-coverage",
+        ],
+    )
+
+    assert run_audit.main() == 1
+    report = result_dir / "report.md"
+    assert report.exists()
+    assert "no rubric written" in report.read_text()
+    payload = json.loads((result_dir / "result.json").read_text())
+    assert payload["status"] == "incomplete_report"
+    assert payload["harness_status"] == "completed"
+
+
 def test_report_only_without_model_skips_empty_auditor_dirs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
