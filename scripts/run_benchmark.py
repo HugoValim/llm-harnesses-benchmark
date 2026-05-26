@@ -12,7 +12,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -105,6 +105,88 @@ def _run_with_result_validation(
             return last_payload
 
     return last_payload
+
+
+def _benchmark_job_workers(total_models: int, jobs: int) -> int:
+    """Cap thread-pool size for a model batch (``jobs=0`` => one worker per model)."""
+    if total_models <= 0:
+        return 1
+    if jobs <= 0:
+        return total_models
+    return max(1, min(jobs, total_models))
+
+
+def _needs_local_gpu_lock(models: list[dict[str, Any]]) -> bool:
+    return any(m.get("provider") == "ollama" for m in models)
+
+
+class _DispatchModelFn(Protocol):
+    def __call__(
+        self, model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
+    ) -> dict[str, Any] | None: ...
+
+
+def _run_model_job_batch(
+    *,
+    job_items: list[tuple[int, dict[str, Any]]],
+    workers: int,
+    harness: str,
+    abort_flag: threading.Event,
+    local_gpu_lock: threading.Lock | None,
+    dispatch_model: _DispatchModelFn,
+) -> None:
+    """Run all benchmark models with up to ``workers`` concurrent agent sessions.
+
+  ``provider: ollama`` rows share ``local_gpu_lock`` so only one local model
+  preflight/load runs at a time; other providers can run in parallel.
+    """
+    parallel = workers > 1 and len(job_items) > 1
+    skip_stale_kill = parallel
+
+    def _run_item(
+        item: tuple[int, dict[str, Any]],
+    ) -> tuple[str, dict[str, Any] | None, str | None]:
+        index, model = item
+        slug = str(model["slug"])
+        if abort_flag.is_set():
+            print_line(f"[{slug}] skipped — usage limit active")
+            return slug, None, None
+        gpu_lock = local_gpu_lock if model.get("provider") == "ollama" else None
+        acquired = False
+        try:
+            if gpu_lock is not None:
+                gpu_lock.acquire()
+                acquired = True
+            payload = dispatch_model(model, index, skip_stale_kill=skip_stale_kill)
+            if payload and _phase_hit_usage_limit(payload):
+                abort_flag.set()
+            return slug, payload, None
+        except Exception:
+            return slug, None, traceback.format_exc()
+        finally:
+            if acquired and gpu_lock is not None:
+                gpu_lock.release()
+
+    if parallel:
+        if harness == "opencode":
+            _kill_stale_opencode_processes()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_run_item, item): item[1]["slug"] for item in job_items
+            }
+            for fut in as_completed(futures):
+                slug, payload, err = fut.result()
+                if err:
+                    print_line(f"[{slug}] ERROR:\n{err}")
+                elif payload is not None:
+                    print_line(f"[{slug}] worker done")
+    else:
+        for item in job_items:
+            slug, payload, err = _run_item(item)
+            if err:
+                print_line(f"[{slug}] ERROR:\n{err}")
+            if payload and _phase_hit_usage_limit(payload):
+                break
 
 
 def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
@@ -338,9 +420,9 @@ def parse_args() -> argparse.Namespace:
         "-j",
         type=int,
         default=2,
-        help="Concurrency across cloud model runs (default: 2). Pass 1 to force sequential. "
-        "Pass 0 for one worker per selected model. Local-served (provider=ollama) "
-        "models always run sequentially regardless of this flag.",
+        help="Max concurrent model runs (default: 2). Pass 1 for sequential. Pass 0 for "
+        "one worker per selected model. Local GPU models (provider=ollama) share one "
+        "lock so only one loads at a time; other models can run in parallel.",
     )
     parser.add_argument(
         "--max-validation-retries",
@@ -460,21 +542,15 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         abort_flag = threading.Event()
 
         total_models = len(selected_models)
-        jobs = args.jobs if args.jobs > 0 else total_models
-        jobs = max(1, min(jobs, total_models)) if total_models else 1
-        local_jobs = [
-            (i, m)
-            for i, m in enumerate(selected_models, start=1)
-            if m["provider"] == "ollama"
-        ]
-        cloud_jobs = [
-            (i, m)
-            for i, m in enumerate(selected_models, start=1)
-            if m["provider"] != "ollama"
-        ]
+        workers = _benchmark_job_workers(total_models, args.jobs)
+        job_items = list(enumerate(selected_models, start=1))
+        local_count = sum(1 for m in selected_models if m.get("provider") == "ollama")
+        local_gpu_lock = (
+            threading.Lock() if _needs_local_gpu_lock(selected_models) else None
+        )
         print_line(
             f"Benchmark run starting ({harness}): models={total_models} "
-            f"jobs={jobs} (cloud={len(cloud_jobs)} local={len(local_jobs)}) "
+            f"workers={workers} local_gpu={local_count} "
             f"timeout={bench.timeout_seconds}s "
             f"no_progress_timeout={bench.no_progress_timeout_seconds}s force={bench.force}"
         )
@@ -521,48 +597,15 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
                 run_once=_run_once,
             )
 
-        for index, model in local_jobs:
-            result_payload = _dispatch_model(model, index)
-            if result_payload and _phase_hit_usage_limit(result_payload):
-                abort_flag.set()
-                break
-
-        cloud_workers = max(1, min(jobs, len(cloud_jobs))) if cloud_jobs else 1
-
-        def _run_cloud_item(item: tuple[int, dict]) -> tuple[str, dict | None, str | None]:
-            index, model = item
-            if abort_flag.is_set():
-                print_line(f"[{model['slug']}] skipped — usage limit active")
-                return model["slug"], None, None
-            try:
-                payload = _dispatch_model(model, index, skip_stale_kill=True)
-                if payload and _phase_hit_usage_limit(payload):
-                    abort_flag.set()
-                return model["slug"], payload, None
-            except Exception:
-                return model["slug"], None, traceback.format_exc()
-
         if not abort_flag.is_set():
-            if cloud_workers == 1 or len(cloud_jobs) <= 1:
-                for index, model in cloud_jobs:
-                    result_payload = _dispatch_model(model, index)
-                    if result_payload and _phase_hit_usage_limit(result_payload):
-                        abort_flag.set()
-                        break
-            else:
-                if harness == "opencode":
-                    _kill_stale_opencode_processes()
-                with ThreadPoolExecutor(max_workers=cloud_workers) as pool:
-                    futures = {
-                        pool.submit(_run_cloud_item, item): item[1]["slug"]
-                        for item in cloud_jobs
-                    }
-                    for fut in as_completed(futures):
-                        slug, payload, err = fut.result()
-                        if err:
-                            print_line(f"[{slug}] ERROR:\n{err}")
-                        elif payload is not None:
-                            print_line(f"[{slug}] worker done")
+            _run_model_job_batch(
+                job_items=job_items,
+                workers=workers,
+                harness=harness,
+                abort_flag=abort_flag,
+                local_gpu_lock=local_gpu_lock,
+                dispatch_model=_dispatch_model,
+            )
 
         _cleanup_backends(backend, args.local_api_base)
 

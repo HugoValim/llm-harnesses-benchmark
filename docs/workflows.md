@@ -21,7 +21,7 @@ Useful flags:
 - `--report <path>`: change the aggregate markdown report path.
 - `--force`: rerun even when a terminal `result.json` exists.
 - `--report-only`: rebuild the report from existing `result.json` files.
-- `--jobs N`: cap concurrent cloud model runs (default: 2; use `--jobs 1` for sequential).
+- `--jobs N`: max concurrent model runs (default: 2; use `--jobs 1` for sequential).
 - `--max-validation-retries N`: after each model run, validate `result.json` and the
   generated `project/` scaffold; on failure wipe `results/<harness>-<slug>/` and
   rerun from scratch (default: 3 retries, 4 attempts total). Use
@@ -41,8 +41,8 @@ python3 scripts/validate_results.py --remove-on-fail
 The same rules run automatically at the end of each `run_benchmark.py` model
 invocation unless `--no-result-validation` is set.
 
-Local-served `provider: "ollama"` rows run sequentially even when `--jobs` is
-greater than one.
+Local GPU models (`provider: "ollama"`) share one lock so only one loads at a
+time; other models can still run in parallel up to `--jobs`.
 
 ## Full Pipeline
 
