@@ -83,6 +83,20 @@ class TestWaitPolicy(unittest.TestCase):
         sleep_mock.assert_called_once()
 
     @patch("benchmark.rate_limit.time.sleep")
+    def test_long_reset_waits_at_poll_interval(self, sleep_mock) -> None:
+        policy = RateLimitWaitPolicy(cap_seconds=20_000, poll_interval_seconds=1800)
+        should_retry, slept = wait_for_rate_limit_reset(
+            log_tag="test",
+            policy=policy,
+            wait_seconds=14_913,
+            attempt=1,
+        )
+        self.assertTrue(should_retry)
+        self.assertGreaterEqual(slept, 1800)
+        self.assertLessEqual(slept, 1830)
+        sleep_mock.assert_called_once()
+
+    @patch("benchmark.rate_limit.time.sleep")
     def test_zero_cap_does_not_wait(self, sleep_mock) -> None:
         policy = RateLimitWaitPolicy(cap_seconds=0)
         should_retry, slept = wait_for_rate_limit_reset(

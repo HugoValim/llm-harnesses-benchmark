@@ -18,6 +18,7 @@ from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit, print_line
 DEFAULT_RATE_LIMIT_WAIT_CAP_HOURS = 6
 DEFAULT_RATE_LIMIT_BACKOFF_INITIAL_SECONDS = 60
 DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS = 900
+DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS = 1800
 _RATE_LIMIT_JITTER_SECONDS = 30
 
 _RESETS_AT_KEYS = ("resetsAt", "resets_at", "reset_at")
@@ -40,6 +41,7 @@ class RateLimitWaitPolicy:
     cap_seconds: int = DEFAULT_RATE_LIMIT_WAIT_CAP_HOURS * 3600
     backoff_initial_seconds: int = DEFAULT_RATE_LIMIT_BACKOFF_INITIAL_SECONDS
     backoff_max_seconds: int = DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS
+    poll_interval_seconds: int = DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS
 
 
 def add_rate_limit_cli_args(parser: argparse.ArgumentParser) -> None:
@@ -65,6 +67,15 @@ def add_rate_limit_cli_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS,
         help="Maximum backoff interval when reset time is unknown.",
     )
+    parser.add_argument(
+        "--rate-limit-poll-interval-seconds",
+        type=int,
+        default=DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS,
+        help=(
+            "Max sleep before retrying after a rate limit (checks whether the "
+            f"limit recharged; default: {DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS}s / 30min)."
+        ),
+    )
 
 
 def rate_limit_policy_from_args(args: argparse.Namespace) -> RateLimitWaitPolicy:
@@ -78,6 +89,9 @@ def rate_limit_policy_from_args(args: argparse.Namespace) -> RateLimitWaitPolicy
     maximum = getattr(
         args, "rate_limit_backoff_max_seconds", DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS
     )
+    poll_interval = getattr(
+        args, "rate_limit_poll_interval_seconds", DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS
+    )
     if initial <= 0:
         raise ValueError(f"rate_limit_backoff_initial_seconds must be > 0, got {initial}")
     if maximum < initial:
@@ -85,10 +99,13 @@ def rate_limit_policy_from_args(args: argparse.Namespace) -> RateLimitWaitPolicy
             f"rate_limit_backoff_max_seconds ({maximum}) must be >= "
             f"rate_limit_backoff_initial_seconds ({initial})"
         )
+    if poll_interval <= 0:
+        raise ValueError(f"rate_limit_poll_interval_seconds must be > 0, got {poll_interval}")
     return RateLimitWaitPolicy(
         cap_seconds=cap_hours * 3600,
         backoff_initial_seconds=initial,
         backoff_max_seconds=maximum,
+        poll_interval_seconds=poll_interval,
     )
 
 
@@ -292,12 +309,18 @@ def wait_for_rate_limit_reset(
     if sleep_for <= 0:
         return True, 0
 
-    print_line(
-        f"[{log_tag}] rate limit reached — waiting {sleep_for}s ({reason}); "
-        f"retry ETA ~{_format_reset_time(sleep_for)}; cap={policy.cap_seconds}s"
+    poll_cap = min(policy.poll_interval_seconds, policy.cap_seconds)
+    sleep_chunk = min(sleep_for, poll_cap)
+    provider_reset_hint = (
+        f"provider reset in ~{wait_seconds}s" if wait_seconds is not None else reason
     )
-    time.sleep(sleep_for)
-    return True, sleep_for
+    print_line(
+        f"[{log_tag}] rate limit reached — sleeping {sleep_chunk}s then retry "
+        f"({provider_reset_hint}); poll every {policy.poll_interval_seconds}s; "
+        f"retry ETA ~{_format_reset_time(sleep_chunk)}; cap={policy.cap_seconds}s"
+    )
+    time.sleep(sleep_chunk)
+    return True, sleep_chunk
 
 
 def run_with_rate_limit_retry(
@@ -332,6 +355,7 @@ def run_with_rate_limit_retry(
             cap_seconds=remaining_cap,
             backoff_initial_seconds=min(policy.backoff_initial_seconds, remaining_cap),
             backoff_max_seconds=min(policy.backoff_max_seconds, remaining_cap),
+            poll_interval_seconds=min(policy.poll_interval_seconds, remaining_cap),
         )
         should_retry, slept = wait_for_rate_limit_reset(
             log_tag=log_tag,

@@ -452,6 +452,8 @@ def parse_args() -> argparse.Namespace:
             "--rate-limit-backoff-max-seconds must be >= "
             "--rate-limit-backoff-initial-seconds"
         )
+    if args.rate_limit_poll_interval_seconds <= 0:
+        parser.error("--rate-limit-poll-interval-seconds must be > 0")
     return args
 
 
