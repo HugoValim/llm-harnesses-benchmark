@@ -35,6 +35,8 @@ Run a specific Claude Code model:
 python scripts/run_benchmark.py --harness claude --model claude_sonnet_4_6
 ```
 
+After a benchmark batch, the harness prunes Docker build cache and unused images by default (`docker builder prune -a` then `docker system prune -a`). Use `--no-docker-prune` to skip.
+
 Run the per-target audits over the shared Ollama Cloud results set (skips meta-analysis):
 ```bash
 ./scripts/run_ollama_cloud_audit.sh

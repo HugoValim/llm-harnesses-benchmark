@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.backends import LocalModelBackend, OllamaBackend, create_backend  # noqa: E402
+from benchmark.docker_cleanup import prune_docker_after_benchmark  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
     load_ollama_warmup_payload,
@@ -248,6 +249,28 @@ def _cleanup_backends(
                 ollama.unload_all()
 
 
+def _cleanup_docker_after_benchmark(args: argparse.Namespace) -> None:
+    """Reclaim Docker build cache and unused images after a benchmark batch."""
+    if args.report_only or args.no_docker_prune:
+        return
+
+    result = prune_docker_after_benchmark()
+    if result.get("skipped"):
+        print_line(f"Docker cleanup skipped: {result.get('reason', 'unknown')}")
+        return
+
+    for step in result.get("steps") or []:
+        label = step.get("label", "docker")
+        if step.get("ok"):
+            reclaimed = step.get("reclaimed")
+            suffix = f" ({reclaimed} reclaimed)" if reclaimed else ""
+            print_line(f"Docker cleanup: {label} prune complete{suffix}")
+        else:
+            rc = step.get("returncode")
+            err = step.get("stderr") or step.get("stdout") or "unknown error"
+            print_line(f"Docker cleanup: {label} prune failed (exit {rc}): {err}")
+
+
 def _default_config_path(harness: str) -> Path:
     return REPO_ROOT / "config" / "models.json"
 
@@ -439,6 +462,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip post-run validation and automatic retries.",
     )
+    parser.add_argument(
+        "--no-docker-prune",
+        action="store_true",
+        help="Skip post-run docker builder/system prune (default: prune after a run batch).",
+    )
     add_rate_limit_cli_args(parser)
     args = parser.parse_args()
     if args.max_validation_retries < 0:
@@ -623,6 +651,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             )
 
         _cleanup_backends(backend, args.local_api_base)
+        _cleanup_docker_after_benchmark(args)
 
         if abort_flag.is_set():
             print_line(
@@ -794,6 +823,8 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
                         print_line(f"[{slug}] ERROR:\n{err}")
                     elif payload is not None:
                         print_line(f"[{slug}] worker done")
+
+        _cleanup_docker_after_benchmark(args)
 
         if abort_flag.is_set():
             print_line(

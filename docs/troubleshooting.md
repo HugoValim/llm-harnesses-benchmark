@@ -62,6 +62,24 @@ export OLLAMA_HOST=http://localhost:11434
 export OLLAMA_MODEL=qwen2.5:7b
 ```
 
+## Docker disk usage
+
+Phase 2 of `run_benchmark.py` has each agent run `docker build` and
+`docker compose up --build`. A full model batch can leave tens of gigabytes of
+build cache and unused images on the host.
+
+By default, when a benchmark batch finishes (not `--report-only`), the harness
+runs:
+
+```bash
+docker builder prune -a -f
+docker system prune -a -f
+```
+
+These commands remove **all** unused Docker build cache and images on the
+machine, not only benchmark-tagged artifacts. To keep existing unused images,
+pass `--no-docker-prune` on `run_benchmark.py`.
+
 ## Docker Failures
 
 Runtime verification builds and runs untrusted generated projects in Docker.
