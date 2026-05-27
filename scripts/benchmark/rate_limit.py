@@ -32,6 +32,8 @@ _RETRY_AFTER_SECONDS_RE = re.compile(
     r"retry\s+(?:after|in)\s+(\d+)\s*(second|minute|hour)s?",
     re.IGNORECASE,
 )
+# Match HTTP 429 / API status 429, not unrelated digit runs (e.g. ls -la byte counts).
+_STANDALONE_429_RE = re.compile(r"(?<![0-9])429(?![0-9])")
 
 
 @dataclass(frozen=True)
@@ -118,7 +120,7 @@ def text_looks_rate_limited(text: str) -> bool:
     if _SESSION_LIMIT_RE.search(text):
         return True
     lowered = text.lower()
-    return "429" in lowered or '"error":"rate_limit"' in lowered
+    return bool(_STANDALONE_429_RE.search(lowered)) or '"error":"rate_limit"' in lowered
 
 
 def _rate_limit_info_rejected(info: dict[str, Any]) -> bool:

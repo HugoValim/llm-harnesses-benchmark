@@ -33,6 +33,28 @@ class TestRateLimitDetection(unittest.TestCase):
             )
         )
 
+    def test_file_size_with_429_substring_is_not_rate_limited(self) -> None:
+        """ls -la output can include byte counts like 42958276 — not HTTP 429."""
+        tool_result = json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": "-rwxrwxr-x 1 hugo hugo 42958276 May 27 tailwindcss",
+                        }
+                    ],
+                },
+            }
+        )
+        self.assertFalse(text_looks_rate_limited(tool_result))
+        self.assertFalse(stream_event_looks_rate_limited(json.loads(tool_result)))
+
+    def test_http_429_status_still_detected(self) -> None:
+        self.assertTrue(text_looks_rate_limited('{"status":429,"error":"too many requests"}'))
+
     def test_claude_rate_limit_event(self) -> None:
         event = {
             "type": "rate_limit_event",
