@@ -15,6 +15,7 @@ from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
 )
+from benchmark.rate_limit import RateLimitWaitPolicy
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -198,6 +199,7 @@ def run_ai_meta_analysis(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
+    rate_limit_policy: RateLimitWaitPolicy | None = None,
 ) -> dict:
     """Dispatch an LLM to write the meta-analysis markdown file.
 
@@ -248,6 +250,7 @@ def run_ai_meta_analysis(
             force=force,
             harness=harness,
             explicit_result_dir=meta_run_dir,
+            rate_limit_policy=rate_limit_policy,
         )
 
     from benchmark.claude_code_runner import run_variant  # noqa: PLC0415
@@ -262,4 +265,5 @@ def run_ai_meta_analysis(
         runner_command_prefix=runner_command_prefix,
         isolate_home=isolate_home,
         explicit_result_dir=meta_run_dir,
+        rate_limit_policy=rate_limit_policy,
     )

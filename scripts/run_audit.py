@@ -56,6 +56,7 @@ from benchmark.timeouts import (  # noqa: E402
     DEFAULT_TIMEOUT_MINUTES,
 )
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
+from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 
 # Runner imports go through the Harness registry; no direct imports needed.
 from benchmark.util import (  # noqa: E402
@@ -308,6 +309,7 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of concurrent audits (default: 1 = sequential). Use 0 for one worker per job.",
     )
+    add_rate_limit_cli_args(parser)
     return parser.parse_args()
 
 
@@ -719,6 +721,7 @@ def main() -> int:
     if not args.report_only:
         timeout_seconds = args.timeout_minutes * 60
         no_progress_timeout_seconds = args.no_progress_minutes * 60
+        rate_limit_policy = rate_limit_policy_from_args(args)
         runner = audit_config.get("runner") or {}
         runner_command_prefix = runner.get("command_prefix")
         isolate_home = bool(runner.get("isolate_home", False))
@@ -809,6 +812,7 @@ def main() -> int:
                     force=True,
                     harness=runner_type,  # preserve original (incl. "ollama") for callee
                     explicit_result_dir=result_dir,
+                    rate_limit_policy=rate_limit_policy,
                 )
                 if harness.name not in _CODEX_RUNNER_TYPES:
                     run_kwargs["runner_command_prefix"] = runner_command_prefix

@@ -32,6 +32,7 @@ from benchmark.harnesses.stall_policy import (
     TOOL_LOOP_THRESHOLD,
 )
 from benchmark.phase_result import build_phase_payload
+from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
@@ -93,6 +94,31 @@ def build_followup_prompt(prompt: str, continue_session_id: str | None) -> str:
         "runtime validation work before making any additional fixes."
     )
     return prompt + fallback
+
+
+def _phase_capture_paths(payload: dict[str, Any]) -> list[Path | None]:
+    paths = payload.get("paths")
+    if not isinstance(paths, dict):
+        return []
+    captured: list[Path | None] = []
+    for key in ("stdout", "stderr"):
+        value = paths.get(key)
+        captured.append(Path(value) if isinstance(value, str) else None)
+    return captured
+
+
+def _run_phase_with_rate_limit_retry(
+    *,
+    log_tag: str,
+    policy: RateLimitWaitPolicy,
+    run_once: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    return run_with_rate_limit_retry(
+        log_tag=log_tag,
+        policy=policy,
+        run_once=run_once,
+        capture_paths=_phase_capture_paths,
+    )
 
 
 def parse_event_stream(raw: str) -> list[dict[str, Any]]:
@@ -667,6 +693,7 @@ def run_codex_variant(
     force: bool = False,
     harness: str = "codex",
     explicit_result_dir: Path | None = None,
+    rate_limit_policy: RateLimitWaitPolicy | None = None,
 ) -> dict[str, Any]:
     """Run a single one-shot variant through the Codex CLI.
 
@@ -784,20 +811,25 @@ def run_codex_variant(
         print_line(f"[{slug}] command_prefix={command_prefix}")
 
     started_at = utc_now()
-    payload = run_codex_phase(
-        bench=bench,
-        model=codex_model,
-        model_slug=slug,
-        prompt=prompt,
-        started_at=started_at,
-        project_dir=project_dir,
-        prompt_path=prompt_path,
-        stdout_path=stdout_path,
-        stderr_path=stderr_path,
-        result_path=result_path,
-        phase_name="phase1",
-        override_min_preview_tps=None,
-        command_prefix=command_prefix,
+    effective_rate_limit_policy = rate_limit_policy or RateLimitWaitPolicy()
+    payload = _run_phase_with_rate_limit_retry(
+        log_tag=slug,
+        policy=effective_rate_limit_policy,
+        run_once=lambda: run_codex_phase(
+            bench=bench,
+            model=codex_model,
+            model_slug=slug,
+            prompt=prompt,
+            started_at=started_at,
+            project_dir=project_dir,
+            prompt_path=prompt_path,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            result_path=result_path,
+            phase_name="phase1",
+            override_min_preview_tps=None,
+            command_prefix=command_prefix,
+        ),
     )
     payload.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)
     payload.setdefault("harness", harness)
@@ -1063,7 +1095,11 @@ def run_model(
             phase1_kwargs["command_prefix"] = cp
     if runner_type not in _CODEX_RUNNERS:
         phase1_kwargs["continue_session_id"] = None
-    phase1 = _run_phase(**phase1_kwargs)
+    phase1 = _run_phase_with_rate_limit_retry(
+        log_tag=stream_log_prefix(bench.harness, model["slug"], "phase1"),
+        policy=bench.rate_limit_policy,
+        run_once=lambda: _run_phase(**phase1_kwargs),
+    )
 
     phases = [phase1]
     final_phase = phase1
@@ -1106,7 +1142,11 @@ def run_model(
                 phase2_kwargs["command_prefix"] = cp
         if runner_type not in _CODEX_RUNNERS:
             phase2_kwargs["continue_session_id"] = continued_session_id
-        phase2 = _run_phase(**phase2_kwargs)
+        phase2 = _run_phase_with_rate_limit_retry(
+            log_tag=stream_log_prefix(bench.harness, model["slug"], "phase2"),
+            policy=bench.rate_limit_policy,
+            run_once=lambda: _run_phase(**phase2_kwargs),
+        )
         phases.append(phase2)
         final_phase = phase2
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.backends import LocalModelBackend
+from benchmark.rate_limit import RateLimitWaitPolicy
 from benchmark.util import (
     USAGE_LIMIT_REACHED,
     clone_json,
@@ -341,6 +342,7 @@ class BenchmarkConfig:
     selected_models: list[dict[str, Any]] = field(default_factory=list)
     prompt: str = ""
     followup_prompt: str | None = None
+    rate_limit_policy: RateLimitWaitPolicy = field(default_factory=RateLimitWaitPolicy)
 
 
 def load_opencode_config() -> dict[str, Any] | None:

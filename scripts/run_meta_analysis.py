@@ -42,6 +42,7 @@ from benchmark.audit_report import (  # noqa: E402
     run_ai_meta_analysis,
 )
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
+from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
     DEFAULT_TIMEOUT_MINUTES,
@@ -151,6 +152,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Re-run the meta-analysis even if a cached payload exists.",
     )
+    add_rate_limit_cli_args(parser)
     return parser.parse_args()
 
 
@@ -275,6 +277,7 @@ def main() -> int:
             timeout_seconds=args.meta_timeout_minutes * 60,
             no_progress_timeout_seconds=args.no_progress_minutes * 60,
             force=args.force,
+            rate_limit_policy=rate_limit_policy_from_args(args),
         )
     except NotImplementedError as exc:
         print(f"Meta-analysis dispatch failed: {exc}", file=sys.stderr)

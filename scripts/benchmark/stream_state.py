@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any
 
 from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit
+from benchmark.rate_limit import text_looks_rate_limited
 
 
 class ToolCallLoopDetector:
@@ -276,7 +277,7 @@ class EventStreamState:
 
     def _handle_error_event(self, event: dict[str, Any]) -> StreamAction:
         error_detail = _extract_error_detail(event)
-        if contains_usage_limit(error_detail):
+        if contains_usage_limit(error_detail) or text_looks_rate_limited(error_detail):
             self._last_description = f"error: {_shorten(error_detail)}"
             return StreamAction(kind=ActionKind.STALL, reason=USAGE_LIMIT_REACHED)
 

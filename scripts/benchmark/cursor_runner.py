@@ -9,10 +9,16 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
+from benchmark.rate_limit import (
+    RateLimitWaitPolicy,
+    run_with_rate_limit_retry,
+    stream_event_looks_rate_limited,
+    text_looks_rate_limited,
+)
 from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
@@ -153,11 +159,21 @@ class _CursorCliAdapter(CliStreamAdapter[CursorStreamResult]):
 
         description = _describe_event(event)
 
+        if stream_event_looks_rate_limited(event):
+            return EventDecision(
+                description=description,
+                is_terminal=is_terminal,
+                mark_activity=False,
+                abort_reason=USAGE_LIMIT_REACHED,
+            )
+
         is_error = bool(event.get("is_error")) or (
             etype == "result" and event.get("subtype") not in ("success", None)
         )
         if is_error:
-            if contains_usage_limit(json.dumps(event)):
+            if contains_usage_limit(json.dumps(event)) or text_looks_rate_limited(
+                json.dumps(event)
+            ):
                 return EventDecision(
                     description=description,
                     is_terminal=is_terminal,
@@ -242,7 +258,11 @@ def _phase_status(
     final: dict[str, Any],
 ) -> str:
     if stream_result.usage_limit_reached or (
-        bool(final.get("is_error")) and contains_usage_limit(json.dumps(final))
+        bool(final.get("is_error"))
+        and (
+            contains_usage_limit(json.dumps(final))
+            or text_looks_rate_limited(json.dumps(final))
+        )
     ):
         return USAGE_LIMIT_REACHED
     if stream_result.timed_out:
@@ -258,6 +278,94 @@ def _phase_status(
     return "failed"
 
 
+def _run_cursor_phase(
+    *,
+    variant: dict[str, Any],
+    prompt: str,
+    project_dir: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+    command_prefix: list[str] | None,
+    harness: str,
+    slug: str,
+    phase_name: str,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+    continue_session: bool = False,
+) -> tuple[CursorStreamResult, subprocess.Popen[str], float]:
+    command = build_command(
+        variant["main_model"],
+        prompt,
+        command_prefix,
+        continue_session=continue_session,
+    )
+    wall_start = time.monotonic()
+    process = subprocess.Popen(
+        command,
+        cwd=project_dir.resolve(),
+        env=os.environ.copy(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        bufsize=1,
+    )
+    result = stream_process(
+        process=process,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        project_dir=project_dir,
+        model_slug=stream_log_prefix(harness, slug, phase_name),
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+    )
+    return result, process, round(time.monotonic() - wall_start, 2)
+
+
+def _run_rate_limited_cursor_phase(
+    *,
+    log_tag: str,
+    policy: RateLimitWaitPolicy,
+    stdout_path: Path,
+    stderr_path: Path,
+    execute: Callable[[], tuple[CursorStreamResult, subprocess.Popen[str], float]],
+) -> tuple[CursorStreamResult, subprocess.Popen[str], float, str]:
+    holder: dict[str, Any] = {}
+
+    def run_once() -> dict[str, Any]:
+        result, process, elapsed = execute()
+        final = result.final_result_event or {}
+        status = _phase_status(result, final)
+        holder["result"] = result
+        holder["process"] = process
+        holder["elapsed"] = elapsed
+        holder["status"] = status
+        return {
+            "status": status,
+            "stall_reason": result.stall_reason,
+            "paths": {
+                "stream_ndjson": str(stdout_path),
+                "stderr_log": str(stderr_path),
+            },
+        }
+
+    payload = run_with_rate_limit_retry(
+        log_tag=log_tag,
+        policy=policy,
+        run_once=run_once,
+        capture_paths=lambda phase_payload: [
+            Path(phase_payload["paths"]["stream_ndjson"]),
+            Path(phase_payload["paths"]["stderr_log"]),
+        ],
+    )
+    return (
+        holder["result"],
+        holder["process"],
+        holder["elapsed"],
+        str(payload.get("status", holder["status"])),
+    )
+
+
 def run_variant(
     *,
     variant: dict[str, Any],
@@ -270,6 +378,7 @@ def run_variant(
     harness: str = "cursor",
     explicit_result_dir: Path | None = None,
     followup_prompt: str | None = None,
+    rate_limit_policy: RateLimitWaitPolicy | None = None,
 ) -> dict[str, Any]:
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
@@ -312,8 +421,8 @@ def run_variant(
     prompt_path.write_text(prompt)
     started_at = utc_now()
     command_prefix = variant.get("command_prefix") or runner_command_prefix
+    effective_rate_limit_policy = rate_limit_policy or RateLimitWaitPolicy()
     command = build_command(variant["main_model"], prompt, command_prefix)
-    wall_start = time.monotonic()
 
     print_line("")
     print_line(f"Starting {slug} -> {variant['main_model']} (Cursor CLI)")
@@ -323,30 +432,27 @@ def run_variant(
         f"no_progress_timeout={no_progress_timeout_seconds}s"
     )
 
-    process = subprocess.Popen(
-        command,
-        cwd=project_dir.resolve(),
-        env=os.environ.copy(),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        bufsize=1,
-    )
-
-    result = stream_process(
-        process=process,
+    result, process, elapsed, status = _run_rate_limited_cursor_phase(
+        log_tag=stream_log_prefix(harness, slug, "phase1"),
+        policy=effective_rate_limit_policy,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
-        project_dir=project_dir,
-        model_slug=stream_log_prefix(harness, slug, "phase1"),
-        timeout_seconds=timeout_seconds,
-        no_progress_timeout_seconds=no_progress_timeout_seconds,
+        execute=lambda: _run_cursor_phase(
+            variant=variant,
+            prompt=prompt,
+            project_dir=project_dir,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            command_prefix=command_prefix,
+            harness=harness,
+            slug=slug,
+            phase_name="phase1",
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+        ),
     )
-    elapsed = round(time.monotonic() - wall_start, 2)
     final = result.final_result_event or {}
     num_turns = result.assistant_turns
-    status = _phase_status(result, final)
     file_count = count_files(project_dir)
 
     payload: dict[str, Any] = {
@@ -392,40 +498,31 @@ def run_variant(
         followup_stdout_path = result_dir / "followup-stream.ndjson"
         followup_stderr_path = result_dir / "followup-stderr.log"
         followup_prompt_path.write_text(followup_prompt)
-        p2_command = build_command(
-            variant["main_model"],
-            followup_prompt,
-            command_prefix,
-            continue_session=True,
-        )
-        p2_started_at = utc_now()
-        p2_wall_start = time.monotonic()
         print_line(
             f"[{stream_log_prefix(harness, slug, 'phase1')}] complete; "
             "starting phase 2 (follow-up, --continue)"
         )
-        p2_process = subprocess.Popen(
-            p2_command,
-            cwd=project_dir.resolve(),
-            env=os.environ.copy(),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            bufsize=1,
-        )
-        p2_result = stream_process(
-            process=p2_process,
+        p2_result, p2_process, p2_elapsed, p2_status = _run_rate_limited_cursor_phase(
+            log_tag=stream_log_prefix(harness, slug, "phase2"),
+            policy=effective_rate_limit_policy,
             stdout_path=followup_stdout_path,
             stderr_path=followup_stderr_path,
-            project_dir=project_dir,
-            model_slug=stream_log_prefix(harness, slug, "phase2"),
-            timeout_seconds=timeout_seconds,
-            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            execute=lambda: _run_cursor_phase(
+                variant=variant,
+                prompt=followup_prompt,
+                project_dir=project_dir,
+                stdout_path=followup_stdout_path,
+                stderr_path=followup_stderr_path,
+                command_prefix=command_prefix,
+                harness=harness,
+                slug=slug,
+                phase_name="phase2",
+                timeout_seconds=timeout_seconds,
+                no_progress_timeout_seconds=no_progress_timeout_seconds,
+                continue_session=True,
+            ),
         )
-        p2_elapsed = round(time.monotonic() - p2_wall_start, 2)
         p2_final = p2_result.final_result_event or {}
-        p2_status = _phase_status(p2_result, p2_final)
         phase1_core = {
             "phase": "phase1",
             "status": payload["status"],

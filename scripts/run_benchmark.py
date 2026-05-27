@@ -26,6 +26,7 @@ from benchmark.config import (  # noqa: E402
 )
 from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
 from benchmark.report import build_report, load_results  # noqa: E402
+from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.result_validation import (  # noqa: E402
     MAX_VALIDATION_RETRIES,
     followup_expected,
@@ -438,9 +439,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip post-run validation and automatic retries.",
     )
+    add_rate_limit_cli_args(parser)
     args = parser.parse_args()
     if args.max_validation_retries < 0:
         parser.error("--max-validation-retries must be >= 0")
+    if args.rate_limit_wait_cap_hours < 0:
+        parser.error("--rate-limit-wait-cap-hours must be >= 0")
+    if args.rate_limit_backoff_initial_seconds <= 0:
+        parser.error("--rate-limit-backoff-initial-seconds must be > 0")
+    if args.rate_limit_backoff_max_seconds < args.rate_limit_backoff_initial_seconds:
+        parser.error(
+            "--rate-limit-backoff-max-seconds must be >= "
+            "--rate-limit-backoff-initial-seconds"
+        )
     return args
 
 
@@ -522,6 +533,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         print_line(f"Local backend: {backend.backend_name} at {api_base}")
 
     if not args.report_only:
+        rate_limit_policy = rate_limit_policy_from_args(args)
         bench = BenchmarkConfig(
             runner=config["runner"],
             config_path=config_path,
@@ -537,6 +549,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
             selected_models=selected_models,
             prompt=prompt,
             followup_prompt=followup_prompt,
+            rate_limit_policy=rate_limit_policy,
         )
 
         abort_flag = threading.Event()
@@ -611,7 +624,8 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
 
         if abort_flag.is_set():
             print_line(
-                "Aborting: usage limit reached. Retry after limit resets."
+                "Aborting: usage limit persisted after wait cap. "
+                "Retry later or increase --rate-limit-wait-cap-hours."
             )
             return 1
 
@@ -709,6 +723,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
         )
 
         abort_flag = threading.Event()
+        rate_limit_policy = rate_limit_policy_from_args(args)
 
         validate_runs = not args.no_result_validation
         max_validation_retries = args.max_validation_retries
@@ -733,6 +748,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
                         runner_command_prefix=runner_command_prefix,
                         harness=harness_name,
                         followup_prompt=followup_for_variant,
+                        rate_limit_policy=rate_limit_policy,
                     )
                     if harness.accepts_isolate_home:
                         run_kwargs["isolate_home"] = isolate_home
@@ -779,7 +795,8 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
 
         if abort_flag.is_set():
             print_line(
-                "Aborting: usage limit reached. Retry after limit resets."
+                "Aborting: usage limit persisted after wait cap. "
+                "Retry later or increase --rate-limit-wait-cap-hours."
             )
             return 1
 

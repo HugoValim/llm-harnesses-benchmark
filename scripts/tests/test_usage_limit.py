@@ -19,6 +19,7 @@ from benchmark.claude_code_runner import (  # noqa: E402
 from benchmark.phase_result import derive_phase_status  # noqa: E402
 from benchmark.report import _rederive_status  # noqa: E402
 from benchmark.stream_state import ActionKind, EventStreamState  # noqa: E402
+from benchmark.rate_limit import RateLimitWaitPolicy  # noqa: E402
 from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit  # noqa: E402
 from run_benchmark import _phase_hit_usage_limit  # noqa: E402
 
@@ -135,6 +136,7 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
                     timeout_seconds=60,
                     no_progress_timeout_seconds=30,
                     force=True,
+                    rate_limit_policy=RateLimitWaitPolicy(cap_seconds=0),
                 )
         self.assertEqual(payload["status"], USAGE_LIMIT_REACHED)
 
@@ -175,6 +177,7 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
                     timeout_seconds=60,
                     no_progress_timeout_seconds=30,
                     force=True,
+                    rate_limit_policy=RateLimitWaitPolicy(cap_seconds=0),
                 )
         self.assertEqual(payload["status"], USAGE_LIMIT_REACHED)
         self.assertTrue(contains_usage_limit(json.dumps(final)))
