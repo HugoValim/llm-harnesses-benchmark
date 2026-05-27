@@ -43,6 +43,21 @@ class TestRateLimitDetection(unittest.TestCase):
         }
         self.assertTrue(stream_event_looks_rate_limited(event))
 
+    def test_claude_allowed_rate_limit_event_is_not_throttled(self) -> None:
+        """Telemetry events with status=allowed must not stall the harness."""
+        event = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "allowed",
+                "resetsAt": 1779903600,
+                "rateLimitType": "five_hour",
+                "overageStatus": "rejected",
+                "overageDisabledReason": "org_level_disabled",
+            },
+        }
+        self.assertFalse(stream_event_looks_rate_limited(event))
+        self.assertIsNone(extract_rate_limit_wait_seconds(json.dumps(event)))
+
     def test_payload_usage_limit_status(self) -> None:
         self.assertTrue(payload_hit_usage_limit({"status": USAGE_LIMIT_REACHED}))
 

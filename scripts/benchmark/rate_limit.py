@@ -121,16 +121,22 @@ def text_looks_rate_limited(text: str) -> bool:
     return "429" in lowered or '"error":"rate_limit"' in lowered
 
 
+def _rate_limit_info_rejected(info: dict[str, Any]) -> bool:
+    """True when Claude rate_limit_info indicates the request was throttled."""
+    return info.get("status") == "rejected"
+
+
 def stream_event_looks_rate_limited(event: dict[str, Any]) -> bool:
     """Return True when one NDJSON stream event indicates throttling."""
     if event.get("type") == "rate_limit_event":
-        return True
+        info = event.get("rate_limit_info")
+        return isinstance(info, dict) and _rate_limit_info_rejected(info)
     if event.get("error") == "rate_limit":
         return True
     if event.get("api_error_status") == 429:
         return True
     rate_info = event.get("rate_limit_info")
-    if isinstance(rate_info, dict) and rate_info.get("status") == "rejected":
+    if isinstance(rate_info, dict) and _rate_limit_info_rejected(rate_info):
         return True
     return text_looks_rate_limited(json.dumps(event))
 
@@ -205,13 +211,14 @@ def _scan_json_obj(obj: Any, *, now: float) -> int | None:
     if isinstance(obj, dict):
         if obj.get("type") == "rate_limit_event":
             info = obj.get("rate_limit_info")
-            if isinstance(info, dict):
-                for key in _RESETS_AT_KEYS:
-                    reset_at = _coerce_reset_timestamp(info.get(key))
-                    if reset_at is not None:
-                        wait = _wait_from_reset_timestamp(reset_at, now=now)
-                        if wait is not None:
-                            return wait
+            if not isinstance(info, dict) or not _rate_limit_info_rejected(info):
+                return None
+            for key in _RESETS_AT_KEYS:
+                reset_at = _coerce_reset_timestamp(info.get(key))
+                if reset_at is not None:
+                    wait = _wait_from_reset_timestamp(reset_at, now=now)
+                    if wait is not None:
+                        return wait
         for key in _RESETS_AT_KEYS:
             reset_at = _coerce_reset_timestamp(obj.get(key))
             if reset_at is not None:
