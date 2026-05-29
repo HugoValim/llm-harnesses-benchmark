@@ -60,11 +60,13 @@ def test_audit_prompt_v36_rebalanced_weights() -> None:
     assert "Tier cap:" in prompt
 
 
-def test_meta_prompt_v37_includes_precomputed_rollup() -> None:
+def test_meta_prompt_v38_includes_precomputed_rollup() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: meta-v3.7")
+    assert prompt.startswith("Prompt-Version: meta-v3.8")
     assert "{precomputed_rollup}" in prompt
+    assert "Harness CLI versions" in prompt
+    assert "mixed-harness-version" in prompt
     assert "audit-v3.6" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.2`" in prompt
     assert "`benchmark-followup-v3.2` when follow-up is present" in prompt

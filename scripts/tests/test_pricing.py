@@ -73,6 +73,30 @@ def test_compute_cost_composer_cursor_list() -> None:
     assert cost == pytest.approx(7.5 + 7.5)
 
 
+def test_build_generation_metrics_includes_harness_cli_version(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "elapsed_seconds": 10,
+                "tokens": {"input": 1, "output": 1, "total": 2},
+                "harness_cli_version": "claude 2.0.0",
+                "harness_cli_probe_argv": ["claude", "--version"],
+                "command_shim_version": "ollama 0.5.0",
+                "command_shim_probe_argv": ["ollama", "--version"],
+            }
+        )
+    )
+    metrics = build_generation_metrics(
+        target_slug="claude-claude_sonnet_4_6",
+        model_slug="claude_sonnet_4_6",
+        harness="claude",
+        benchmark_result_path=result_path,
+    )
+    assert metrics["harness_cli_version"] == "claude 2.0.0"
+    assert metrics["command_shim_version"] == "ollama 0.5.0"
+
+
 def test_harness_reported_cost_precedence() -> None:
     metrics = build_generation_metrics(
         target_slug="claude-claude_sonnet_4_6",
@@ -99,6 +123,28 @@ def test_harness_reported_cost_precedence() -> None:
     assert metrics["cost_source"] == "harness_reported"
     assert metrics["estimated_cost_usd"] == 0.042
     result_path.unlink(missing_ok=True)
+
+
+def test_format_generation_metrics_block_includes_cli_versions() -> None:
+    block = format_generation_metrics_block(
+        {
+            "model_slug": "kimi_k2_6_ollama_cloud",
+            "harness": "claude",
+            "harness_cli_version": "claude 2.0.0",
+            "command_shim_version": "ollama 0.5.0",
+            "generation_time_seconds": 120,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+            "estimated_cost_usd": 0.25,
+            "pricing_doc": "docs/PRICING.md",
+            "pricing_last_updated": "2026-05-25",
+            "cost_source": "computed",
+            "benchmark_result_path": "/tmp/r.json",
+        }
+    )
+    assert "Harness-CLI-Version: claude 2.0.0" in block
+    assert "Command-Shim-Version: ollama 0.5.0" in block
 
 
 def test_format_generation_metrics_block_includes_cost() -> None:

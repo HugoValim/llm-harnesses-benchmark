@@ -81,9 +81,32 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
         precomputed_rollup=rollup,
     )
     assert "Model coverage" in prompt
+    assert "Harness CLI versions" in rollup
+    assert "Harness CLI versions" in prompt
     assert "glm_5_1_ollama_cloud" in prompt
     assert "claude, codex, opencode" in prompt
     assert str((tmp_path / "meta-analysis.md").resolve()) in prompt
+
+
+def test_build_precomputed_rollup_includes_harness_versions(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    target = input_dir / "claude-glm_5_1_ollama_cloud"
+    target.mkdir(parents=True)
+    (target / "report.md").write_text(
+        "\n".join(
+            [
+                "C. **Total score / 100**",
+                "",
+                "**80 / 100**",
+            ]
+        )
+    )
+    (target / "generation-metrics.json").write_text(
+        '{"harness_cli_version": "claude 2.0.0", "harness": "claude"}'
+    )
+    rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "claude 2.0.0" in rollup
+    assert "mixed-version" not in rollup or "Notes" in rollup
 
 
 def test_validate_meta_analysis_coverage_detects_undercount(

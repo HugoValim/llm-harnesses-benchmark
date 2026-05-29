@@ -33,6 +33,7 @@ from benchmark.util import (
     init_project_git,
     print_line,
     prompt_sha256,
+    resolve_harness_cli_versions,
     save_json,
     shorten_text,
     stream_log_prefix,
@@ -421,6 +422,9 @@ def run_variant(
     prompt_path.write_text(prompt)
     started_at = utc_now()
     command_prefix = variant.get("command_prefix") or runner_command_prefix
+    cli_version_fields = resolve_harness_cli_versions(
+        harness=harness, command_prefix=command_prefix
+    )
     effective_rate_limit_policy = rate_limit_policy or RateLimitWaitPolicy()
     command = build_command(variant["main_model"], prompt, command_prefix)
 
@@ -485,6 +489,7 @@ def run_variant(
             "stream_ndjson": str(stdout_path),
             "stderr_log": str(stderr_path),
         },
+        **cli_version_fields,
     }
 
     run_phase2 = (

@@ -319,6 +319,79 @@ def prompt_sha256(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
+def probe_cli_version(argv_head: list[str], *, timeout: float = 10.0) -> str | None:
+    """Run ``argv_head + ['--version']``; return first non-empty line of output."""
+    if not argv_head:
+        return None
+    probe_argv = [*argv_head, "--version"]
+    try:
+        completed = subprocess.run(
+            probe_argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    combined = (completed.stdout or "") + (completed.stderr or "")
+    for line in combined.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+_HARNESS_DEFAULT_CLI: dict[str, str] = {
+    "opencode": "opencode",
+    "codex": "codex",
+    "claude": "claude",
+    "cursor": "agent",
+}
+
+_OLLAMA_LAUNCH_INTEGRATION_CLI: dict[str, str] = {
+    "opencode": "opencode",
+    "codex": "codex",
+    "claude": "claude",
+    "cursor": "agent",
+}
+
+
+def resolve_harness_cli_versions(
+    *,
+    harness: str,
+    command_prefix: list[str] | None = None,
+) -> dict[str, Any]:
+    """Probe agent CLI versions for persistence in ``result.json``.
+
+    When ``command_prefix`` is an ``ollama launch <integration>`` shim, stores
+    the integration binary version in ``harness_cli_version`` and ollama in
+    ``command_shim_version``.
+    """
+    integration = ollama_launch_integration(command_prefix or [])
+    if integration:
+        integration_bin = _OLLAMA_LAUNCH_INTEGRATION_CLI.get(integration)
+        out: dict[str, Any] = {
+            "harness_cli_version": None,
+            "harness_cli_probe_argv": None,
+            "command_shim_version": probe_cli_version(["ollama"]),
+            "command_shim_probe_argv": ["ollama", "--version"],
+        }
+        if integration_bin:
+            out["harness_cli_version"] = probe_cli_version([integration_bin])
+            out["harness_cli_probe_argv"] = [integration_bin, "--version"]
+        return out
+
+    default_bin = _HARNESS_DEFAULT_CLI.get(harness, harness)
+    probe_argv = [default_bin, "--version"]
+    return {
+        "harness_cli_version": probe_cli_version([default_bin]),
+        "harness_cli_probe_argv": probe_argv,
+        "command_shim_version": None,
+        "command_shim_probe_argv": None,
+    }
+
+
 def ollama_launch_command_prefix(integration: str) -> list[str]:
     """Non-interactive ``ollama launch`` argv prefix for benchmark subprocesses."""
     return ["ollama", "launch", "--yes", integration]

@@ -58,6 +58,7 @@ from benchmark.util import (
     init_project_git,
     print_line,
     prompt_sha256,
+    resolve_harness_cli_versions,
     save_json,
     shorten_text,
     stream_log_prefix,
@@ -833,6 +834,9 @@ def run_codex_variant(
     )
     payload.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)
     payload.setdefault("harness", harness)
+    payload.update(
+        resolve_harness_cli_versions(harness=harness, command_prefix=command_prefix)
+    )
     return payload
 
 
@@ -1027,6 +1031,16 @@ def run_model(
         f"[{log_tag}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
     )
 
+    phase_command_prefix: list[str] | None = None
+    if runner_type in _CODEX_RUNNERS:
+        phase_command_prefix = model.get("command_prefix")
+        if not phase_command_prefix and runner_type == "ollama":
+            phase_command_prefix = ollama_launch_command_prefix("codex")
+    cli_version_fields = resolve_harness_cli_versions(
+        harness=bench.harness,
+        command_prefix=phase_command_prefix,
+    )
+
     # Preflight for local models
     is_local = model["provider"] == "ollama"
     if is_local:
@@ -1064,6 +1078,7 @@ def run_model(
                 "preview_output_tokens_per_second_average": None,
                 "preflight_error": preflight_message,
                 "phases": [],
+                **cli_version_fields,
             }
             save_json(result_path, payload)
             print_line(
@@ -1087,12 +1102,8 @@ def run_model(
         "result_path": phase1_result_path,
         "phase_name": "phase1",
     }
-    if runner_type in _CODEX_RUNNERS:
-        cp = model.get("command_prefix")
-        if not cp and runner_type == "ollama":
-            cp = ollama_launch_command_prefix("codex")
-        if cp:
-            phase1_kwargs["command_prefix"] = cp
+    if phase_command_prefix:
+        phase1_kwargs["command_prefix"] = phase_command_prefix
     if runner_type not in _CODEX_RUNNERS:
         phase1_kwargs["continue_session_id"] = None
     phase1 = _run_phase_with_rate_limit_retry(
@@ -1134,12 +1145,8 @@ def run_model(
             "phase_name": "phase2",
             "override_min_preview_tps": None,
         }
-        if runner_type in _CODEX_RUNNERS:
-            cp = model.get("command_prefix")
-            if not cp and runner_type == "ollama":
-                cp = ollama_launch_command_prefix("codex")
-            if cp:
-                phase2_kwargs["command_prefix"] = cp
+        if phase_command_prefix:
+            phase2_kwargs["command_prefix"] = phase_command_prefix
         if runner_type not in _CODEX_RUNNERS:
             phase2_kwargs["continue_session_id"] = continued_session_id
         phase2 = _run_phase_with_rate_limit_retry(
@@ -1225,6 +1232,7 @@ def run_model(
         else None,
         "session_exported": exported_session is not None,
         "phases": phases,
+        **cli_version_fields,
     }
     root_dir = bench.results_dir.resolve().parent
     payload = detect_workspace_escape(

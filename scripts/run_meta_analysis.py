@@ -122,7 +122,7 @@ def parse_args() -> argparse.Namespace:
         default=str(META_PROMPT_TEMPLATE_PATH),
         help=(
             "Path to meta-analysis prompt template (placeholders: "
-            "{audit_input_dirs}, {output_path})."
+            "{audit_input_dirs}, {precomputed_rollup}, {output_path})."
         ),
     )
     parser.add_argument(

@@ -19,6 +19,7 @@ from benchmark.audit_report import (
     _dimension_labels,
     _fmt,
 )
+from benchmark.util import load_json, migrate_to_v2
 
 # Model slug substrings that identify benchmark leader runs (substring match,
 # case-insensitive), e.g. ``codex-gpt_5_5`` → ``gpt_5_5``, ``opencode-claude_opus_4_7``.
@@ -408,6 +409,138 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _generation_metrics_path(
+    report: ParsedReport, source_dirs: list[Path] | None
+) -> Path | None:
+    """Resolve ``generation-metrics.json`` for a parsed audit report."""
+    if not source_dirs:
+        return None
+    for root in source_dirs:
+        for candidate in (
+            root / report.auditor / report.target / "generation-metrics.json",
+            root / report.target / "generation-metrics.json",
+        ):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _version_label(
+    metrics: dict[str, object] | None,
+    result_row: dict[str, object] | None,
+) -> str:
+    """Human-readable CLI version label for rollup tables."""
+    version = None
+    shim = None
+    if metrics:
+        version = metrics.get("harness_cli_version")
+        shim = metrics.get("command_shim_version")
+    if version is None and result_row:
+        version = result_row.get("harness_cli_version")
+        shim = result_row.get("command_shim_version")
+    if version and shim:
+        return f"{version} (shim: {shim})"
+    if version:
+        return str(version)
+    return "unknown"
+
+
+def _load_cli_version_for_report(
+    report: ParsedReport,
+    *,
+    source_dirs: list[Path] | None,
+) -> str:
+    """Resolve harness CLI version for one audit target."""
+    metrics_path = _generation_metrics_path(report, source_dirs)
+    metrics: dict[str, object] | None = None
+    result_row: dict[str, object] | None = None
+    if metrics_path is not None:
+        try:
+            metrics = load_json(metrics_path)
+        except Exception:
+            metrics = None
+    if metrics:
+        bench_path = metrics.get("benchmark_result_path")
+        if isinstance(bench_path, str):
+            bench_file = Path(bench_path)
+            if bench_file.is_file():
+                try:
+                    result_row = migrate_to_v2(load_json(bench_file))
+                except Exception:
+                    result_row = None
+    return _version_label(metrics, result_row)
+
+
+def collect_harness_cli_versions(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> dict[str, dict[str, list[str]]]:
+    """Per harness → version label → sorted target paths (``auditor/target``)."""
+    by_harness: dict[str, dict[str, list[str]]] = {}
+    for report in reports:
+        if not report.harness or report.harness == "unknown":
+            continue
+        label = _load_cli_version_for_report(report, source_dirs=source_dirs)
+        target_path = f"{report.auditor}/{report.target}"
+        harness_bucket = by_harness.setdefault(report.harness, {})
+        harness_bucket.setdefault(label, []).append(target_path)
+    for harness in by_harness:
+        for label in by_harness[harness]:
+            by_harness[harness][label] = sorted(by_harness[harness][label])
+    return by_harness
+
+
+def build_harness_versions_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Markdown table of benchmark agent CLI versions per harness."""
+    coverage = collect_harness_cli_versions(reports, source_dirs=source_dirs)
+    if not coverage:
+        return "## Harness CLI versions\n\n*(no harness versions resolved)*\n"
+
+    lines = [
+        "## Harness CLI versions",
+        "",
+        "Benchmark agent CLI builds used when generating each target. "
+        "**Section 11 appendix must copy this table exactly.** When a harness "
+        "shows multiple versions, treat as ``mixed-harness-version`` for "
+        "cross-harness rankings (see meta-analysis guardrails).",
+        "",
+        "| Harness | Version(s) | Targets | Notes |",
+        "|---|---|---|---|",
+    ]
+    for harness in sorted(coverage):
+        version_map = coverage[harness]
+        versions = sorted(version_map)
+        targets: list[str] = []
+        for v in versions:
+            targets.extend(version_map[v])
+        version_cell = "; ".join(versions)
+        notes = ""
+        if len(versions) > 1:
+            notes = "mixed-version"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    harness,
+                    version_cell,
+                    str(len(targets)),
+                    notes or "-",
+                ]
+            )
+            + " |"
+        )
+        if len(versions) > 1:
+            for v in versions:
+                for t in version_map[v]:
+                    lines.append(f"- `{t}` → {v}")
+    return "\n".join(lines) + "\n"
+
+
 def build_precomputed_rollup(
     reports_dir: Path | None = None,
     *,
@@ -425,10 +558,12 @@ def build_precomputed_rollup(
         "## Precomputed rollup",
         "",
         "Harness-computed from parsed ``report.md`` files. **Section 2–4 numeric "
-        "tables in meta-analysis.md MUST match these values.** Use individual "
-        "reports only for citations and narrative.",
+        "tables and the harness CLI versions table in meta-analysis.md MUST match "
+        "these values.** Use individual reports only for citations and narrative.",
         "",
         build_model_coverage_table(reports).rstrip(),
+        "",
+        build_harness_versions_table(reports, source_dirs=source_dirs).rstrip(),
         "",
         build_statistical_summary(reports_dir, source_dirs=source_dirs).rstrip(),
     ]

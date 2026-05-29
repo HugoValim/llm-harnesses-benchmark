@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.7
+Prompt-Version: meta-v3.8
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -20,7 +20,7 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 ## Precomputed rollup (authoritative for numeric tables)
 
-The harness computed this rollup from every `report.md` under the input directories. **Section 2, 3, 4, and the harness counts in section 2 MUST match these values exactly.** Do not re-derive harness counts or model averages from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
+The harness computed this rollup from every `report.md` under the input directories. **Section 2, 3, 4, the harness counts in section 2, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive harness counts, model averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
 
 {precomputed_rollup}
 
@@ -39,14 +39,14 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 ## Workflow
 
-1. Read the **Precomputed rollup** above. Copy its model-coverage harness counts and statistical-summary averages into your output tables — do not invent alternate counts.
+1. Read the **Precomputed rollup** above. Copy its model-coverage harness counts, harness CLI versions table, and statistical-summary averages into your output — do not invent alternate counts.
 2. For citations and narrative only, glob `*/report.md` under each input directory. Read files selectively when you need report:line evidence; do not re-glob the same path twice.
 3. For each report you read, extract when needed:
    - Per-dimension scores from section B (`D1..D10`, each `score/max`)
    - Total from section C (`X/100`); record `null` if absent or malformed
    - Tier from section D (A/B/C/D)
    - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 13 auto-CF rows)
-   - Generation metrics from section H: `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`, `Static-Analysis-Path`, `Static-Analysis-Status`
+   - Generation metrics from section H: `Harness-CLI-Version`, `Command-Shim-Version` (when present), `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`, `Static-Analysis-Path`, `Static-Analysis-Status`
    - When section H is missing or malformed, prefer the sibling `generation-metrics.json` in the same audit directory (written by the harness from `docs/PRICING.md` + benchmark `result.json`)
    - Record `n/a` for any missing field; never invent values
 4. Build section 2 from the **Model coverage** table in the rollup (harness count, avg total, std dev from cross-harness totals in rollup).
@@ -69,6 +69,7 @@ State the verdict explicitly:
 - **Best model overall**: `<model_slug>` with avg total X.X/100 across N harnesses. One-sentence why.
 - Single most important harness-attributable pattern (cite a report:line).
 - Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
+- **Harness CLI versions**: when the rollup **Harness CLI versions** table shows `mixed-version` for any harness, state in one clause that the cohort spans multiple `<harness>` CLI builds and cross-harness rankings for that harness are caveated (see appendix).
 - Calibration verdict in one clause (PASS / WARN / FAIL — defined in section 8).
 
 ### 2. Best model overall
@@ -223,6 +224,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - Per-harness std dev table for each dimension (D1..D10).
 - **Static-analysis evidence index**: one row per target with `Static-Analysis-Path`, `Static-Analysis-Status`, and (when status is `ok`) the headline counts `ruff.total_errors`, `mypy.total_errors`, `bandit.high`, `radon_cc.functions_grade_d_or_worse`. Targets with `n/a` static-analysis are listed separately.
 - Cross-auditor disagreement: for every `(harness, model_slug)` cell audited by >=2 auditors, the per-auditor totals + std-dev. Flag any cell where std-dev exceeds 10 as a calibration concern.
+- **Harness CLI versions**: copy the rollup **Harness CLI versions** table exactly. When any harness has `mixed-version`, list each affected `auditor/target` with its version (from rollup bullets or section H / `generation-metrics.json`). Flag those targets as `mixed-harness-version` and exclude them from cross-harness rankings unless explicitly opted in.
 - Tier distribution histogram across the whole cohort.
 
 ## Guardrails
@@ -231,6 +233,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
 - **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.6` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.5` are excluded from cross-cell comparison until re-audited under `audit-v3.6`. Likewise, older benchmark submissions audited under `audit-v3.6` should be flagged because the older brief did not include the strengthened HTMX, disconnect, and verification-summary requirements — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
+- **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
   - Best-model claim requires the chosen model to have valid totals under >=2 harnesses (i.e. NOT `insufficient-data`). If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.

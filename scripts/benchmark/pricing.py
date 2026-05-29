@@ -299,6 +299,23 @@ def compute_estimated_cost(row: PricingRow, tokens: TokenTotals) -> float | None
     return round(cost, 6)
 
 
+def _harness_cli_fields_from_result(result_row: dict[str, Any] | None) -> dict[str, Any]:
+    """Extract CLI version fields persisted by benchmark runners."""
+    if result_row is None:
+        return {
+            "harness_cli_version": None,
+            "harness_cli_probe_argv": None,
+            "command_shim_version": None,
+            "command_shim_probe_argv": None,
+        }
+    return {
+        "harness_cli_version": result_row.get("harness_cli_version"),
+        "harness_cli_probe_argv": result_row.get("harness_cli_probe_argv"),
+        "command_shim_version": result_row.get("command_shim_version"),
+        "command_shim_probe_argv": result_row.get("command_shim_probe_argv"),
+    }
+
+
 def build_generation_metrics(
     *,
     target_slug: str,
@@ -341,6 +358,7 @@ def build_generation_metrics(
             "pricing_row_slug": model_slug,
             "channel": channel_for_harness(effective_harness, provider=provider),
             "billable": None,
+            **_harness_cli_fields_from_result(None),
         }
 
     tokens = extract_token_totals(result_row, harness=effective_harness)
@@ -368,6 +386,7 @@ def build_generation_metrics(
             "pricing_row_slug": model_slug,
             "channel": channel_for_harness(effective_harness, provider=provider),
             "billable": None,
+            **_harness_cli_fields_from_result(result_row),
         }
 
     if tokens.harness_reported_cost_usd is not None:
@@ -399,6 +418,7 @@ def build_generation_metrics(
         "billable": row.billable,
         "primary_prompt_sha256": result_row.get("prompt_sha256"),
         "followup_prompt_sha256": result_row.get("followup_prompt_sha256"),
+        **_harness_cli_fields_from_result(result_row),
     }
 
 
@@ -419,11 +439,19 @@ def format_generation_metrics_block(metrics: dict[str, Any]) -> str:
         f"{metrics.get('pricing_doc', 'docs/PRICING.md')} @ "
         f"{metrics.get('pricing_last_updated', 'unknown')}"
     )
+    shim_version = metrics.get("command_shim_version")
+    shim_line = (
+        [f"- Command-Shim-Version: {shim_version}"]
+        if shim_version
+        else []
+    )
     return "\n".join(
         [
             "Precomputed generation metrics (copy verbatim into section H; do not recalculate):",
             f"- Model: {metrics.get('model_slug', 'n/a')}",
             f"- Harness: {metrics.get('harness', 'n/a')}",
+            f"- Harness-CLI-Version: {metrics.get('harness_cli_version') or 'n/a'}",
+            *shim_line,
             f"- Generation-Time: {fmt_num('generation_time_seconds')} seconds",
             f"- Input-Tokens: {fmt_num('input_tokens')}",
             f"- Output-Tokens: {fmt_num('output_tokens')}",
