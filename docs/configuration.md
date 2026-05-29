@@ -21,7 +21,7 @@ Common fields:
 - `provider`: routing key.
 - `id`: provider or CLI model id.
 - `opencode_id`: optional opencode-specific id, commonly an OpenRouter path.
-- `selection_reason`: maintainer note shown in docs/reports.
+- `selection_reason`: maintainer note shown in audit comparison tables.
 - `known_issues`: optional warning for model-specific behavior.
 - `skip_by_default`: optional flag used by preview-speed handling.
 

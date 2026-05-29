@@ -68,7 +68,7 @@ Phase 2 of `run_benchmark.py` has each agent run `docker build` and
 `docker compose up --build`. A full model batch can leave tens of gigabytes of
 build cache and unused images on the host.
 
-By default, when a benchmark batch finishes (not `--report-only`), the harness
+By default, when a benchmark batch finishes, the harness
 runs:
 
 ```bash
@@ -111,7 +111,6 @@ Useful controls:
 - `--timeout-minutes`: total timeout per run.
 - `--no-progress-minutes`: fail when stdout, stderr, and project files are idle.
 - `--max-runs`: cap selected benchmark runs.
-- `--report-only`: rebuild reports without launching agents.
 
 ## Stale opencode Lock
 

@@ -18,27 +18,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 OLLAMA_BUILD_HARNESSES: tuple[str, ...] = ("opencode", "codex", "claude")
-BASELINE_STEPS: tuple[tuple[str, str, str], ...] = (
-    ("claude", "claude_opus_4_7", "docs/report.claude-opus.md"),
-    ("codex", "codex_gpt_5_5", "docs/report.codex.md"),
+BASELINE_STEPS: tuple[tuple[str, str], ...] = (
+    ("claude", "claude_opus_4_7"),
+    ("codex", "codex_gpt_5_5"),
 )
-
-HARNESS_REPORT_PATHS: dict[str, str] = {
-    "opencode": "docs/report.opencode.md",
-    "codex": "docs/report.codex.md",
-    "claude": "docs/report.claude-code.md",
-}
 
 STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.0"
 
 
 @dataclass(frozen=True)
 class BuildStep:
-    """One matrix row (harness + model + report path)."""
+    """One matrix row (harness + model)."""
 
     harness: str
     model_slug: str
-    report_path: str
 
     def key(self) -> tuple[str, str]:
         return (self.harness, self.model_slug)
@@ -49,7 +42,6 @@ class BuildBatch:
     """One Phase 1 ``run_benchmark.py`` invocation (possibly many models)."""
 
     harness: str
-    report_path: str
     model_slugs: tuple[str, ...]
 
 
@@ -80,7 +72,6 @@ def build_matrix(models_config_path: Path) -> list[BuildStep]:
     seen: set[tuple[str, str]] = set()
 
     for harness in OLLAMA_BUILD_HARNESSES:
-        report = HARNESS_REPORT_PATHS[harness]
         for slug in ollama_cloud_slugs(registry):
             if not slug_in_harness(models_config_path, harness, slug):
                 continue
@@ -88,9 +79,9 @@ def build_matrix(models_config_path: Path) -> list[BuildStep]:
             if key in seen:
                 continue
             seen.add(key)
-            steps.append(BuildStep(harness, slug, report))
+            steps.append(BuildStep(harness, slug))
 
-    for harness, slug, report in BASELINE_STEPS:
+    for harness, slug in BASELINE_STEPS:
         if not slug_in_harness(models_config_path, harness, slug):
             raise ValueError(
                 f"baseline {slug!r} is not configured for harness {harness!r} "
@@ -99,7 +90,7 @@ def build_matrix(models_config_path: Path) -> list[BuildStep]:
         key = (harness, slug)
         if key not in seen:
             seen.add(key)
-            steps.append(BuildStep(harness, slug, report))
+            steps.append(BuildStep(harness, slug))
 
     return steps
 
@@ -113,22 +104,20 @@ def reject_forwarded_model_flag(extra_args: Sequence[str]) -> None:
 
 
 def group_build_batches(steps: Sequence[BuildStep]) -> list[BuildBatch]:
-    """Group matrix rows by harness + report so ``run_benchmark.py -j`` can parallelize."""
-    groups: dict[tuple[str, str], list[str]] = {}
-    order: list[tuple[str, str]] = []
+    """Group matrix rows by harness so ``run_benchmark.py -j`` can parallelize."""
+    groups: dict[str, list[str]] = {}
+    order: list[str] = []
     for step in steps:
-        key = (step.harness, step.report_path)
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(step.model_slug)
+        if step.harness not in groups:
+            groups[step.harness] = []
+            order.append(step.harness)
+        groups[step.harness].append(step.model_slug)
     return [
         BuildBatch(
-            harness=key[0],
-            report_path=key[1],
-            model_slugs=tuple(groups[key]),
+            harness=harness,
+            model_slugs=tuple(groups[harness]),
         )
-        for key in order
+        for harness in order
     ]
 
 
@@ -152,8 +141,6 @@ def build_benchmark_argv(
         str(models_config),
         "--results-dir",
         str(results_dir),
-        "--report",
-        batch.report_path,
         *timeout_cli_flags(),
     ]
     for slug in batch.model_slugs:

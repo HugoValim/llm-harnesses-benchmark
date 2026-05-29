@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     models_config = args.models_config.resolve()
     if args.list_steps:
         for step in build_matrix(models_config):
-            print(f"{step.harness}\t{step.model_slug}\t{step.report_path}")
+            print(f"{step.harness}\t{step.model_slug}")
         return 0
 
     auditor_slug = env_default("AUDITOR_SLUG", "deepseek_v4_pro_ollama_cloud")

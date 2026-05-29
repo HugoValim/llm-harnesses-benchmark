@@ -9,9 +9,34 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.config import summarize_project
-from benchmark.report import _rederive_status
 from benchmark.result_layout import split_target_slug, target_dir
 from benchmark.util import USAGE_LIMIT_REACHED, load_json, migrate_to_v2
+
+
+def rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str:
+    """Recompute run status from ``result.json`` row and fresh project summary.
+
+    Mirrors :func:`benchmark.runner.run_codex_phase` / ``run_opencode_phase`` so
+    validation reflects updated scaffold detection without re-running agents.
+    """
+    if row.get("stalled") and row.get("stall_reason") == USAGE_LIMIT_REACHED:
+        return USAGE_LIMIT_REACHED
+    if row.get("timed_out"):
+        return "timeout"
+    if row.get("stalled"):
+        return "failed"
+    works = project_summary.get("works_as_intended") == "yes"
+    terminal_stop = row.get("finish_reason") == "stop"
+    if terminal_stop and works:
+        return "completed"
+    if terminal_stop:
+        return "completed_with_errors"
+    exit_code = row.get("exit_code")
+    if exit_code == 0 and works:
+        return "completed"
+    if exit_code == 0:
+        return "completed_with_errors"
+    return "failed"
 
 MAX_VALIDATION_RETRIES = 3
 
@@ -144,8 +169,7 @@ def validate_benchmark_result(
 ) -> ValidationResult:
     """Check whether a harness run produced an acceptable benchmark artifact.
 
-    Recomputes ``project_summary`` from disk and re-derives status using the
-    same rules as ``--report-only`` report rebuilds.
+    Recomputes ``project_summary`` from disk and re-derives status from the row.
     """
     result_dir = result_dir.resolve()
     harness, slug = split_target_slug(result_dir.name)
@@ -190,7 +214,7 @@ def validate_benchmark_result(
     else:
         fresh_summary = summarize_project(project_dir)
 
-    fresh_status = _rederive_status(row, fresh_summary)
+    fresh_status = rederive_status(row, fresh_summary)
 
     if fresh_status != "completed":
         issues.append(

@@ -17,7 +17,7 @@ from benchmark.claude_code_runner import (  # noqa: E402
     run_variant,
 )
 from benchmark.phase_result import derive_phase_status  # noqa: E402
-from benchmark.report import _rederive_status  # noqa: E402
+from benchmark.result_validation import rederive_status  # noqa: E402
 from benchmark.stream_state import ActionKind, EventStreamState  # noqa: E402
 from benchmark.rate_limit import RateLimitWaitPolicy  # noqa: E402
 from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit  # noqa: E402
@@ -51,7 +51,7 @@ class TestStreamStateUsageLimit(unittest.TestCase):
 
 
 class TestRederiveStatusUsageLimit(unittest.TestCase):
-    def test_report_only_keeps_usage_limit(self) -> None:
+    def test_validation_keeps_usage_limit(self) -> None:
         row = {
             "stalled": True,
             "stall_reason": USAGE_LIMIT_REACHED,
@@ -60,7 +60,7 @@ class TestRederiveStatusUsageLimit(unittest.TestCase):
             "exit_code": 1,
         }
         self.assertEqual(
-            _rederive_status(row, {"works_as_intended": "no"}),
+            rederive_status(row, {"works_as_intended": "no"}),
             USAGE_LIMIT_REACHED,
         )
 

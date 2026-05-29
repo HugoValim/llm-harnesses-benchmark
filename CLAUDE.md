@@ -67,10 +67,8 @@ python scripts/run_meta_analysis.py
 
 The legacy `scripts/run_audit_benchmark.py` is a deprecation shim that points at the two new entry points above.
 
-Rebuild reports without re-running:
+Rebuild audit comparison reports without re-running auditors:
 ```bash
-python scripts/run_benchmark.py --harness opencode --report-only
-python scripts/run_benchmark.py --harness claude --report-only
 python scripts/run_audit.py --report-only
 ```
 
@@ -108,8 +106,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 - `runner.py` — Process management for opencode/codex. Spawns subprocesses, streams NDJSON stdout/stderr, detects stalls/timeouts/error loops, measures preview TPS, and kills process groups. Also handles session export and stale opencode process cleanup.
 - `claude_code_runner.py` — Process management for Claude Code CLI. Similar streaming/heartbeat/stall detection but parses Claude's `stream-json` format instead of opencode's. Handles `command_prefix` for Ollama shims and `isolate_home` for agent isolation.
 - `config.py` — Config loading and opencode config generation. Reads `config/models.json` plus `config/harnesses.json`, produces a benchmark-isolated config at `config/opencode.benchmark.json` with yolo permissions and local model context overrides. Also handles multi-agent subagent registration.
-- `report.py` — Markdown report generation from `result.json` files (opencode/codex).
-- `claude_code_report.py` — Markdown report for Claude Code model runs.
+- `result_validation.py` — Post-run validation and status re-derivation from `result.json` and on-disk project scaffolds.
 - `util.py` — Shared JSON I/O, SHA256, file counting, formatting helpers.
 - `loop_detector.py` — Tool-call loop detection (repeated identical tool calls abort the run).
 
@@ -129,10 +126,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 
 - `results/<harness>-<slug>/` — unified layout (`harness` is `opencode`, `codex`, or `claude`). Opencode/codex runs include `opencode-output.ndjson`, `opencode-stderr.log`, followup files, and `session-export.json` where applicable. Claude runs include `stream.ndjson`, `stderr.log`, `prompt.txt`.
 - `audit-reports/<auditor>/<target>/` — Audit output. Contains `report.md`, `result.json`, `stream.ndjson`, `stderr.log`.
-- `docs/report.md` — Auto-built aggregate report for `--harness opencode`.
-- `docs/report.codex.md` — Auto-built aggregate report for `--harness codex`.
-- `docs/report.claude-code.md` — Auto-built aggregate report for `--harness claude`.
-- `audit-reports/comparison.md` — Side-by-side audit score comparison.
+- `audit-reports/<auditor>/comparison.md` — Side-by-side audit score comparison.
 
 ### Runtime verification (`scripts/analyze_results_runtime.py`)
 

@@ -4,9 +4,6 @@
 /results/runtime_verification_summary.json
 /audit-reports/
 
-# Auto-generated reports — uncomment if you want to keep them out of git
-# /docs/report.md
-
 # Python
 .pytest_cache/
 __pycache__/

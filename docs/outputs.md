@@ -57,21 +57,6 @@ Common files:
 Comparison outputs are generated from existing audit reports and should not be
 hand-edited.
 
-## Aggregate Reports
-
-Generated benchmark reports live under `docs/`:
-
-- `docs/report.md`
-- `docs/report.opencode.md`
-- `docs/report.codex.md`
-- `docs/report.claude-code.md`
-- `docs/report.claude-opus.md`
-- `docs/report.cursor.md`
-
-These files summarize harness-level run metadata. They do not prove generated
-apps are correct; use runtime verification and audit reports for behavioral
-evidence.
-
 ## Cleanup
 
 `results/` and `audit-reports/` can be large and may contain generated code,

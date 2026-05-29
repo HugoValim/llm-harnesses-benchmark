@@ -20,7 +20,6 @@ from benchmark.util import load_json  # noqa: E402
 from run_benchmark import (  # noqa: E402
     REPO_ROOT,
     _default_config_path,
-    _run_variant_harness,
     _run_model_harness,
     normalize_benchmark_paths,
     parse_args,
@@ -36,7 +35,6 @@ class TestRunBenchmarkPaths(unittest.TestCase):
             ),
             ollama_warmup_results=str(REPO_ROOT / "results" / "ollama_warmup.json"),
             prompt="prompts/benchmark_prompt.txt",
-            report=str(REPO_ROOT / "docs" / "report.md"),
             results_dir="results",
         )
 
@@ -86,7 +84,6 @@ class TestRunBenchmarkPaths(unittest.TestCase):
             followup_prompt="prompts/followup.txt",
             ollama_warmup_results="results/warmup.json",
             prompt="prompts/benchmark_prompt.txt",
-            report="docs/report.md",
             results_dir="tmp/results",
         )
 
@@ -103,82 +100,9 @@ class TestRunBenchmarkPaths(unittest.TestCase):
         self.assertEqual(
             Path(normalized.prompt), REPO_ROOT / "prompts" / "benchmark_prompt.txt"
         )
-        self.assertEqual(Path(normalized.report), REPO_ROOT / "docs" / "report.md")
         self.assertEqual(Path(normalized.results_dir), REPO_ROOT / "tmp" / "results")
 
-    def test_report_only_opencode_resolves_shared_slug_by_harness(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_dir = root / "config"
-            prompts_dir = root / "prompts"
-            results_dir = root / "results"
-            docs_dir = root / "docs"
-            config_dir.mkdir()
-            prompts_dir.mkdir()
-            (prompts_dir / "prompt.txt").write_text("build")
-            (prompts_dir / "followup.txt").write_text("check")
-            (config_dir / "harnesses.json").write_text(
-                json.dumps(
-                    {
-                        "opencode": {
-                            "command": "opencode",
-                            "args": ["run"],
-                            "notes": ["opencode note"],
-                        },
-                        "codex": {
-                            "command": "codex",
-                            "notes": ["codex note"],
-                        },
-                    }
-                )
-            )
-            (config_dir / "models.json").write_text(
-                json.dumps(
-                    {
-                        "models": [
-                            {
-                                "slug": "shared_slug",
-                                "id": "claude-native",
-                                "opencode_id": "openrouter/opencode-model",
-                                "label": "OpenCode Shared",
-                                "provider": "anthropic",
-                                "selection_reason": "Anthropic row with opencode_id.",
-                            },
-                        ]
-                    }
-                )
-            )
-            args = argparse.Namespace(
-                auto_skip_slow_preview=False,
-                config=str(config_dir / "models.json"),
-                followup_prompt=str(prompts_dir / "followup.txt"),
-                force=False,
-                jobs=1,
-                local_api_base=None,
-                local_backend="ollama",
-                max_runs=None,
-                min_preview_output_tps=5.0,
-                min_preview_samples=3,
-                models=["shared_slug"],
-                no_progress_minutes=1,
-                ollama_warmup_results=str(results_dir / "warmup.json"),
-                prompt=str(prompts_dir / "prompt.txt"),
-                report=str(docs_dir / "report.md"),
-                report_only=True,
-                results_dir=str(results_dir),
-                timeout_minutes=1,
-                variant=None,
-            )
-
-            exit_code = _run_model_harness(args, "opencode")
-
-            self.assertEqual(exit_code, 0)
-            report = (docs_dir / "report.md").read_text()
-            self.assertIn("OpenCode Shared", report)
-            self.assertNotIn("Codex Shared", report)
-            self.assertIn("results/opencode-<slug>/", report)
-
-    def test_report_only_reports_slug_from_other_harness(self) -> None:
+    def test_rejects_slug_from_other_harness(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_dir = root / "config"
@@ -219,10 +143,10 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                 min_preview_samples=3,
                 models=["codex_only"],
                 no_progress_minutes=1,
+                no_docker_prune=True,
+                no_result_validation=True,
                 ollama_warmup_results=str(root / "results" / "warmup.json"),
                 prompt=str(prompts_dir / "prompt.txt"),
-                report=str(root / "docs" / "report.md"),
-                report_only=True,
                 results_dir=str(root / "results"),
                 timeout_minutes=1,
                 variant=None,
@@ -268,114 +192,6 @@ class TestRunBenchmarkPaths(unittest.TestCase):
             resolved = resolve_build_harness_config(payload, config_path, "claude")
 
             self.assertEqual([m["slug"] for m in resolved["models"]], ["claude_model"])
-
-    def test_report_only_claude_uses_models_registry(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_dir = root / "config"
-            prompts_dir = root / "prompts"
-            docs_dir = root / "docs"
-            config_dir.mkdir()
-            prompts_dir.mkdir()
-            (prompts_dir / "prompt.txt").write_text("build")
-            (prompts_dir / "followup.txt").write_text("check")
-            (config_dir / "harnesses.json").write_text(
-                json.dumps({"claude": {"command": "claude", "notes": ["claude note"]}})
-            )
-            (config_dir / "models.json").write_text(
-                json.dumps(
-                    {
-                        "models": [
-                            {
-                                "harness": "claude",
-                                "role": "build",
-                                "slug": "claude_registry",
-                                "id": "claude-test",
-                                "label": "Claude Registry",
-                                "provider": "anthropic",
-                                "selection_reason": "Claude row.",
-                            }
-                        ]
-                    }
-                )
-            )
-            args = argparse.Namespace(
-                config=str(config_dir / "models.json"),
-                followup_prompt=str(prompts_dir / "followup.txt"),
-                force=False,
-                jobs=1,
-                max_runs=None,
-                models=["claude_registry"],
-                no_progress_minutes=1,
-                prompt=str(prompts_dir / "prompt.txt"),
-                report=str(docs_dir / "report.md"),
-                report_only=True,
-                results_dir=str(root / "results"),
-                sync_ollama_contexts_only=False,
-                timeout_minutes=1,
-                variant=None,
-            )
-
-            exit_code = _run_variant_harness(args, "claude")
-
-            self.assertEqual(exit_code, 0)
-            report = (docs_dir / "report.md").read_text()
-            self.assertIn("claude_registry", report)
-            self.assertIn("results/claude-<slug>/", report)
-
-    def test_report_only_cursor_uses_models_registry(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_dir = root / "config"
-            prompts_dir = root / "prompts"
-            docs_dir = root / "docs"
-            config_dir.mkdir()
-            prompts_dir.mkdir()
-            (prompts_dir / "prompt.txt").write_text("build")
-            (prompts_dir / "followup.txt").write_text("check")
-            (config_dir / "harnesses.json").write_text(
-                json.dumps({"cursor": {"command": "agent", "notes": ["cursor note"]}})
-            )
-            (config_dir / "models.json").write_text(
-                json.dumps(
-                    {
-                        "models": [
-                            {
-                                "harness": "cursor",
-                                "role": "build",
-                                "slug": "cursor_registry",
-                                "id": "composer-test",
-                                "label": "Cursor Registry",
-                                "provider": "cursor",
-                                "selection_reason": "Cursor row.",
-                            }
-                        ]
-                    }
-                )
-            )
-            args = argparse.Namespace(
-                config=str(config_dir / "models.json"),
-                followup_prompt=str(prompts_dir / "followup.txt"),
-                force=False,
-                jobs=1,
-                max_runs=None,
-                models=["cursor_registry"],
-                no_progress_minutes=1,
-                prompt=str(prompts_dir / "prompt.txt"),
-                report=str(docs_dir / "report.md"),
-                report_only=True,
-                results_dir=str(root / "results"),
-                sync_ollama_contexts_only=False,
-                timeout_minutes=1,
-                variant=None,
-            )
-
-            exit_code = _run_variant_harness(args, "cursor")
-
-            self.assertEqual(exit_code, 0)
-            report = (docs_dir / "report.md").read_text()
-            self.assertIn("cursor_registry", report)
-            self.assertIn("results/cursor-<slug>/", report)
 
     def test_default_models_registry_resolves_build_harnesses(self) -> None:
         config_path = REPO_ROOT / "config" / "models.json"

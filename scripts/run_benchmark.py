@@ -21,12 +21,10 @@ from benchmark.backends import LocalModelBackend, OllamaBackend, create_backend 
 from benchmark.docker_cleanup import prune_docker_after_benchmark  # noqa: E402
 from benchmark.config import (  # noqa: E402
     BenchmarkConfig,
-    load_ollama_warmup_payload,
     load_opencode_ollama_api_base,
     resolve_build_harness_config,
 )
 from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
-from benchmark.report import build_report, load_results  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.result_validation import (  # noqa: E402
     MAX_VALIDATION_RETRIES,
@@ -251,7 +249,7 @@ def _cleanup_backends(
 
 def _cleanup_docker_after_benchmark(args: argparse.Namespace) -> None:
     """Reclaim Docker build cache and unused images after a benchmark batch."""
-    if args.report_only or args.no_docker_prune:
+    if args.no_docker_prune:
         return
 
     result = prune_docker_after_benchmark()
@@ -275,22 +273,11 @@ def _default_config_path(harness: str) -> Path:
     return REPO_ROOT / "config" / "models.json"
 
 
-def _default_report_path(harness: str) -> Path:
-    if harness == "claude":
-        return REPO_ROOT / "docs" / "report.claude-code.md"
-    if harness == "cursor":
-        return REPO_ROOT / "docs" / "report.cursor.md"
-    if harness == "codex":
-        return REPO_ROOT / "docs" / "report.codex.md"
-    return REPO_ROOT / "docs" / "report.md"
-
-
 _BENCHMARK_PATH_FIELDS = (
     "config",
     "followup_prompt",
     "ollama_warmup_results",
     "prompt",
-    "report",
     "results_dir",
 )
 
@@ -372,11 +359,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--results-dir", default="results")
     parser.add_argument(
-        "--report",
-        default=None,
-        help="Markdown report output path (default depends on --harness).",
-    )
-    parser.add_argument(
         "--ollama-warmup-results",
         default=str(REPO_ROOT / "results" / "ollama_warmup.json"),
     )
@@ -405,11 +387,6 @@ def parse_args() -> argparse.Namespace:
         "--force",
         action="store_true",
         help="Re-run even if a terminal result.json already exists.",
-    )
-    parser.add_argument(
-        "--report-only",
-        action="store_true",
-        help="Skip execution and only rebuild the report from saved result.json files.",
     )
     parser.add_argument(
         "--min-preview-output-tps",
@@ -491,15 +468,12 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
     prompt_path = Path(args.prompt)
     followup_prompt_path = Path(args.followup_prompt)
     results_dir = Path(args.results_dir)
-    report_path = Path(args.report)
-    warmup_path = Path(args.ollama_warmup_results)
 
     config = load_json(config_path)
     config = resolve_build_harness_config(config, config_path, harness)
     prompt = prompt_path.read_text().strip()
     followup_prompt = _load_followup_prompt(followup_prompt_path)
     results_dir.mkdir(parents=True, exist_ok=True)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
 
     selected_models = [
         m for m in config["models"] if not m.get("skip_by_default")
@@ -543,17 +517,14 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         )
         return 1
 
-    warmup_payload = load_ollama_warmup_payload(warmup_path)
-
-    if not args.report_only:
-        if harness == "opencode" and shutil.which("opencode") is None:
-            print("opencode is not available on PATH", file=sys.stderr)
+    if harness == "opencode" and shutil.which("opencode") is None:
+        print("opencode is not available on PATH", file=sys.stderr)
+        return 1
+    if harness in {"codex", "ollama"}:
+        ok, err = _verify_codex_binaries(selected_models)
+        if not ok:
+            print(err, file=sys.stderr)
             return 1
-        if harness in {"codex", "ollama"}:
-            ok, err = _verify_codex_binaries(selected_models)
-            if not ok:
-                print(err, file=sys.stderr)
-                return 1
 
     api_base = args.local_api_base or load_opencode_ollama_api_base()
     backend = None
@@ -562,120 +533,103 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         backend = create_backend(args.local_backend, api_base)
         print_line(f"Local backend: {backend.backend_name} at {api_base}")
 
-    if not args.report_only:
-        rate_limit_policy = rate_limit_policy_from_args(args)
-        bench = BenchmarkConfig(
-            runner=config["runner"],
-            config_path=config_path,
-            results_dir=results_dir,
-            harness=harness,
-            timeout_seconds=args.timeout_minutes * 60,
-            no_progress_timeout_seconds=args.no_progress_minutes * 60,
-            min_preview_output_tps=args.min_preview_output_tps,
-            min_preview_samples=args.min_preview_samples,
-            auto_skip_slow_preview=args.auto_skip_slow_preview,
-            force=args.force,
-            backend=backend,
-            selected_models=selected_models,
-            prompt=prompt,
-            followup_prompt=followup_prompt,
-            rate_limit_policy=rate_limit_policy,
-        )
+    rate_limit_policy = rate_limit_policy_from_args(args)
+    bench = BenchmarkConfig(
+        runner=config["runner"],
+        config_path=config_path,
+        results_dir=results_dir,
+        harness=harness,
+        timeout_seconds=args.timeout_minutes * 60,
+        no_progress_timeout_seconds=args.no_progress_minutes * 60,
+        min_preview_output_tps=args.min_preview_output_tps,
+        min_preview_samples=args.min_preview_samples,
+        auto_skip_slow_preview=args.auto_skip_slow_preview,
+        force=args.force,
+        backend=backend,
+        selected_models=selected_models,
+        prompt=prompt,
+        followup_prompt=followup_prompt,
+        rate_limit_policy=rate_limit_policy,
+    )
 
-        abort_flag = threading.Event()
+    abort_flag = threading.Event()
 
-        total_models = len(selected_models)
-        workers = _benchmark_job_workers(total_models, args.jobs)
-        job_items = list(enumerate(selected_models, start=1))
-        local_count = sum(1 for m in selected_models if m.get("provider") == "ollama")
-        local_gpu_lock = (
-            threading.Lock() if _needs_local_gpu_lock(selected_models) else None
-        )
-        print_line(
-            f"Benchmark run starting ({harness}): models={total_models} "
-            f"workers={workers} local_gpu={local_count} "
-            f"timeout={bench.timeout_seconds}s "
-            f"no_progress_timeout={bench.no_progress_timeout_seconds}s force={bench.force}"
-        )
+    total_models = len(selected_models)
+    workers = _benchmark_job_workers(total_models, args.jobs)
+    job_items = list(enumerate(selected_models, start=1))
+    local_count = sum(1 for m in selected_models if m.get("provider") == "ollama")
+    local_gpu_lock = (
+        threading.Lock() if _needs_local_gpu_lock(selected_models) else None
+    )
+    print_line(
+        f"Benchmark run starting ({harness}): models={total_models} "
+        f"workers={workers} local_gpu={local_count} "
+        f"timeout={bench.timeout_seconds}s "
+        f"no_progress_timeout={bench.no_progress_timeout_seconds}s force={bench.force}"
+    )
 
-        validate_runs = not args.no_result_validation
-        max_validation_retries = args.max_validation_retries
+    validate_runs = not args.no_result_validation
+    max_validation_retries = args.max_validation_retries
 
-        def _dispatch_model(
-            model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
-        ) -> dict[str, Any] | None:
-            if not validate_runs:
-                return run_model(
-                    model,
-                    bench,
-                    index,
-                    total_models,
-                    skip_stale_kill=skip_stale_kill,
-                )
-            result_dir = layout_target_dir(
-                bench.results_dir, bench.harness, model["slug"]
-            )
-            attempt = {"n": 0}
-
-            def _run_once() -> dict[str, Any] | None:
-                active_bench = (
-                    replace(bench, force=True) if attempt["n"] > 0 else bench
-                )
-                attempt["n"] += 1
-                return run_model(
-                    model,
-                    active_bench,
-                    index,
-                    total_models,
-                    skip_stale_kill=skip_stale_kill,
-                )
-
-            expect_followup = followup_expected(followup_prompt=bench.followup_prompt)
-            return _run_with_result_validation(
-                model["slug"],
-                result_dir,
+    def _dispatch_model(
+        model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
+    ) -> dict[str, Any] | None:
+        if not validate_runs:
+            return run_model(
                 model,
-                expect_followup=expect_followup,
-                max_retries=max_validation_retries,
-                run_once=_run_once,
+                bench,
+                index,
+                total_models,
+                skip_stale_kill=skip_stale_kill,
             )
-
-        if not abort_flag.is_set():
-            _run_model_job_batch(
-                job_items=job_items,
-                workers=workers,
-                harness=harness,
-                abort_flag=abort_flag,
-                local_gpu_lock=local_gpu_lock,
-                dispatch_model=_dispatch_model,
-            )
-
-        _cleanup_backends(backend, args.local_api_base)
-        _cleanup_docker_after_benchmark(args)
-
-        if abort_flag.is_set():
-            print_line(
-                "Aborting: usage limit persisted after wait cap. "
-                "Retry later or increase --rate-limit-wait-cap-hours."
-            )
-            return 1
-
-    results = load_results(
-        config, results_dir, warmup_payload, harness=harness
-    )
-    report_path.write_text(
-        build_report(
-            config,
-            results,
-            prompt,
-            warmup_payload,
-            warmup_path,
-            harness=harness,
+        result_dir = layout_target_dir(
+            bench.results_dir, bench.harness, model["slug"]
         )
-    )
-    completed = sum(1 for result in results if result["status"] != "not_run")
-    print_line(f"Report updated: {report_path}")
-    print_line(f"Progress snapshot: completed_or_attempted={completed}/{len(results)}")
+        attempt = {"n": 0}
+
+        def _run_once() -> dict[str, Any] | None:
+            active_bench = (
+                replace(bench, force=True) if attempt["n"] > 0 else bench
+            )
+            attempt["n"] += 1
+            return run_model(
+                model,
+                active_bench,
+                index,
+                total_models,
+                skip_stale_kill=skip_stale_kill,
+            )
+
+        expect_followup = followup_expected(followup_prompt=bench.followup_prompt)
+        return _run_with_result_validation(
+            model["slug"],
+            result_dir,
+            model,
+            expect_followup=expect_followup,
+            max_retries=max_validation_retries,
+            run_once=_run_once,
+        )
+
+    if not abort_flag.is_set():
+        _run_model_job_batch(
+            job_items=job_items,
+            workers=workers,
+            harness=harness,
+            abort_flag=abort_flag,
+            local_gpu_lock=local_gpu_lock,
+            dispatch_model=_dispatch_model,
+        )
+
+    _cleanup_backends(backend, args.local_api_base)
+    _cleanup_docker_after_benchmark(args)
+
+    if abort_flag.is_set():
+        print_line(
+            "Aborting: usage limit persisted after wait cap. "
+            "Retry later or increase --rate-limit-wait-cap-hours."
+        )
+        return 1
+
     return 0
 
 
@@ -690,7 +644,6 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
     config_path = Path(args.config)
     prompt_path = Path(args.prompt)
     results_dir = Path(args.results_dir)
-    report_path = Path(args.report)
 
     config = load_json(config_path)
     config = resolve_build_harness_config(config, config_path, harness_name)
@@ -704,7 +657,6 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
 
     prompt = prompt_path.read_text().strip()
     results_dir.mkdir(parents=True, exist_ok=True)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
 
     all_variants = config["variants"]
     wanted: set[str] = set()
@@ -727,115 +679,111 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             f"Note: --max-runs applies only to opencode/codex; ignoring for {harness_name}."
         )
 
-    if not args.report_only:
-        if harness.cli_binary and shutil.which(harness.cli_binary) is None:
-            print(harness.cli_install_hint or f"{harness.cli_binary} not on PATH",
-                  file=sys.stderr)
-            return 1
-        print_line(
-            f"Note: --harness {harness_name} uses {harness_name} runner semantics; "
-            "opencode/codex-only flags "
-            "(warmup, local backend, preview TPS gate, …) are ignored."
-        )
-        timeout_seconds = args.timeout_minutes * 60
-        no_progress_timeout_seconds = args.no_progress_minutes * 60
-        runner = config.get("runner") or {}
-        runner_command_prefix = runner.get("command_prefix")
-        isolate_home = bool(runner.get("isolate_home", False))
-        jobs = args.jobs if args.jobs > 0 else len(variants)
-        jobs = max(1, min(jobs, len(variants))) if variants else 1
-        followup_text = _load_followup_prompt(Path(args.followup_prompt))
-        extra_banner = (
-            f", isolate_home={isolate_home}" if harness.accepts_isolate_home else ""
-        )
-        print_line(
-            f"{harness_name} benchmark: {len(variants)} models, jobs={jobs}, "
-            f"timeout={timeout_seconds}s{extra_banner}"
-        )
+    if harness.cli_binary and shutil.which(harness.cli_binary) is None:
+        print(harness.cli_install_hint or f"{harness.cli_binary} not on PATH",
+              file=sys.stderr)
+        return 1
+    print_line(
+        f"Note: --harness {harness_name} uses {harness_name} runner semantics; "
+        "opencode/codex-only flags "
+        "(warmup, local backend, preview TPS gate, …) are ignored."
+    )
+    timeout_seconds = args.timeout_minutes * 60
+    no_progress_timeout_seconds = args.no_progress_minutes * 60
+    runner = config.get("runner") or {}
+    runner_command_prefix = runner.get("command_prefix")
+    isolate_home = bool(runner.get("isolate_home", False))
+    jobs = args.jobs if args.jobs > 0 else len(variants)
+    jobs = max(1, min(jobs, len(variants))) if variants else 1
+    followup_text = _load_followup_prompt(Path(args.followup_prompt))
+    extra_banner = (
+        f", isolate_home={isolate_home}" if harness.accepts_isolate_home else ""
+    )
+    print_line(
+        f"{harness_name} benchmark: {len(variants)} models, jobs={jobs}, "
+        f"timeout={timeout_seconds}s{extra_banner}"
+    )
 
-        abort_flag = threading.Event()
-        rate_limit_policy = rate_limit_policy_from_args(args)
+    abort_flag = threading.Event()
+    rate_limit_policy = rate_limit_policy_from_args(args)
 
-        validate_runs = not args.no_result_validation
-        max_validation_retries = args.max_validation_retries
+    validate_runs = not args.no_result_validation
+    max_validation_retries = args.max_validation_retries
 
-        def _run(v: dict) -> tuple[str, dict | None, str | None]:
-            if abort_flag.is_set():
-                print_line(f"[{v['slug']}] skipped — usage limit active")
-                return v["slug"], None, None
-            try:
-                result_dir = layout_target_dir(results_dir, harness_name, v["slug"])
-                followup_for_variant = followup_text
-                attempt = {"n": 0}
+    def _run(v: dict) -> tuple[str, dict | None, str | None]:
+        if abort_flag.is_set():
+            print_line(f"[{v['slug']}] skipped — usage limit active")
+            return v["slug"], None, None
+        try:
+            result_dir = layout_target_dir(results_dir, harness_name, v["slug"])
+            followup_for_variant = followup_text
+            attempt = {"n": 0}
 
-                def _run_once() -> dict[str, Any] | None:
-                    run_kwargs: dict[str, Any] = dict(
-                        variant=v,
-                        prompt=prompt,
-                        results_dir=results_dir,
-                        timeout_seconds=timeout_seconds,
-                        no_progress_timeout_seconds=no_progress_timeout_seconds,
-                        force=args.force or attempt["n"] > 0,
-                        runner_command_prefix=runner_command_prefix,
-                        harness=harness_name,
-                        followup_prompt=followup_for_variant,
-                        rate_limit_policy=rate_limit_policy,
-                    )
-                    if harness.accepts_isolate_home:
-                        run_kwargs["isolate_home"] = isolate_home
-                    attempt["n"] += 1
-                    return harness.run_variant(**run_kwargs)
+            def _run_once() -> dict[str, Any] | None:
+                run_kwargs: dict[str, Any] = dict(
+                    variant=v,
+                    prompt=prompt,
+                    results_dir=results_dir,
+                    timeout_seconds=timeout_seconds,
+                    no_progress_timeout_seconds=no_progress_timeout_seconds,
+                    force=args.force or attempt["n"] > 0,
+                    runner_command_prefix=runner_command_prefix,
+                    harness=harness_name,
+                    followup_prompt=followup_for_variant,
+                    rate_limit_policy=rate_limit_policy,
+                )
+                if harness.accepts_isolate_home:
+                    run_kwargs["isolate_home"] = isolate_home
+                attempt["n"] += 1
+                return harness.run_variant(**run_kwargs)
 
-                if validate_runs:
-                    model_row = {
-                        "slug": v["slug"],
-                        "provider": v.get("provider", ""),
-                    }
-                    expect_followup = followup_expected(followup_prompt=followup_text)
-                    payload = _run_with_result_validation(
-                        v["slug"],
-                        result_dir,
-                        model_row,
-                        expect_followup=expect_followup,
-                        max_retries=max_validation_retries,
-                        run_once=_run_once,
-                    )
-                else:
-                    payload = _run_once()
+            if validate_runs:
+                model_row = {
+                    "slug": v["slug"],
+                    "provider": v.get("provider", ""),
+                }
+                expect_followup = followup_expected(followup_prompt=followup_text)
+                payload = _run_with_result_validation(
+                    v["slug"],
+                    result_dir,
+                    model_row,
+                    expect_followup=expect_followup,
+                    max_retries=max_validation_retries,
+                    run_once=_run_once,
+                )
+            else:
+                payload = _run_once()
 
-                if payload and _phase_hit_usage_limit(payload):
-                    abort_flag.set()
-                return v["slug"], payload, None
-            except Exception:
-                return v["slug"], None, traceback.format_exc()
+            if payload and _phase_hit_usage_limit(payload):
+                abort_flag.set()
+            return v["slug"], payload, None
+        except Exception:
+            return v["slug"], None, traceback.format_exc()
 
-        if jobs == 1 or len(variants) <= 1:
-            for v in variants:
-                slug, _, err = _run(v)
+    if jobs == 1 or len(variants) <= 1:
+        for v in variants:
+            slug, _, err = _run(v)
+            if err:
+                print_line(f"[{slug}] ERROR:\n{err}")
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(_run, v): v["slug"] for v in variants}
+            for fut in as_completed(futures):
+                slug, payload, err = fut.result()
                 if err:
                     print_line(f"[{slug}] ERROR:\n{err}")
-        else:
-            with ThreadPoolExecutor(max_workers=jobs) as pool:
-                futures = {pool.submit(_run, v): v["slug"] for v in variants}
-                for fut in as_completed(futures):
-                    slug, payload, err = fut.result()
-                    if err:
-                        print_line(f"[{slug}] ERROR:\n{err}")
-                    elif payload is not None:
-                        print_line(f"[{slug}] worker done")
+                elif payload is not None:
+                    print_line(f"[{slug}] worker done")
 
-        _cleanup_docker_after_benchmark(args)
+    _cleanup_docker_after_benchmark(args)
 
-        if abort_flag.is_set():
-            print_line(
-                "Aborting: usage limit persisted after wait cap. "
-                "Retry later or increase --rate-limit-wait-cap-hours."
-            )
-            return 1
+    if abort_flag.is_set():
+        print_line(
+            "Aborting: usage limit persisted after wait cap. "
+            "Retry later or increase --rate-limit-wait-cap-hours."
+        )
+        return 1
 
-    all_results = load_results(config, results_dir, harness=harness_name)
-    report_path.write_text(build_report(config, all_results, harness=harness_name))
-    print_line(f"Report updated: {report_path}")
     return 0
 
 
@@ -845,8 +793,6 @@ def main() -> int:
 
     if args.config is None:
         args.config = str(_default_config_path(harness))
-    if args.report is None:
-        args.report = str(_default_report_path(harness))
 
     args = normalize_benchmark_paths(args)
 

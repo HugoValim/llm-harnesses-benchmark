@@ -35,7 +35,7 @@ def test_build_matrix_includes_all_ollama_on_three_harnesses() -> None:
         harness_slugs = {s.model_slug for s in steps if s.harness == harness}
         assert ollama_slugs <= harness_slugs, harness
 
-    baseline_keys = {(h, s) for h, s, _ in BASELINE_STEPS}
+    baseline_keys = {(h, s) for h, s in BASELINE_STEPS}
     step_keys = {(s.harness, s.model_slug) for s in steps}
     assert baseline_keys <= step_keys
 
@@ -56,16 +56,11 @@ def test_reject_forwarded_model_flag() -> None:
     assert raised
 
 
-def test_group_build_batches_batches_by_harness_and_report() -> None:
+def test_group_build_batches_batches_by_harness() -> None:
     steps = build_matrix(MODELS_CONFIG)
     batches = group_build_batches(steps)
-    assert len(batches) == 4
-    claude_batches = [b for b in batches if b.harness == "claude"]
-    assert len(claude_batches) == 2
-    assert {b.report_path for b in claude_batches} == {
-        "docs/report.claude-code.md",
-        "docs/report.claude-opus.md",
-    }
+    assert len(batches) == 3
+    assert {b.harness for b in batches} == {"opencode", "codex", "claude"}
 
 
 def test_build_benchmark_argv_includes_jobs() -> None:

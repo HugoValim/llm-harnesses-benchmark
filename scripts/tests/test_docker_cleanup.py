@@ -79,14 +79,9 @@ class TestPruneDockerAfterBenchmark(unittest.TestCase):
 
 class TestCleanupDockerAfterBenchmark(unittest.TestCase):
     def _args(self, **kwargs: bool) -> argparse.Namespace:
-        defaults = {"report_only": False, "no_docker_prune": False}
+        defaults = {"no_docker_prune": False}
         defaults.update(kwargs)
         return argparse.Namespace(**defaults)
-
-    def test_skips_on_report_only(self) -> None:
-        with patch("run_benchmark.prune_docker_after_benchmark") as prune_mock:
-            _cleanup_docker_after_benchmark(self._args(report_only=True))
-        prune_mock.assert_not_called()
 
     def test_skips_when_no_docker_prune(self) -> None:
         with patch("run_benchmark.prune_docker_after_benchmark") as prune_mock:

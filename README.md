@@ -50,8 +50,7 @@ python-benchmark/
 │   ├── configuration.md
 │   ├── workflows.md
 │   ├── outputs.md
-│   ├── troubleshooting.md
-│   └── report*.md
+│   └── troubleshooting.md
 ├── results/
 └── audit-reports/
 ```
@@ -80,12 +79,6 @@ Run one benchmark model:
 
 ```bash
 python3 scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
-```
-
-Rebuild an aggregate report without launching agents:
-
-```bash
-python3 scripts/run_benchmark.py --harness opencode --report-only
 ```
 
 Check whether a benchmark run finished cleanly (harness status + project scaffold):
@@ -164,7 +157,6 @@ See `docs/configuration.md` for field-level details.
 - `results/<harness>-<slug>/`: generated project, logs, prompts, and result
   metadata for one benchmark run.
 - `audit-reports/<auditor>/<target>/`: one audit report and audit metadata.
-- `docs/report*.md`: generated aggregate benchmark reports.
 - `results/runtime_verification_summary.json`: runtime verification summary.
 
 See `docs/outputs.md` for artifact ownership and cleanup guidance.
@@ -179,8 +171,7 @@ Use audit reports and runtime verification to classify generated projects:
   defects.
 - Tier 3: hallucinated or non-working primary integration.
 
-`docs/report*.md` shows harness-level signals. Tier classification requires
-reading generated code or running the audit workflow.
+Tier classification requires reading generated code or running the audit workflow.
 
 ## Safety
 
