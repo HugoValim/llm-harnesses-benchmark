@@ -13,7 +13,7 @@ Each variant writes under `results/claude-<slug>/`.
 | Variant | Status | Time | Files | Turns | Delegations |
 |---|---:|---:|---:|---:|
 | claude_sonnet_4_6 | not_run | 0s | 0 | 0 | 0 |
-| claude_opus_4_7 | completed | 1721s | 47 | 155 | 0 |
+| claude_opus_4_7 | completed | 2340s | 50 | 160 | 0 |
 | kimi_k2_6_ollama_cloud | completed | 2012s | 36 | 194 | 0 |
 | deepseek_v4_pro_ollama_cloud | completed | 2296s | 42 | 219 | 0 |
 | deepseek_v4_flash_ollama_cloud | completed | 1872s | 44 | 196 | 0 |
@@ -29,8 +29,8 @@ Each variant writes under `results/claude-<slug>/`.
 
 | Phase | Status | Time | Turns | Files |
 |---|---|---:|---:|---:|
-| phase1 | completed | 1190s | 100 | 46 |
-| phase2 | completed | 531s | 55 | 47 |
+| phase1 | completed | 1593s | 95 | 49 |
+| phase2 | completed | 747s | 65 | 50 |
 
 ### kimi_k2_6_ollama_cloud
 
@@ -97,7 +97,8 @@ Extracted from Claude Code's `modelUsage` field.
 
 | Model | Input | Output | Cache Read | Cache Create |
 |---|---:|---:|---:|---:|
-| claude-opus-4-7 | 175 | 78,238 | 11,486,182 | 278,120 |
+| claude-haiku-4-5-20251001 | 3,522 | 40 | 0 | 0 |
+| claude-opus-4-7 | 241 | 99,684 | 9,084,496 | 246,681 |
 
 ### kimi_k2_6_ollama_cloud
 

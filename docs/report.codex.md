@@ -1,6 +1,6 @@
 # Benchmark Report
 
-Generated at: 2026-05-25T13:03:46+00:00
+Generated at: 2026-05-28T06:41:53+00:00
 Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634`
 
 ## Progress
@@ -38,7 +38,7 @@ Prompt SHA256: `824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634
 
 | Model | Provider | Warmup ctx | Status | Elapsed (s) | Total tokens | Tok/s | Works? | Files | Notes |
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
-| GPT-5.5 xhigh (Codex / ChatGPT) | openai | - | completed | 2414.66 | 2640382 | 3041.46 | yes | 48 | Django + Channels app, tests, README, and container files detected. |
+| GPT-5.5 xhigh (Codex / ChatGPT) | openai | - | completed | 2439.82 | 3578683 | 4678.20 | yes | 57 | Django + Channels app, tests, README, and container files detected. |
 | GPT-5.4 (Codex / ChatGPT) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | GPT-5.3-Codex (Codex CLI) | openai | - | not_run | - | - | - | n/a | 0 | Run has not been executed yet. |
 | Kimi K2.6 (Ollama Cloud) | ollama_cloud | - | completed | 2554.92 | 3453514 | 2214.42 | yes | 45 | Django + Channels app, tests, README, and container files detected. |
