@@ -34,7 +34,7 @@ The `project/` subdirectory inside a result directory. This is the working direc
 
 ## audit report
 
-`audit-reports/<auditor_slug>/<target_slug>/report.md` — the LLM-scored rubric written by one auditor against one target. Covers 8 dimensions (Ollama wiring, Channels scaffolding, Docker, tests, etc.) and assigns a Tier 1/2/3 classification. Companion files in the same directory: `result.json`, `generation-metrics.json`, `static-analysis.json`, `stream.ndjson`, `stderr.log`.
+`audit-reports/<auditor_slug>/<target_slug>/report.md` — the LLM-scored rubric written by one auditor against one target. Covers ten dimensions (Ollama wiring, Channels scaffolding, Docker, tests, code quality, etc.) and assigns a practical tier. Companion files in the same directory: `result.json`, `generation-metrics.json`, `stream.ndjson`, `stderr.log`.
 
 ## run status
 

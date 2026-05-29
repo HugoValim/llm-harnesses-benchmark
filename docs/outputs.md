@@ -50,7 +50,6 @@ Common files:
 - `report.md`: markdown rubric report.
 - `result.json`: audit run metadata.
 - `generation-metrics.json`: precomputed generation time, tokens, and `estimated_cost_usd` from `docs/PRICING.md` + benchmark `result.json`.
-- `static-analysis.json`: optional local quality probe output.
 - `stream.ndjson`: raw auditor stream.
 - `stderr.log`: auditor stderr.
 

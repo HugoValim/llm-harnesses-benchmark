@@ -111,13 +111,6 @@ DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
-from benchmark.quality_probe import probe as run_quality_probe  # noqa: E402
-from benchmark.audit_d10 import (  # noqa: E402
-    compute_d10_from_probe,
-    format_d10_precomputed_block,
-    load_static_analysis,
-    reconcile_report_d10,
-)
 from benchmark.pricing import (  # noqa: E402
     build_generation_metrics,
     format_generation_metrics_block,
@@ -128,7 +121,6 @@ from benchmark.result_layout import (  # noqa: E402
     audit_generation_metrics_json,
     audit_report_md,
     audit_result_json,
-    audit_static_analysis_json,
     audit_stream_ndjson,
     audit_target_dir,
     split_target_slug,
@@ -290,15 +282,6 @@ def parse_args() -> argparse.Namespace:
         help=f"Stall detection threshold (default: {DEFAULT_NO_PROGRESS_MINUTES}).",
     )
     parser.add_argument("--force", action="store_true", help="Re-run even if cached.")
-    parser.add_argument(
-        "--skip-quality-probe",
-        action="store_true",
-        help=(
-            "Skip the ruff/mypy/bandit/radon static-analysis probe that "
-            "produces static-analysis.json for the D10 rubric dimension. "
-            "When skipped, D10 is graded as 'unverified' (3/10 default)."
-        ),
-    )
     parser.add_argument(
         "--report-only",
         action="store_true",
@@ -487,22 +470,13 @@ def build_audit_prompt(
     project_dir: Path,
     model_slug: str,
     output_path: Path | None = None,
-    static_analysis_path: Path | None = None,
     *,
     benchmark_result_path: Path | None = None,
     generation_metrics_path: Path | None = None,
     generation_metrics_block: str | None = None,
     pricing_doc_path: Path | None = None,
-    d10_precomputed_block: str | None = None,
 ) -> str:
     """Interpolate placeholders into the audit prompt template.
-
-    ``{static_analysis_path}`` resolves to the path the probe wrote (or the
-    expected path when the probe was skipped) — the auditor opens it as
-    evidence for D10 per the audit-v3.6 rubric.
-
-    ``{d10_precomputed_block}`` carries harness-computed D10 the auditor must
-    not exceed.
 
     ``{generation_metrics_block}`` carries precomputed cost/tokens for section H.
     """
@@ -510,17 +484,6 @@ def build_audit_prompt(
     prompt = prompt.replace("{model_slug}", model_slug)
     if output_path is not None:
         prompt = prompt.replace("{output_path}", str(output_path.resolve()))
-    if static_analysis_path is not None:
-        prompt = prompt.replace(
-            "{static_analysis_path}", str(static_analysis_path.resolve())
-        )
-    if d10_precomputed_block is not None:
-        prompt = prompt.replace("{d10_precomputed_block}", d10_precomputed_block)
-    else:
-        prompt = prompt.replace(
-            "{d10_precomputed_block}",
-            "n/a — probe skipped; award D10 3/10 unverified.",
-        )
     if benchmark_result_path is not None:
         prompt = prompt.replace(
             "{benchmark_result_path}", str(benchmark_result_path.resolve())
@@ -556,35 +519,6 @@ _AUDIT_PATH_FIELDS = (
 def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
     """Resolve relative CLI filesystem paths against the harness checkout."""
     return normalize_path_fields(args, REPO_ROOT, _AUDIT_PATH_FIELDS)
-
-
-def _maybe_run_quality_probe(
-    *,
-    project_dir: Path,
-    out_path: Path,
-    skip: bool,
-    force: bool,
-    job_slug: str,
-) -> None:
-    """Run the static-analysis probe; failures land in the JSON, never raise.
-
-    Cached: if ``out_path`` already exists and ``force`` is False, reuse it.
-    ``skip=True`` short-circuits — the audit prompt will see a missing file
-    and grade D10 as unverified (3/10 default).
-    """
-    if skip:
-        print_line(f"[{job_slug}] quality probe skipped (--skip-quality-probe)")
-        return
-    if out_path.exists() and not force:
-        print_line(f"[{job_slug}] quality probe cached -> {out_path}")
-        return
-    try:
-        payload = run_quality_probe(project_dir, out_path, repo_root=REPO_ROOT)
-    except Exception as exc:  # noqa: BLE001 — never abort audit on probe issues
-        print_line(f"[{job_slug}] quality probe crashed: {exc!r}")
-        return
-    status = payload.get("status", "unknown")
-    print_line(f"[{job_slug}] quality probe status={status} -> {out_path}")
 
 
 def _maybe_write_generation_metrics(
@@ -766,25 +700,6 @@ def main() -> int:
 
             project_dir = target["project_dir"]
             model_slug_for_prompt = target.get("model_slug", target_slug)
-            static_analysis_path = audit_static_analysis_json(
-                results_dir, auditor_slug, target_slug
-            )
-            _maybe_run_quality_probe(
-                project_dir=project_dir,
-                out_path=static_analysis_path,
-                skip=args.skip_quality_probe,
-                force=args.force,
-                job_slug=job_slug,
-            )
-
-            static_payload = (
-                None
-                if args.skip_quality_probe
-                else load_static_analysis(static_analysis_path)
-            )
-            d10_result = compute_d10_from_probe(static_payload, project_dir=project_dir)
-            d10_block = format_d10_precomputed_block(d10_result)
-
             gen_metrics = _maybe_write_generation_metrics(
                 target=target,
                 audit_results_dir=results_dir,
@@ -803,12 +718,10 @@ def main() -> int:
                 project_dir,
                 model_slug_for_prompt,
                 output_path=audit_report_md(results_dir, auditor_slug, target_slug),
-                static_analysis_path=static_analysis_path,
                 benchmark_result_path=benchmark_result_path,
                 generation_metrics_path=generation_metrics_path,
                 generation_metrics_block=format_generation_metrics_block(gen_metrics),
                 pricing_doc_path=pricing_path(),
-                d10_precomputed_block=d10_block,
             )
 
             (result_dir / "prompt.txt").write_text(audit_prompt)
@@ -866,23 +779,6 @@ def main() -> int:
                     )
                     for issue in issues:
                         print_line(f"[{job_slug}] WARN section H: {issue}")
-
-                    reconciliation_path = result_dir / "d10-reconciliation.json"
-                    recon = reconcile_report_d10(
-                        report_path,
-                        d10_result,
-                        reconciliation_path=reconciliation_path,
-                    )
-                    if recon.get("patched"):
-                        print_line(
-                            f"[{job_slug}] D10 reconciled: auditor={recon.get('auditor_d10')} "
-                            f"-> harness={recon.get('computed_d10')} "
-                            f"(delta={recon.get('delta')})"
-                        )
-                    elif recon.get("action") == "match":
-                        print_line(
-                            f"[{job_slug}] D10 match harness={recon.get('computed_d10')}"
-                        )
 
                 return job_slug, "ok", None
             except Exception:

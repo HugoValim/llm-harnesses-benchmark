@@ -29,7 +29,7 @@ def test_parse_section_c_inline_total() -> None:
 
 def test_parse_d10_dimension_row() -> None:
     text = """
-| 10 | Code quality (tool-backed) | 9 / 10 | static-analysis.json:ruff.total_errors=0 |
+| 10 | Code quality | 9 / 10 | project/chat/consumers.py:42 clean structure |
 """
     report = parse_report_scores(text, target="claude-baz")
     assert len(report.dimensions) == 1

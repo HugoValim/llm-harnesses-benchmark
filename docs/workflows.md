@@ -107,7 +107,6 @@ Useful flags:
 - `--target <name>`: target result directory or bare model slug. Repeatable.
 - `--benchmark-results-dir <path>`: where benchmark outputs live.
 - `--results-dir <path>`: where audit reports are written.
-- `--skip-quality-probe`: skip local static-analysis probe.
 - `--report-only`: rebuild comparison reports from existing audits.
 - `--jobs N`: run audits concurrently.
 

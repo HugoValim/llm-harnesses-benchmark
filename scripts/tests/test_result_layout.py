@@ -11,7 +11,6 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.result_layout import (  # noqa: E402
     audit_generation_metrics_json,
-    audit_static_analysis_json,
     audit_target_dir,
     audit_report_md,
     audit_result_json,
@@ -92,13 +91,6 @@ class TestAuditPaths(unittest.TestCase):
         self.assertEqual(
             audit_stderr_log(self.root, "auditor", "target"),
             Path("/tmp/audit-reports/auditor/target/stderr.log"),
-        )
-
-    def test_audit_static_analysis_json(self) -> None:
-        # Evidence file for the audit-v3.3 D10 dimension lives next to report.md.
-        self.assertEqual(
-            audit_static_analysis_json(self.root, "auditor", "target"),
-            Path("/tmp/audit-reports/auditor/target/static-analysis.json"),
         )
 
     def test_audit_generation_metrics_json(self) -> None:

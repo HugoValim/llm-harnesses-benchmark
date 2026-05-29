@@ -1,14 +1,6 @@
-Prompt-Version: audit-v3.6
+Prompt-Version: audit-v3.8
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
-
-Tool-backed code-quality evidence: {static_analysis_path}. Read this file BEFORE scoring D10. It is a JSON document written by the harness from a controlled `ruff` / `mypy` / `bandit` / `radon cc` / `radon mi` run against **application source only** (venv/vendor trees excluded), using pinned tool versions in `_quality_probe/requirements.txt`. Use **application-scoped** counts (`bandit.high`, not `bandit.dependency_noise`). If the file is missing or its top-level `status` equals `"error"`, treat D10 as **unverified**, note that in section E, and award **3/10** by default.
-
-## Harness-precomputed D10 (mandatory)
-
-{d10_precomputed_block}
-
-Copy the precomputed D10 score above into section B row 10. Do **not** score D10 higher than the harness value. You may score lower only with additional file:line evidence from grepping `{project_dir}` that the probe missed (state what and why). Never claim `bandit.high=0` when `static-analysis.json:bandit.high` (application scope) is greater than zero.
 
 ## Source of truth for LLM / Channels / Django API claims
 
@@ -76,7 +68,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D7 | Architecture | 15 |
 | D8 | Secrets & config hygiene | 5 |
 | D9 | Production hardening | 10 |
-| D10 | Code quality (tool-backed) | 10 |
+| D10 | Code quality | 10 |
 | **—** | **Total** | **100** |
 
 D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10.
@@ -170,17 +162,16 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - No graceful shutdown handling for in-flight WebSocket streams on SIGTERM: -2.
    - Non-root container user alone does not earn full marks — apply the triggers above consistently.
 
-10. **Code quality (tool-backed)** (0-10)
-    Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. **Start from the harness-precomputed D10 block above** — do not award a higher score. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **3/10**; skip the rest of D10.
-    - `ruff.total_errors / (lines_of_code / 1000)` > 5 (i.e. >5 lint errors per kLOC): -2. Cite the top 3 offender file:line:code entries.
-    - `mypy.total_errors` > 10: -2. Cite the top 3 offenders.
-    - Any function in `radon_cc.top_offenders` with `complexity` >= 20 (grade D/E/F): -2. Cite file:function:complexity.
-    - `radon_mi.modules_below_65` > 0 for production source modules after excluding `tests/`, `tests.py`, `test_*.py`, and `*_test.py`: -1. Cite the source file with the lowest MI. If only test files are below 65, no D10 deduction; mention it as a non-scoring note only if useful.
-    - `bandit.high` > 0 (application scope — ignore `bandit.dependency_noise`): -2. Cite each high-severity finding. (Skip if the same finding already capped D8 at 0 via CF#1 — no double deduction across dimensions.)
-    - `bandit.medium` > 2: -1. (Stacks with the line above only when distinct findings.)
-    - Bare `except Exception:` / bare `except:` count > 2 across the project (grep `{project_dir}` for evidence; cite the file:line of the 3rd+ occurrence): -1.
-    - Floor this dimension at 0.
-    - **Cap rule for CF#13**: if Section F lists CF#13 against this submission, D10 is **capped at 0** regardless of the deductions above; do not award a partial score.
+10. **Code quality** (0-10)
+    **You assign D10** in section B row 10. Inspect application source under `{project_dir}` (read files, grep patterns). Exclude `tests/`, `test_*.py`, `*_test.py`, and `tests.py` from maintainability/complexity triggers unless the smell is systemic. Start at 10; apply deductions only with `file:line` evidence:
+    - **Lint/style debt**: widespread noqa abuse, dead code, or repeated style violations across multiple modules (not a single nit): **-2**. Cite top 3 `file:line` examples.
+    - **Type-safety gaps**: when the project declares typing/mypy but production code relies on untyped public APIs, pervasive `Any`, or blanket `# type: ignore`: **-2**. Cite examples.
+    - **High complexity**: any production function that is clearly a god-method (deep nesting, many branches, or obviously unmaintainable control flow): **-2**. Cite `file:function` and why.
+    - **Maintainability**: duplicated logic across modules, single files ≳500 lines without separation, or missing module boundaries: **-1** to **-2**. Cite the worst offender.
+    - **Security smells** in application code (`eval`/`exec`, SQL string concat, `verify=False`, unsafe deserialization) not already counted as CF#1: **-2** per distinct class, max **-4**.
+    - **Bare handlers**: bare `except:` or bare `except Exception:` count **> 2** (grep `{project_dir}`): **-1**. Cite the 3rd+ `file:line`.
+    - Floor at **0**.
+    - **CF#13 cap**: if Section F lists CF#13, D10 is **capped at 0**.
 
 ## Auto-critical-failure classification
 
@@ -200,7 +191,7 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
 | 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path. Count at most one CF#11 per generated project unless distinct consumer classes independently violate this. | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
 | 12 | The current benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
-| 13 | Catastrophic code quality from the static-analysis probe: `ruff.total_errors > 50` OR `mypy.total_errors > 50` OR `bandit.high > 0` (application scope) OR any `radon_cc` function with `complexity >= 30` (grade F). The submission ships code that fails an objective tool gate by a wide margin. | D10 Code quality (tool-backed) | `static-analysis.json:<tool>` with the offending count and top 3 offenders |
+| 13 | Catastrophic code quality visible from source: unmaintainable god modules, pervasive security anti-patterns, or egregious error-handling debt across most of the codebase (not an isolated nit). | D10 Code quality | multiple `file:line` citations showing scope |
 
 Operating rules:
 - D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
@@ -214,7 +205,7 @@ Target: under 800 words total. No speculation — code excerpts and package-sour
 
 A. **Quick summary line** (1 sentence: did the submission meet the spec?).
 
-B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. The D10 justification must cite the `static-analysis.json` field used (e.g. `static-analysis.json:ruff.total_errors=42`) and match the harness-precomputed D10 unless you scored lower with extra evidence.
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. The D10 justification must cite specific `file:line` evidence from source inspection (which rubric trigger fired, or why the codebase is clean).
 
 C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
 
@@ -238,12 +229,10 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.6`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.8`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)
-   - Static-Analysis-Path (absolute path of `static-analysis.json` consumed for D10; `n/a` when probe failed)
-   - Static-Analysis-Status (`ok` when the probe wrote a populated file; `error` or `missing` otherwise — must match D10 unverified note in section E when not `ok`)
 
    Precomputed metrics (written by the harness to `{generation_metrics_path}` from `{benchmark_result_path}`):
 

@@ -35,7 +35,7 @@ DEFAULT_DIMENSION_LABELS: tuple[str, ...] = (
     "Architecture",
     "Secrets & config hygiene",
     "Production hardening",
-    "Code quality (tool-backed)",
+    "Code quality",
 )
 
 

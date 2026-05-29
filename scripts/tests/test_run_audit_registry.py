@@ -358,53 +358,6 @@ def test_report_only_with_model_skips_auditor_without_reports(
     assert run_audit.main() == 1
 
 
-def test_build_audit_prompt_interpolates_static_analysis_path(tmp_path: Path) -> None:
-    template = (
-        "model={model_slug} project={project_dir} "
-        "output={output_path} qa={static_analysis_path}"
-    )
-    project = tmp_path / "project"
-    project.mkdir()
-    output = tmp_path / "report.md"
-    qa = tmp_path / "static-analysis.json"
-
-    prompt = build_audit_prompt(
-        template,
-        project_dir=project,
-        model_slug="demo_model",
-        output_path=output,
-        static_analysis_path=qa,
-    )
-
-    assert "model=demo_model" in prompt
-    assert f"project={project.resolve()}" in prompt
-    assert f"output={output.resolve()}" in prompt
-    assert f"qa={qa.resolve()}" in prompt
-    # When the placeholder is unset, the literal must not leak through.
-    assert "{static_analysis_path}" not in prompt
-
-
-def test_build_audit_prompt_interpolates_d10_block(tmp_path: Path) -> None:
-    template = "d10={d10_precomputed_block}"
-    project = tmp_path / "project"
-    project.mkdir()
-    prompt = build_audit_prompt(
-        template,
-        project_dir=project,
-        model_slug="demo_model",
-        d10_precomputed_block="Precomputed D10: 8/10",
-    )
-    assert "Precomputed D10: 8/10" in prompt
-    assert "{d10_precomputed_block}" not in prompt
-
-
-def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
-    # When static_analysis_path is omitted the literal placeholder remains.
-    template = "qa={static_analysis_path} d10={d10_precomputed_block}"
-    prompt = build_audit_prompt(template, Path("/tmp/p"), "m", output_path=None)
-    assert prompt == "qa={static_analysis_path} d10=n/a — probe skipped; award D10 3/10 unverified."
-
-
 def test_build_audit_prompt_interpolates_generation_metrics(tmp_path: Path) -> None:
     from benchmark.pricing import format_generation_metrics_block
 

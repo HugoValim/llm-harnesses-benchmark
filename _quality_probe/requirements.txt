@@ -1,9 +1,0 @@
-# Pinned tool versions for the audit-time code-quality probe.
-# The probe venv lives at _quality_probe/venv/ and is reused across audits
-# so every target is graded with identical tool builds (apples-to-apples).
-# Bump these deliberately — changes invalidate cross-cohort comparisons.
-
-ruff==0.6.9
-mypy==1.11.2
-bandit==1.7.10
-radon==6.0.1

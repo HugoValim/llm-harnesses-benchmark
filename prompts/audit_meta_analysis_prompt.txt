@@ -46,7 +46,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Total from section C (`X/100`); record `null` if absent or malformed
    - Tier from section D (A/B/C/D)
    - Critical failure list from section F (count + each CF type number from `audit_prompt_template.txt`'s 13 auto-CF rows)
-   - Generation metrics from section H: `Harness-CLI-Version`, `Command-Shim-Version` (when present), `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`, `Static-Analysis-Path`, `Static-Analysis-Status`
+   - Generation metrics from section H: `Harness-CLI-Version`, `Command-Shim-Version` (when present), `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
    - When section H is missing or malformed, prefer the sibling `generation-metrics.json` in the same audit directory (written by the harness from `docs/PRICING.md` + benchmark `result.json`)
    - Record `n/a` for any missing field; never invent values
 4. Build section 2 from the **Model coverage** table in the rollup (harness count, avg total, std dev from cross-harness totals in rollup).
@@ -128,7 +128,7 @@ Rules:
   - `gap < -0.30` → `quality-over-completion` (rare — model writes clean code but skips deliverables)
   - otherwise blank
 - Sort descending by `Gap`.
-- Below the table, in ≤3 sentences, name the worst `completion-over-quality` offender and cite the `static-analysis.json` field that drove the D10 deduction (e.g. `static-analysis.json:ruff.total_errors=87`).
+- Below the table, in ≤3 sentences, name the worst `completion-over-quality` offender and cite the D10 justification from section B (file:line evidence).
 
 ### 5. Dimension-level signal
 
@@ -140,7 +140,7 @@ For each of the 10 rubric dimensions (D1-D10), one line:
   - **saturated** — >=80% of all targets scored full marks (not a discriminator; flag for rubric tightening)
   - **clean** — everyone scored at/near max but <80% saturation
 
-Use the precomputed **Dimension breakdown** table for averages. Classify D2/D3/D5 as likely **saturated** when cohort data supports it; D7/D9/D10 as likely **universal blind spots** under audit-v3.6 weighting.
+Use the precomputed **Dimension breakdown** table for averages. Classify D2/D3/D5 as likely **saturated** when cohort data supports it; D7/D9/D10 as likely **universal blind spots** under audit-v3.8 weighting.
 
 ### 6. Performance & cost
 
@@ -183,8 +183,8 @@ Run all five checks and record the verdict per check, then an overall verdict:
 - **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
 - **Check 5 — D10 floor (code quality)**: median D10 across all valid runs.
   - **PASS** if 3 ≤ median D10 < 8 (cohort shows meaningful toolchain spread).
-  - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant `static-analysis.json` fields.
-  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.6 D10 triggers or enforcing harness-precomputed D10 reconciliation.
+  - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant D10 justification patterns from section B.
+  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.8 D10 triggers.
   - **FAIL** if median D10 < 3 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
   - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4/v3.5); list affected runs in the appendix and do NOT let Check 5 influence the overall verdict.
 
@@ -222,7 +222,6 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - List of "single-harness models" (model slugs that appear under only 1 harness — excluded from section 4).
 - Full dimension score matrix (auditor × harness × model × D1..D10 + total) — one row per report, including those with `n/a` totals.
 - Per-harness std dev table for each dimension (D1..D10).
-- **Static-analysis evidence index**: one row per target with `Static-Analysis-Path`, `Static-Analysis-Status`, and (when status is `ok`) the headline counts `ruff.total_errors`, `mypy.total_errors`, `bandit.high`, `radon_cc.functions_grade_d_or_worse`. Targets with `n/a` static-analysis are listed separately.
 - Cross-auditor disagreement: for every `(harness, model_slug)` cell audited by >=2 auditors, the per-auditor totals + std-dev. Flag any cell where std-dev exceeds 10 as a calibration concern.
 - **Harness CLI versions**: copy the rollup **Harness CLI versions** table exactly. When any harness has `mixed-version`, list each affected `auditor/target` with its version (from rollup bullets or section H / `generation-metrics.json`). Flag those targets as `mixed-harness-version` and exclude them from cross-harness rankings unless explicitly opted in.
 - Tier distribution histogram across the whole cohort.
@@ -232,7 +231,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.6` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.5` are excluded from cross-cell comparison until re-audited under `audit-v3.6`. Likewise, older benchmark submissions audited under `audit-v3.6` should be flagged because the older brief did not include the strengthened HTMX, disconnect, and verification-summary requirements — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.8` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.7` are excluded from cross-cell comparison until re-audited under `audit-v3.8`. Likewise, older benchmark submissions audited under earlier audit prompts should be flagged because rubric semantics differ — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:

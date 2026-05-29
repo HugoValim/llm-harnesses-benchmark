@@ -3,10 +3,7 @@
 #   conda env create -f environment.yaml
 #   conda activate python-benchmark
 #
-# Python deps: harness scripts + pytest only. Audit-time static-analysis tools
-# (ruff/mypy/bandit/radon) live in an isolated venv at _quality_probe/venv/
-# — created automatically by run_audit.py; do NOT pip install
-# _quality_probe/requirements.txt into this conda env.
+# Python deps: harness scripts + pytest only.
 #
 # PYTHONNOUSERSITE keeps ~/.local packages out of pip's resolver so installs
 # here do not warn about unrelated user-site deps (anthropic, pip-audit, etc.).

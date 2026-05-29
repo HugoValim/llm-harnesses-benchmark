@@ -62,17 +62,6 @@ def audit_stderr_log(audit_root: Path, auditor_slug: str, target_slug: str) -> P
     return audit_target_dir(audit_root, auditor_slug, target_slug) / "stderr.log"
 
 
-def audit_static_analysis_json(
-    audit_root: Path, auditor_slug: str, target_slug: str
-) -> Path:
-    """Path of the tool-backed code-quality evidence file for D10.
-
-    Written by :func:`benchmark.quality_probe.probe` before the LLM auditor
-    dispatch; cited verbatim by the audit prompt via ``{static_analysis_path}``.
-    """
-    return audit_target_dir(audit_root, auditor_slug, target_slug) / "static-analysis.json"
-
-
 def audit_generation_metrics_json(
     audit_root: Path, auditor_slug: str, target_slug: str
 ) -> Path:
