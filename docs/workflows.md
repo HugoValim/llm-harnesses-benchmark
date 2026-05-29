@@ -61,10 +61,10 @@ Useful flags:
 
 Useful environment variables:
 
-- `AUDITOR_SLUG`: audit model slug for Role 1.
-- `META_ANALYSIS_AUDITOR_SLUG`: model slug for Role 2.
-- `META_ANALYSIS_HARNESS`: harness for Role 2 dispatch.
-- `META_ANALYSIS_INPUT_DIR`: audit input directory for Role 2.
+- `AUDITOR_SLUG`: audit model slug for Role 1 (default: `codex_gpt_5_5`, GPT-5.5 xhigh via Codex).
+- `META_ANALYSIS_AUDITOR_SLUG`: model slug for Role 2 (default: same as `AUDITOR_SLUG`).
+- `META_ANALYSIS_HARNESS`: harness for Role 2 dispatch (default: derived from the meta model, `codex` for `codex_gpt_5_5`).
+- `META_ANALYSIS_INPUT_DIR`: audit input directory for Role 2 (default: Role 1 auditor slug).
 
 ## Runtime Verification
 
@@ -91,6 +91,9 @@ are absent.
 writes rubric reports under `audit-reports/`.
 
 ```bash
+# Defaults: --harness codex --model codex_gpt_5_5 (GPT-5.5 xhigh)
+python3 scripts/run_audit.py --target opencode-claude_sonnet_4_6
+
 python3 scripts/run_audit.py \
   --harness claude \
   --model claude_opus_4_7 \
@@ -114,7 +117,9 @@ Useful flags:
 analysis.
 
 ```bash
-python3 scripts/run_meta_analysis.py
+# Defaults: --harness codex --model codex_gpt_5_5
+python3 scripts/run_meta_analysis.py --meta-input-dir codex_gpt_5_5
+
 python3 scripts/run_meta_analysis.py --harness claude --model claude_opus_4_7
 ```
 

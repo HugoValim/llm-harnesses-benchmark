@@ -43,6 +43,7 @@ from benchmark.audit_report import (  # noqa: E402
 )
 from benchmark.audit_rollup import validate_meta_analysis_coverage  # noqa: E402
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
@@ -106,15 +107,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--harness",
-        default="claude",
-        help="Meta-analysis dispatch harness slug from harnesses.json.",
+        default=DEFAULT_AUDIT_HARNESS,
+        help=(
+            "Meta-analysis dispatch harness slug from harnesses.json "
+            f"(default: {DEFAULT_AUDIT_HARNESS})."
+        ),
     )
     parser.add_argument(
         "--model",
-        default=None,
+        default=DEFAULT_AUDITOR_SLUG,
         help=(
-            "Select one meta-analysis model slug from models.json. Default: "
-            "first non-skipped meta model whose harness matches --harness."
+            f"Select one meta-analysis model slug from models.json "
+            f"(default: {DEFAULT_AUDITOR_SLUG})."
         ),
     )
     parser.add_argument(

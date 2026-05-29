@@ -7,7 +7,7 @@ Phase 1 runs an explicit (harness, model) matrix:
 
 Phase 2 audits all benchmark results; Phase 3 runs cross-auditor meta-analysis.
 
-Environment:
+Environment (defaults: ``codex_gpt_5_5`` / codex harness for audit and meta):
   AUDITOR_SLUG, META_ANALYSIS_AUDITOR_SLUG, META_ANALYSIS_HARNESS, META_ANALYSIS_INPUT_DIR
 
 Examples:
@@ -15,7 +15,7 @@ Examples:
   python3 scripts/run_full_benchmark.py --force
   python3 scripts/run_full_benchmark.py --list-steps
   python3 scripts/run_full_benchmark.py -j 4
-  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py
+  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py  # override default codex_gpt_5_5
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
     REPO_ROOT,
     assert_no_stale_audit_reports,
@@ -123,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{step.harness}\t{step.model_slug}")
         return 0
 
-    auditor_slug = env_default("AUDITOR_SLUG", "deepseek_v4_pro_ollama_cloud")
+    auditor_slug = env_default("AUDITOR_SLUG", DEFAULT_AUDITOR_SLUG)
     meta_slug_env = os.environ.get("META_ANALYSIS_AUDITOR_SLUG") or None
     meta_harness_env = os.environ.get("META_ANALYSIS_HARNESS") or None
     meta_input_env = os.environ.get("META_ANALYSIS_INPUT_DIR") or None
@@ -137,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
         )
 
-    meta_slug, meta_harness, meta_input = resolve_meta_config(
+    auditor_harness, meta_slug, meta_harness, meta_input = resolve_meta_config(
         args.harnesses_config.resolve(),
         models_config,
         auditor_slug,
@@ -153,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
             args.results_dir,
             args.audit_reports_dir,
             auditor_slug,
+            auditor_harness,
             dry_run=args.dry_run,
         )
 

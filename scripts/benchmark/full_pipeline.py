@@ -25,6 +25,8 @@ BASELINE_STEPS: tuple[tuple[str, str], ...] = (
 
 STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.0"
 
+_AUDIT_DISPATCH_HARNESSES = frozenset({"claude", "codex"})
+
 
 @dataclass(frozen=True)
 class BuildStep:
@@ -204,6 +206,24 @@ def phase_build(
     return steps
 
 
+def resolve_auditor_harness(
+    harnesses_config: Path,
+    models_config: Path,
+    auditor_slug: str,
+) -> str:
+    """Return the audit dispatch harness for ``auditor_slug``."""
+    harnesses = load_json(harnesses_config)
+    registry = load_json(models_config)
+    harness = audit_model_harness(harnesses, auditor_slug, models_config=registry)
+    if harness not in _AUDIT_DISPATCH_HARNESSES:
+        raise SystemExit(
+            f"ERROR: auditor {auditor_slug!r} routes to harness={harness!r}; "
+            f"full pipeline audit/meta supports only "
+            f"{sorted(_AUDIT_DISPATCH_HARNESSES)}"
+        )
+    return harness
+
+
 def resolve_meta_config(
     harnesses_config: Path,
     models_config: Path,
@@ -211,8 +231,11 @@ def resolve_meta_config(
     meta_auditor_slug: str | None,
     meta_harness: str | None,
     meta_input_dir: str | None,
-) -> tuple[str, str, str]:
-    """Return (meta_auditor_slug, meta_harness, meta_input_dir)."""
+) -> tuple[str, str, str, str]:
+    """Return (auditor_harness, meta_auditor_slug, meta_harness, meta_input_dir)."""
+    auditor_harness = resolve_auditor_harness(
+        harnesses_config, models_config, auditor_slug
+    )
     meta_slug = meta_auditor_slug or auditor_slug
     meta_input = meta_input_dir or auditor_slug
     harnesses = load_json(harnesses_config)
@@ -225,18 +248,20 @@ def resolve_meta_config(
             f"ERROR: META_ANALYSIS_HARNESS={resolved_harness} but model {meta_slug} "
             f"defaults to harness={expected} in {harnesses_config}"
         )
-    if resolved_harness not in ("claude", "codex"):
+    if resolved_harness not in _AUDIT_DISPATCH_HARNESSES:
         raise SystemExit(
             f"ERROR: META_ANALYSIS_HARNESS must be claude or codex "
             f"(got {resolved_harness})"
         )
 
-    print_line(f"Phase 2 auditor: {auditor_slug}")
+    print_line(
+        f"Phase 2 auditor: {auditor_slug} harness={auditor_harness}"
+    )
     print_line(
         f"Phase 3 meta: slug={meta_slug} harness={resolved_harness} "
         f"input={meta_input}"
     )
-    return meta_slug, resolved_harness, meta_input
+    return auditor_harness, meta_slug, resolved_harness, meta_input
 
 
 def assert_no_stale_audit_reports(audit_reports_dir: Path, auditor_slug: str) -> None:
@@ -265,6 +290,7 @@ def phase_audit(
     results_dir: Path,
     audit_reports_dir: Path,
     auditor_slug: str,
+    auditor_harness: str,
     *,
     dry_run: bool = False,
 ) -> None:
@@ -275,7 +301,7 @@ def phase_audit(
         "--models-config",
         str(models_config),
         "--harness",
-        "claude",
+        auditor_harness,
         "--benchmark-results-dir",
         str(results_dir),
         "--results-dir",

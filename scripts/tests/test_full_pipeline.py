@@ -5,9 +5,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
     BASELINE_STEPS,
     OLLAMA_BUILD_HARNESSES,
@@ -15,10 +18,13 @@ from benchmark.full_pipeline import (  # noqa: E402
     build_matrix,
     group_build_batches,
     ollama_cloud_slugs,
+    phase_audit,
     reject_forwarded_model_flag,
+    resolve_meta_config,
 )
 
 MODELS_CONFIG = REPO_ROOT / "config" / "models.json"
+HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
 
 
 def test_ollama_cloud_slug_count() -> None:
@@ -75,6 +81,39 @@ def test_build_benchmark_argv_includes_jobs() -> None:
     )
     j_index = argv.index("-j")
     assert argv[j_index + 1] == "2"
+
+
+def test_default_auditor_is_codex_gpt_5_5() -> None:
+    assert DEFAULT_AUDITOR_SLUG == "codex_gpt_5_5"
+
+
+def test_resolve_meta_config_default_auditor_uses_codex() -> None:
+    auditor_harness, meta_slug, meta_harness, meta_input = resolve_meta_config(
+        HARNESSES_CONFIG,
+        MODELS_CONFIG,
+        DEFAULT_AUDITOR_SLUG,
+        None,
+        None,
+        None,
+    )
+    assert auditor_harness == "codex"
+    assert meta_slug == DEFAULT_AUDITOR_SLUG
+    assert meta_harness == "codex"
+    assert meta_input == DEFAULT_AUDITOR_SLUG
+
+
+def test_phase_audit_dry_run_passes_codex_harness(capsys: pytest.CaptureFixture[str]) -> None:
+    phase_audit(
+        MODELS_CONFIG,
+        REPO_ROOT / "results",
+        REPO_ROOT / "audit-reports",
+        DEFAULT_AUDITOR_SLUG,
+        "codex",
+        dry_run=True,
+    )
+    out = capsys.readouterr().out
+    assert "--harness codex" in out
+    assert f"--model {DEFAULT_AUDITOR_SLUG}" in out
 
 
 def test_list_steps_cli() -> None:

@@ -56,6 +56,7 @@ from benchmark.timeouts import (  # noqa: E402
     DEFAULT_TIMEOUT_MINUTES,
 )
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 
 # Runner imports go through the Harness registry; no direct imports needed.
@@ -215,13 +216,26 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--harness",
-        default="claude",
-        help="Audit dispatch harness slug from harnesses.json (default: claude).",
+        default=DEFAULT_AUDIT_HARNESS,
+        help=(
+            "Audit dispatch harness slug from harnesses.json "
+            f"(default: {DEFAULT_AUDIT_HARNESS})."
+        ),
     )
     parser.add_argument(
         "--model",
-        default=None,
-        help="Select one audit model slug from models.json.",
+        default=DEFAULT_AUDITOR_SLUG,
+        help=(
+            f"Select one audit model slug from models.json "
+            f"(default: {DEFAULT_AUDITOR_SLUG}). Omit with --all-auditors."
+        ),
+    )
+    parser.add_argument(
+        "--all-auditors",
+        action="store_true",
+        help=(
+            "Audit with every non-skipped model for --harness instead of --model."
+        ),
     )
     parser.add_argument(
         "--benchmark-config",
@@ -648,7 +662,10 @@ def main() -> int:
     benchmark_config = load_json(benchmark_config_path)
     prompt_template = prompt_template_path.read_text()
 
-    wanted_model = args.model
+    if args.report_only or args.all_auditors:
+        wanted_model = None
+    else:
+        wanted_model = args.model
     wanted_targets = set(args.target) if args.target else None
 
     if args.report_only and wanted_model is None:
