@@ -402,7 +402,7 @@ def test_build_audit_prompt_leaves_placeholder_when_path_omitted() -> None:
     # When static_analysis_path is omitted the literal placeholder remains.
     template = "qa={static_analysis_path} d10={d10_precomputed_block}"
     prompt = build_audit_prompt(template, Path("/tmp/p"), "m", output_path=None)
-    assert prompt == "qa={static_analysis_path} d10=n/a — probe skipped; award D10 5/10 unverified."
+    assert prompt == "qa={static_analysis_path} d10=n/a — probe skipped; award D10 3/10 unverified."
 
 
 def test_build_audit_prompt_interpolates_generation_metrics(tmp_path: Path) -> None:

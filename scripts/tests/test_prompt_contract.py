@@ -36,18 +36,27 @@ def test_followup_prompt_v32_rechecks_frontend_wiring() -> None:
     assert "command/result/blocker format" in prompt
 
 
-def test_audit_prompt_v34_matches_current_benchmark_versions() -> None:
+def test_audit_prompt_v36_rebalanced_weights() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.4")
-    assert "MUST equal `audit-v3.4`" in prompt
+    assert prompt.startswith("Prompt-Version: audit-v3.6")
+    assert "MUST equal `audit-v3.6`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.2`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.2`" in prompt
     assert "Count at most one CF#11 per generated project" in prompt
     assert "`tests.py`, `test_*.py`, and `*_test.py`" in prompt
     assert "If only test files are below 65, no D10 deduction" in prompt
     assert "{d10_precomputed_block}" in prompt
-    assert "award **5/10** by default" in prompt
+    assert "award **3/10** by default" in prompt
+    assert "D2 | LLM integration correctness | 10" in prompt
+    assert "D3 | Test quality | 10" in prompt
+    assert "D5 | Persistence / multi-turn | 5" in prompt
+    assert "D7 | Architecture | 15" in prompt
+    assert "D8 | Secrets & config hygiene | 5" in prompt
+    assert "D9 | Production hardening | 10" in prompt
+    assert "D10 | Code quality (tool-backed) | 10" in prompt
+    assert "exactly **ten** rows" in prompt
+    assert "D1=15, D2=10, D3=10, D4=10, D5=5, D6=10, D7=15, D8=5, D9=10, D10=10" in prompt
     assert "Tier cap:" in prompt
 
 

@@ -1,8 +1,8 @@
-Prompt-Version: audit-v3.4
+Prompt-Version: audit-v3.6
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
-Tool-backed code-quality evidence: {static_analysis_path}. Read this file BEFORE scoring D10. It is a JSON document written by the harness from a controlled `ruff` / `mypy` / `bandit` / `radon cc` / `radon mi` run against **application source only** (venv/vendor trees excluded), using pinned tool versions in `_quality_probe/requirements.txt`. Use **application-scoped** counts (`bandit.high`, not `bandit.dependency_noise`). If the file is missing or its top-level `status` equals `"error"`, treat D10 as **unverified**, note that in section E, and award **5/10** by default.
+Tool-backed code-quality evidence: {static_analysis_path}. Read this file BEFORE scoring D10. It is a JSON document written by the harness from a controlled `ruff` / `mypy` / `bandit` / `radon cc` / `radon mi` run against **application source only** (venv/vendor trees excluded), using pinned tool versions in `_quality_probe/requirements.txt`. Use **application-scoped** counts (`bandit.high`, not `bandit.dependency_noise`). If the file is missing or its top-level `status` equals `"error"`, treat D10 as **unverified**, note that in section E, and award **3/10** by default.
 
 ## Harness-precomputed D10 (mandatory)
 
@@ -68,18 +68,18 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | # | Dimension | Max |
 |---|---|---:|
 | D1 | Deliverable completeness | 15 |
-| D2 | LLM integration correctness | 20 |
-| D3 | Test quality | 15 |
+| D2 | LLM integration correctness | 10 |
+| D3 | Test quality | 10 |
 | D4 | Error handling | 10 |
-| D5 | Persistence / multi-turn | 10 |
+| D5 | Persistence / multi-turn | 5 |
 | D6 | Streaming & frontend | 10 |
-| D7 | Architecture | 5 |
-| D8 | Secrets & config hygiene | 3 |
-| D9 | Production hardening | 2 |
+| D7 | Architecture | 15 |
+| D8 | Secrets & config hygiene | 5 |
+| D9 | Production hardening | 10 |
 | D10 | Code quality (tool-backed) | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the rubric grades craftsmanship (lint / types / complexity / security findings) alongside file presence. v3.4 tightens saturated dimensions (D2, D7), lowers the D10 unverified default, and requires harness-precomputed D10.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10.
 
 ## Benchmark anchors (scoring calibration)
 
@@ -101,26 +101,26 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - `ASGI_APPLICATION` missing from settings: -2.
    - Missing verification summary with command results: -2. Generic "validated" prose without concrete commands and pass/fail/blocker results counts as missing.
 
-2. **LLM integration correctness** (0-20)
-   - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -10.
-   - Uses direct `ollama` Python client instead of `langchain-ollama` `ChatOllama`: -5.
-   - Wrong streaming method (`.predict`, `.run`, `.call`, or `chat()` without `stream=True` on the ollama client): -5.
-   - Deprecated `langchain_community.chat_models.ChatOllama` instead of `langchain_ollama.ChatOllama`: -3.
-   - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -3.
-   - No streaming (returns full response): -7.
-   - No multi-turn (one-shot only): -3.
-   - Consumer buffers chunks before first WebSocket send (collects async generator into list/string before first `send`, short of explicit CF#3): -2.
-   - Tests lack chunk-by-chunk streaming assertion anywhere in the suite (only final joined string): -2.
-   - Env vars use insecure Python-side defaults instead of required `os.environ[...]` / explicit startup validation: -2.
+2. **LLM integration correctness** (0-10)
+   - Hallucinated import path (e.g. `from langchain.chat_models import ChatOllama` — only `langchain_ollama` is correct in 1.x for the LangChain path): -5.
+   - Uses direct `ollama` Python client instead of `langchain-ollama` `ChatOllama`: -3.
+   - Wrong streaming method (`.predict`, `.run`, `.call`, or `chat()` without `stream=True` on the ollama client): -3.
+   - Deprecated `langchain_community.chat_models.ChatOllama` instead of `langchain_ollama.ChatOllama`: -2.
+   - Hardcoded model name or host (no env override for OLLAMA_MODEL / OLLAMA_HOST): -2.
+   - No streaming (returns full response): -4.
+   - No multi-turn (one-shot only): -2.
+   - Consumer buffers chunks before first WebSocket send (collects async generator into list/string before first `send`, short of explicit CF#3): -1.
+   - Tests lack chunk-by-chunk streaming assertion anywhere in the suite (only final joined string): -1.
+   - Env vars use insecure Python-side defaults instead of required `os.environ[...]` / explicit startup validation: -1.
    - Correct entry + real streaming + OLLAMA_HOST/OLLAMA_MODEL env wiring + tokens piped to WS: up to full marks after deductions.
 
-3. **Test quality** (0-15)
-   - Tests don't exercise LLM path (constants/import smoke only): -10.
-   - No real mocks (pytest-mock, monkeypatch, FakeLLM): -3.
-   - Tests mock the hallucinated API: -5.
-   - No consumer test (WebsocketCommunicator): -3.
-   - No view/template test: -2.
-   - **Cap at 12/15** when CF#9 (false-green tests) is present in section F.
+3. **Test quality** (0-10)
+   - Tests don't exercise LLM path (constants/import smoke only): -7.
+   - No real mocks (pytest-mock, monkeypatch, FakeLLM): -2.
+   - Tests mock the hallucinated API: -3.
+   - No consumer test (WebsocketCommunicator): -2.
+   - No view/template test: -1.
+   - **Cap at 8/10** when CF#9 (false-green tests) is present in section F.
 
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
@@ -130,10 +130,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - CSRF disabled globally (e.g. `CsrfViewMiddleware` removed or bypassed): -2.
    - `|safe` on raw LLM output (XSS): -2.
 
-5. **Persistence / multi-turn state** (0-10)
+5. **Persistence / multi-turn state** (0-5)
    - In-memory per-consumer (per-tab) history is OK per brief — full marks if turns accumulate.
-   - Class variable / module global (race-prone across consumers): -5.
-   - No history (single-turn only): -7.
+   - Class variable / module global (race-prone across consumers): -3.
+   - No history (single-turn only): -4.
 
 6. **Streaming & frontend wiring** (0-10)
    - Single template dump (no {% include %} / partials): -3.
@@ -145,28 +145,33 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10 so the ru
    - No try/except in the consumer streaming loop for forward errors (stream robustness): -2. Missing/bare-pass `disconnect` is **CF#11** (U2) — do not duplicate that deduction here; §4 covers it.
    - D6 sub-deductions above are additive with each other and with the bullets in this section; floor this dimension at 0.
 
-7. **Architecture** (0-5)
-   - Consumer wires LLM client inline with no service layer (U4): -3.
-   - Settings monolith (no BASE_DIR constants, hard-coded paths): -1.
-   - View doing template + LLM in one function: -1.
-   - No settings split (base vs prod/docker) when Docker path exists: -1.
-   - Consumer class body exceeds 30 non-blank lines (excluding docstrings): -1.
-   - Service layer lacks a typed/protocol interface or dedicated module boundary: -1.
+7. **Architecture** (0-15)
+   - Consumer wires LLM client inline with no service layer (U4): -6.
+   - Settings monolith (no BASE_DIR constants, hard-coded paths): -2.
+   - View doing template + LLM in one function: -2.
+   - No settings split (base vs prod/docker) when Docker path exists: -2.
+   - Consumer class body exceeds 30 non-blank lines (excluding docstrings): -2.
+   - Service layer lacks a typed/protocol interface or dedicated module boundary: -3.
+   - LLM or channel imports leaked into views/templates (layer violation): -2.
+   - Single module exceeds 200 non-blank lines of mixed concerns (god file): -3.
    - Floor at 0. A bare `llm_service.py` file alone does not earn full marks.
 
-8. **Secrets & config hygiene** (0-3)
+8. **Secrets & config hygiene** (0-5)
    - Any `SECRET_KEY` / `DJANGO_SECRET_KEY` literal or insecure string fallback in source, Dockerfile, compose, or README: cap this dimension at 0 (treat as CF#1 in ledger).
-   - `DEBUG=True` hardcoded as the default for the production/Docker path, or compose hardcodes debug on: -1.
-   - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -1.
+   - `DEBUG=True` hardcoded as the default for the production/Docker path, or compose hardcodes debug on: -2.
+   - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -2.
+   - Required secret/env vars read without startup validation (silent fallback to insecure default): -1.
 
-9. **Production hardening** (0-2)
-   - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -1.
-   - No structured logging configured (print-only, no `logging` setup) (U5): -1.
-   - Non-root container user: best practice only — no deduction.
-   - These are low-weight expected hardening checks; apply them consistently even when the main app works.
+9. **Production hardening** (0-10)
+   - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -3.
+   - No structured logging configured (print-only, no `logging` setup) (U5): -3.
+   - Compose service missing `restart` policy for the web/ASGI container: -2.
+   - Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: -2.
+   - No graceful shutdown handling for in-flight WebSocket streams on SIGTERM: -2.
+   - Non-root container user alone does not earn full marks — apply the triggers above consistently.
 
 10. **Code quality (tool-backed)** (0-10)
-    Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. **Start from the harness-precomputed D10 block above** — do not award a higher score. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **5/10**; skip the rest of D10.
+    Evidence file: read `{static_analysis_path}` BEFORE applying any trigger below. Cite the field (e.g. `static-analysis.json:ruff.total_errors`) in every deduction. **Start from the harness-precomputed D10 block above** — do not award a higher score. If the file is missing or its top-level `status` equals `"error"`, write "D10 unverified — probe missing/failed" in section E and award **3/10**; skip the rest of D10.
     - `ruff.total_errors / (lines_of_code / 1000)` > 5 (i.e. >5 lint errors per kLOC): -2. Cite the top 3 offender file:line:code entries.
     - `mypy.total_errors` > 10: -2. Cite the top 3 offenders.
     - Any function in `radon_cc.top_offenders` with `complexity` >= 20 (grade D/E/F): -2. Cite file:function:complexity.
@@ -201,7 +206,7 @@ Operating rules:
 - D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
 - Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
 - **Tier cap:** when section F lists **≥3 distinct CF types** (by CF number), section D tier cannot exceed **B (61-80)** even if the numeric total would land in A.
-- **Sum check (mandatory):** Before finalising section B, section B must contain exactly **ten** rows, D1-D10 in order, and the denominators in the Score/Max column must sum to exactly 100 (D1=15, D2=20, D3=15, D4=10, D5=10, D6=10, D7=5, D8=3, D9=2, D10=10). If not, correct the table before writing the report. Reports with a non-100 denominator sum or fewer than 10 dimension rows are automatically excluded from cross-run comparison.
+- **Sum check (mandatory):** Before finalising section B, section B must contain exactly **ten** rows, D1–D10 in order, and the denominators in the Score/Max column must sum to exactly 100 (D1=15, D2=10, D3=10, D4=10, D5=5, D6=10, D7=15, D8=5, D9=10, D10=10). If not, correct the table before writing the report. Reports with a non-100 denominator sum or fewer than 10 dimension rows are automatically excluded from cross-run comparison.
 
 ## Required output sections
 
@@ -233,7 +238,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.4`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.6`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

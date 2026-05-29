@@ -16,7 +16,7 @@ from benchmark.audit_report import parse_report_scores
 from benchmark.util import save_json
 
 D10_MAX = 10
-D10_UNVERIFIED_DEFAULT = 5
+D10_UNVERIFIED_DEFAULT = 3
 
 _BARE_EXCEPT_RE = re.compile(
     r"^\s*except\s*(Exception\s*)?\s*:\s*$",
@@ -80,7 +80,7 @@ def compute_d10_from_probe(
     *,
     project_dir: Path | None = None,
 ) -> D10Result:
-    """Apply audit-v3.4 D10 triggers mechanically from probe JSON."""
+    """Apply audit-v3.6 D10 triggers mechanically from probe JSON."""
     if payload is None or payload.get("status") == "error":
         reason = "probe missing or failed"
         if payload and payload.get("error"):

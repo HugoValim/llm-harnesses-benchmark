@@ -282,7 +282,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Skip the ruff/mypy/bandit/radon static-analysis probe that "
             "produces static-analysis.json for the D10 rubric dimension. "
-            "When skipped, D10 is graded as 'unverified' (5/10 default)."
+            "When skipped, D10 is graded as 'unverified' (3/10 default)."
         ),
     )
     parser.add_argument(
@@ -485,7 +485,7 @@ def build_audit_prompt(
 
     ``{static_analysis_path}`` resolves to the path the probe wrote (or the
     expected path when the probe was skipped) — the auditor opens it as
-    evidence for D10 per the audit-v3.4 rubric.
+    evidence for D10 per the audit-v3.6 rubric.
 
     ``{d10_precomputed_block}`` carries harness-computed D10 the auditor must
     not exceed.
@@ -505,7 +505,7 @@ def build_audit_prompt(
     else:
         prompt = prompt.replace(
             "{d10_precomputed_block}",
-            "n/a — probe skipped; award D10 5/10 unverified.",
+            "n/a — probe skipped; award D10 3/10 unverified.",
         )
     if benchmark_result_path is not None:
         prompt = prompt.replace(
@@ -556,7 +556,7 @@ def _maybe_run_quality_probe(
 
     Cached: if ``out_path`` already exists and ``force`` is False, reuse it.
     ``skip=True`` short-circuits — the audit prompt will see a missing file
-    and grade D10 as unverified (5/10 default).
+    and grade D10 as unverified (3/10 default).
     """
     if skip:
         print_line(f"[{job_slug}] quality probe skipped (--skip-quality-probe)")

@@ -48,7 +48,7 @@ def test_compute_d10_bandit_high_triggers_cf13() -> None:
 
 def test_compute_d10_unverified_when_probe_missing() -> None:
     result = compute_d10_from_probe(None)
-    assert result.score == 5
+    assert result.score == 3
     assert result.verified is False
 
 
