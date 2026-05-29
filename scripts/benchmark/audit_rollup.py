@@ -347,6 +347,139 @@ def _max_for_dimension(reports: list[ParsedReport], index: int) -> int | None:
     return None
 
 
+def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, object]]:
+    """Per-model harness coverage keyed by model slug.
+
+    Values: ``harnesses`` (sorted list), ``runs`` (int), ``avg_total`` (float|None).
+    Only reports with a parseable total contribute to ``avg_total``.
+    """
+    by_model: dict[str, list[ParsedReport]] = {}
+    for r in reports:
+        if r.model_slug:
+            by_model.setdefault(r.model_slug, []).append(r)
+
+    out: dict[str, dict[str, object]] = {}
+    for slug, subset in by_model.items():
+        harnesses = sorted({r.harness for r in subset if r.harness != "unknown"})
+        totals = [float(r.total) for r in subset if r.total is not None]
+        out[slug] = {
+            "harnesses": harnesses,
+            "runs": len(subset),
+            "harness_count": len(harnesses),
+            "avg_total": mean(totals) if totals else None,
+        }
+    return out
+
+
+def build_model_coverage_table(reports: list[ParsedReport]) -> str:
+    """Markdown table: model slug → harness list → run count → avg total."""
+    coverage = model_harness_coverage(reports)
+    if not coverage:
+        return "## Model coverage\n\n*(no reports parsed)*\n"
+
+    lines = [
+        "## Model coverage",
+        "",
+        "Authoritative harness counts for section 2 **Harnesses seen**. "
+        "``harness_count`` is the number of distinct harness prefixes with "
+        "a parseable total for that model slug.",
+        "",
+        "| Model slug | Harnesses | Harness count | Runs | Avg total |",
+        "|---|---|---:|---:|---:|",
+    ]
+    rows: list[tuple[float, list[str]]] = []
+    for slug, info in coverage.items():
+        harnesses = info["harnesses"]
+        harness_list = ", ".join(harnesses) if harnesses else "-"
+        avg = info["avg_total"]
+        cells = [
+            slug,
+            harness_list,
+            str(info["harness_count"]),
+            str(info["runs"]),
+            _fmt(avg if isinstance(avg, float) else None),
+        ]
+        sort_key = float(avg) if isinstance(avg, float) else -1.0
+        rows.append((sort_key, cells))
+
+    rows.sort(key=lambda t: t[0], reverse=True)
+    for _, cells in rows:
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_precomputed_rollup(
+    reports_dir: Path | None = None,
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Full deterministic rollup injected into the meta-analysis prompt."""
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    if not reports:
+        return (
+            "## Precomputed rollup\n\n"
+            "*(no reports parsed — meta-analysis cannot rank models)*\n"
+        )
+
+    parts = [
+        "## Precomputed rollup",
+        "",
+        "Harness-computed from parsed ``report.md`` files. **Section 2–4 numeric "
+        "tables in meta-analysis.md MUST match these values.** Use individual "
+        "reports only for citations and narrative.",
+        "",
+        build_model_coverage_table(reports).rstrip(),
+        "",
+        build_statistical_summary(reports_dir, source_dirs=source_dirs).rstrip(),
+    ]
+    return "\n".join(parts) + "\n"
+
+
+def validate_meta_analysis_coverage(
+    meta_path: Path,
+    *,
+    source_dirs: list[Path] | None = None,
+    reports_dir: Path | None = None,
+) -> list[str]:
+    """Compare section-2 harness counts in meta-analysis.md to the rollup."""
+    import re
+
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    expected = model_harness_coverage(reports)
+    if not expected or not meta_path.is_file():
+        return []
+
+    text = meta_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"###\s*2\.\s*Best model overall(.*?)(?=\n###\s|\Z)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not section_match:
+        return ["section 2 (Best model overall) not found in meta-analysis.md"]
+
+    section = section_match.group(1)
+    row_re = re.compile(
+        r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|",
+        re.MULTILINE,
+    )
+    errors: list[str] = []
+    for match in row_re.finditer(section):
+        slug = match.group(1).strip()
+        reported = int(match.group(2))
+        exp = expected.get(slug)
+        if exp is None:
+            continue
+        exp_count = int(exp["harness_count"])
+        if reported != exp_count:
+            harnesses = ", ".join(exp["harnesses"])  # type: ignore[arg-type]
+            errors.append(
+                f"{slug}: meta-analysis reports {reported} harnesses but "
+                f"rollup has {exp_count} ({harnesses})"
+            )
+    return errors
+
+
 def build_statistical_summary(
     reports_dir: Path | None = None,
     *,

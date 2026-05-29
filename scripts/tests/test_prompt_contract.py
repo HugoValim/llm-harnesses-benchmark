@@ -60,10 +60,17 @@ def test_audit_prompt_v36_rebalanced_weights() -> None:
     assert "Tier cap:" in prompt
 
 
-def test_meta_prompt_v35_filters_current_prompt_versions() -> None:
+def test_meta_prompt_v37_includes_precomputed_rollup() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: meta-v3.5")
-    assert "audit-v3.4" in prompt
+    assert prompt.startswith("Prompt-Version: meta-v3.7")
+    assert "{precomputed_rollup}" in prompt
+    assert "audit-v3.6" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.2`" in prompt
     assert "`benchmark-followup-v3.2` when follow-up is present" in prompt
+    assert "Gen-time (min)" in prompt
+    assert "Tokens (M)" in prompt
+    assert "Cost (USD)" in prompt
+    assert "Leader anchor" not in prompt
+    assert "Check 5 — D10 floor" in prompt
+    assert "D10/10" in prompt

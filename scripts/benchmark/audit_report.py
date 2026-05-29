@@ -307,6 +307,10 @@ from benchmark.audit_rollup import (  # noqa: E402, F401
     _normalized_scores_section,
     _pct_of_ceiling,
     build_statistical_summary,
+    build_model_coverage_table,
+    build_precomputed_rollup,
+    model_harness_coverage,
+    validate_meta_analysis_coverage,
 )
 from benchmark.audit_meta import (  # noqa: E402, F401
     audit_model_harness,

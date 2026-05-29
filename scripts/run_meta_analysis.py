@@ -41,6 +41,7 @@ from benchmark.audit_report import (  # noqa: E402
     resolve_meta_variant,
     run_ai_meta_analysis,
 )
+from benchmark.audit_rollup import validate_meta_analysis_coverage  # noqa: E402
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
@@ -151,6 +152,16 @@ def parse_args() -> argparse.Namespace:
         "--force",
         action="store_true",
         help="Re-run the meta-analysis even if a cached payload exists.",
+    )
+    parser.add_argument(
+        "--strict-meta-validation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After meta-analysis, compare section-2 harness counts against "
+            "the deterministic rollup and exit non-zero on mismatch "
+            "(default: enabled)."
+        ),
     )
     add_rate_limit_cli_args(parser)
     return parser.parse_args()
@@ -296,6 +307,18 @@ def main() -> int:
             f"Check {meta_output_dir / '_meta-analysis-runs' / meta_variant['slug']}."
         )
         return 1
+
+    if args.strict_meta_validation:
+        coverage_errors = validate_meta_analysis_coverage(
+            meta_output,
+            source_dirs=meta_input_dirs,
+        )
+        if coverage_errors:
+            print_line("Meta-analysis harness coverage validation failed:")
+            for err in coverage_errors:
+                print(f"  - {err}", file=sys.stderr)
+            return 1
+
     return 0
 
 

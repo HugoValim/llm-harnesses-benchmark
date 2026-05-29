@@ -169,12 +169,14 @@ def build_meta_prompt(
     *,
     audit_input_dirs: list[Path],
     output_path: Path,
+    precomputed_rollup: str = "",
 ) -> str:
     """Interpolate the meta-analysis prompt template's placeholders.
 
     The template exposes ``{audit_input_dirs}`` (rendered as a markdown
     bullet list of auditor-scoped directories the meta-analyst must glob
-    ``report.md`` files under) and ``{output_path}`` (where it must
+    ``report.md`` files under), ``{precomputed_rollup}`` (harness-computed
+    coverage and statistical summary), and ``{output_path}`` (where it must
     write ``meta-analysis.md``).
     """
     if not audit_input_dirs:
@@ -183,6 +185,7 @@ def build_meta_prompt(
         template.replace(
             "{audit_input_dirs}", _render_audit_input_dirs(audit_input_dirs)
         )
+        .replace("{precomputed_rollup}", precomputed_rollup.rstrip())
         .replace("{output_path}", str(output_path.resolve()))
     )
 
@@ -228,10 +231,14 @@ def run_ai_meta_analysis(
         raise ValueError("audit_input_dirs must be non-empty")
     output_path = reports_dir / "meta-analysis.md"
 
+    from benchmark.audit_rollup import build_precomputed_rollup  # noqa: PLC0415
+
+    precomputed_rollup = build_precomputed_rollup(source_dirs=resolved_inputs)
     prompt = build_meta_prompt(
         prompt_template,
         audit_input_dirs=resolved_inputs,
         output_path=output_path,
+        precomputed_rollup=precomputed_rollup,
     )
 
     meta_run_dir = reports_dir / "_meta-analysis-runs" / variant["slug"]
