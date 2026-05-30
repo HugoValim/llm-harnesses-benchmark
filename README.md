@@ -78,7 +78,7 @@ flowchart LR
 
 | Phase | Script | Input | Output |
 |-------|--------|-------|--------|
-| Generation | `run_benchmark.py` | [`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt) + optional follow-up | `results/<run_id>/projects/<harness>-<slug>/project/` |
+| Generation | `run_benchmark.py` | [`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt) + optional follow-up | `results/<run_id>/projects/<harness>-<slug>/run_XX/project/` (see `num_runs` in `config/models.json`) |
 | Role 1 audit | `run_audit.py` | Generated `project/` + [`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt) | `results/<run_id>/audit-reports/<auditor>/<target>/report.md` |
 | Role 2 meta-analysis | `run_meta_analysis.py` | All Role 1 reports + [`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt) | `results/<run_id>/meta-analysis.md` |
 | Runtime verification (optional) | `analyze_results_runtime.py` | Generated `project/` | Boot/Docker/browser pass-fail under `_runtime_verification/` |
@@ -227,7 +227,7 @@ Extended notes and prompt version history:
 
 ## Safety
 
-Generated projects under `results/<run_id>/projects/<harness>-<slug>/project/` are **untrusted code**.
+Generated projects under `results/<run_id>/projects/<harness>-<slug>/run_XX/project/` are **untrusted code**.
 Prefer `scripts/analyze_results_runtime.py` over ad hoc execution. Do not run generated
 migrations, shell scripts, or installers against shared services. Secrets must stay in
 environment variables or ignored local files — rotate any credential that appears in logs.

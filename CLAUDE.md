@@ -8,7 +8,7 @@ This is a benchmark harness that drives autonomous coding sessions against a fix
 
 ## Common commands
 
-Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required) and a run directory with **`--run-id run_XX`**. Runs write under `results/<run_id>/projects/<harness>-<slug>/`.
+Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required) and a run directory with **`--run-id run_XX`**. Runs write under `results/<run_id>/projects/<harness>-<slug>/run_XX/` (one folder per replicate; count from `num_runs` in `config/models.json`).
 
 Run the full pipeline (build + audit + meta-analysis):
 ```bash
@@ -52,7 +52,7 @@ Run only the cross-auditor meta-analysis (assumes audits already ran):
 python scripts/run_meta_analysis.py --run-id run_02
 ```
 
-Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<run_id>/projects/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair). By default audits **all** discovered targets and exits non-zero if any lack a scored `report.md` (use `--no-enforce-coverage` to opt out):
+Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every discovered benchmark project leaf and writes one rubric `report.md` per (auditor, target, replicate) pair). By default audits **all** discovered targets and exits non-zero if any lack a scored `report.md` (use `--no-enforce-coverage` to opt out):
 ```bash
 python scripts/run_audit.py --run-id run_02
 ```
@@ -136,7 +136,7 @@ results/<run_id>/
 ├── meta-analysis.md
 ├── audit-reports/<auditor>/<target>/   # report.md, generation-metrics.json, …
 │   └── comparison.md
-└── projects/<harness>-<slug>/         # project/, result.json, stream logs
+└── projects/<harness>-<slug>/         # run_XX/project/, result.json, stream logs
 ```
 
 Legacy flat layout remains available when `--run-id` is omitted.
