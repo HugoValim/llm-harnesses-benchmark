@@ -1,4 +1,4 @@
-Prompt-Version: benchmark-v3.2
+Prompt-Version: benchmark-v3.3
 
 Build a Python web application using Django and Django Channels. This is a controlled benchmark task: implement the requested app inside the current working directory and record evidence for what you verified. First make a short implementation plan for yourself, then implement without asking for confirmation. Do not stop with only a plan.
 
@@ -20,6 +20,58 @@ Required deliverables (all must be present; these map directly to the audit rubr
 15. All project files created directly in `.`. Do not navigate to parent directories. Do not create a nested wrapper directory such as `chat_app/` unless `.` is already a Django project.
 16. `.env.example` documenting `OLLAMA_HOST` and `OLLAMA_MODEL` with their defaults.
 17. A short verification summary in README or a dedicated `VERIFY.md` listing commands run, pass/fail result, and any environment blocker.
+18. Production hardening (maps to audit D9 — all five sub-checks required):
+    - **D9.1 Docker/compose healthcheck** — probe the **web app HTTP port only** (e.g. `curl -f http://localhost:8000/` or a lightweight `/health/` that returns 200 **without** calling Ollama). Add `HEALTHCHECK` in the Dockerfile and/or a compose `healthcheck:` on the web service. This is separate from the Ollama reachability view in LLM integration requirements.
+    - **D9.2 Structured logging** — configure a Django `LOGGING` dict with at least a console handler and JSON or structured formatter (not `print`-only in production paths).
+    - **D9.3 Compose restart policy** — set `restart: unless-stopped` (or equivalent) on the web/ASGI service in `docker-compose.yml`.
+    - **D9.4 Non-root container user** — after installing dependencies, add a non-root `USER` in the Dockerfile (create the user, `chown` app files, then switch).
+    - **D9.5 Graceful WebSocket shutdown** — in the consumer's `.astream()` loop, catch `asyncio.CancelledError`, stop forwarding tokens, and clean up stream state in `disconnect`; do not leave in-flight streams orphaned on SIGTERM.
+
+Minimal patterns (adapt paths to your project):
+
+```dockerfile
+# D9.1 + D9.4 (after COPY/install, before CMD)
+RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app
+USER appuser
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')" || exit 1
+```
+
+```yaml
+# D9.1 + D9.3 in docker-compose.yml (web service)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+```
+
+```python
+# D9.2 in settings.py
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"json": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "json"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+```
+
+```python
+# D9.5 in consumers.py (inside async for over .astream())
+import asyncio
+
+try:
+    async for chunk in llm.astream(messages):
+        await self.send_json({"token": chunk.content})
+except asyncio.CancelledError:
+    logger.info("stream cancelled during shutdown")
+    raise
+finally:
+    self._active_stream = None  # or equivalent cleanup
+```
 
 Explicitly disallowed alternatives:
 - Do not implement browser streaming with app-owned raw `new WebSocket(...)` or `WebSocket(...)` JavaScript. Use HTMX `hx-ext="ws"` plus `ws-connect` / `ws-send` wiring in rendered HTML. Small unrelated JavaScript for UI polish is OK, but the streaming path must be the HTMX WebSocket extension.
@@ -48,7 +100,7 @@ LLM integration requirements:
 - Stream through `.astream(...)` and forward each chunk's content to the WebSocket as it arrives.
 - Maintain multi-turn chat context for the active conversation.
 - Surface an understandable UI error if Ollama is unreachable or streaming fails.
-- Add a preflight or health-check path that can report Ollama reachability without exposing secrets.
+- Add a preflight or health-check **HTTP view** that can report Ollama reachability without exposing secrets (D4/U1). This is not the same as Docker `HEALTHCHECK` (D9.1): the Docker probe must target a lightweight web liveness route that does not require Ollama inside the container.
 - Implement a real `disconnect(self, close_code)` path for the consumer. It should clean up group membership, active stream state, or per-consumer resources as applicable; a bare `pass` disconnect is invalid.
 
 Testing and tooling requirements:
@@ -63,6 +115,7 @@ Testing and tooling requirements:
 Verification summary format:
 - Write a README section or `VERIFY.md` table with columns for command, result, and evidence or blocker.
 - Include `python --version` or the exact `mise` invocation, dependency install, Tailwind build, `pytest`, `ruff check`, `ruff format --check`, `mypy`, `bandit -r .`, coverage, and `pip-audit` or the exact environment blocker.
+- Include a **Production hardening (D9)** row group: for each of D9.1–D9.5, record pass/fail and the file path (Dockerfile, compose, settings `LOGGING`, consumer `CancelledError` handling).
 - For any command not run in phase 1, mark it as not run and explain the environment or time constraint. Do not leave the verification summary as a generic TODO.
 
 This is phase 1 of 2. Focus on implementation, tests, project structure, and reproducible evidence. Do not spend time on full browser/Docker runtime validation beyond what is needed to keep implementation moving.

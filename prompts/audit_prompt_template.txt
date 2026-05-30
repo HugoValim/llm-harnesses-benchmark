@@ -1,4 +1,4 @@
-Prompt-Version: audit-v3.8
+Prompt-Version: audit-v3.9
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
@@ -37,7 +37,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 6. Channels AsyncWebsocketConsumer for streaming
 7. OLLAMA_HOST and OLLAMA_MODEL via env (default `http://localhost:11434` / `qwen2.5:7b`); no OpenRouter key required
 8. No secrets in source / .env / Dockerfile / compose / README. Django `SECRET_KEY` must come from the environment with no hardcoded fallback (compose-generated value is OK). OLLAMA_HOST and OLLAMA_MODEL are not secrets but must be configurable from env, not hardcoded only in source
-9. Real, working Ollama integration via `langchain-ollama` `ChatOllama`; direct `ollama` Python client is not accepted for benchmark-v3.2
+9. Real, working Ollama integration via `langchain-ollama` `ChatOllama`; direct `ollama` Python client is not accepted for benchmark-v3.3
 10. Token streaming from model → WebSocket
 11. pytest (+ pytest-django, pytest-asyncio) tests for views, consumers, LLM/Ollama wiring (mocked), template rendering
 12. ruff (lint+format), mypy, bandit, coverage.py, pip-audit configured
@@ -46,6 +46,14 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 15. All project files in current working directory (`.`), no nested chat_app/ subdir
 16. `.env.example` (or equivalent) documenting OLLAMA_HOST and OLLAMA_MODEL with their defaults
 17. Verification summary in README or `VERIFY.md` listing commands run, pass/fail result, and unresolved environment blockers
+18. Production hardening (benchmark-v3.3 deliverable #18 — maps to D9 sub-checks):
+    - **D9.1** Docker `HEALTHCHECK` and/or compose `healthcheck:` probing the **web HTTP port** (not Ollama)
+    - **D9.2** Django `LOGGING` dict with structured console handler (not print-only)
+    - **D9.3** compose `restart` policy on the web/ASGI service
+    - **D9.4** non-root `USER` in Dockerfile
+    - **D9.5** consumer `.astream()` loop handles `asyncio.CancelledError` / SIGTERM stream shutdown
+
+**Healthcheck distinction (mandatory):** An application **HTTP view** that reports Ollama reachability (D4/U1) is **not** the same as Docker **`HEALTHCHECK` / compose `healthcheck:`** (D9.1/U7). Ollama-dependent `/health/` views may return 503 inside Docker without failing D9.1 if the container probe targets a lightweight web liveness route (e.g. `/` or `/live/`) that returns 200 without calling Ollama.
 
 ## Universal blind spots in scope for this benchmark
 
@@ -155,12 +163,13 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - Required secret/env vars read without startup validation (silent fallback to insecure default): -1.
 
 9. **Production hardening** (0-10)
-   - No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck (U7): -3.
-   - No structured logging configured (print-only, no `logging` setup) (U5): -3.
-   - Compose service missing `restart` policy for the web/ASGI container: -2.
-   - Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: -2.
-   - No graceful shutdown handling for in-flight WebSocket streams on SIGTERM: -2.
+   - **D9.1** No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck probing web HTTP (U7): -3.
+   - **D9.2** No structured logging configured (print-only, no `LOGGING` in settings) (U5): -3.
+   - **D9.3** Compose service missing `restart` policy for the web/ASGI container: -2.
+   - **D9.4** Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: -2.
+   - **D9.5** No graceful shutdown handling for in-flight WebSocket streams on SIGTERM (`asyncio.CancelledError` in stream loop or equivalent): -2.
    - Non-root container user alone does not earn full marks — apply the triggers above consistently.
+   - **Section B D9 row (mandatory format):** In the D9 justification, include an inline sub-checklist: `D9.1=pass|fail`, `D9.2=pass|fail`, `D9.3=pass|fail`, `D9.4=pass|fail`, `D9.5=pass|fail` each with `file:line` evidence before the aggregate score.
 
 10. **Code quality** (0-10)
     **You assign D10** in section B row 10. Inspect application source under `{project_dir}` (read files, grep patterns). Exclude `tests/`, `test_*.py`, `*_test.py`, and `tests.py` from maintainability/complexity triggers unless the smell is systemic. Start at 10; apply deductions only with `file:line` evidence:
@@ -172,6 +181,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
     - **Bare handlers**: bare `except:` or bare `except Exception:` count **> 2** (grep `{project_dir}`): **-1**. Cite the 3rd+ `file:line`.
     - Floor at **0**.
     - **CF#13 cap**: if Section F lists CF#13, D10 is **capped at 0**.
+    - **D8/D9 calibration cap**: if D8 scores **0** or D9 scores **≤2**, D10 cannot exceed **8** unless the justification explicitly explains why maintainability is independent of the security/production failure (cite both dimensions).
 
 ## Auto-critical-failure classification
 
@@ -205,7 +215,7 @@ Target: under 800 words total. No speculation — code excerpts and package-sour
 
 A. **Quick summary line** (1 sentence: did the submission meet the spec?).
 
-B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. The D10 justification must cite specific `file:line` evidence from source inspection (which rubric trigger fired, or why the codebase is clean).
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. Row 9 (D9) **must** include the `D9.1`–`D9.5` pass/fail sub-checklist in the justification cell. The D10 justification must cite specific `file:line` evidence from source inspection (which rubric trigger fired, or why the codebase is clean); apply the D8/D9 calibration cap when applicable.
 
 C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
 
@@ -229,7 +239,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.8`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.9`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/<run_id>/projects/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

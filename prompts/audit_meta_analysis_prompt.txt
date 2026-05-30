@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.12
+Prompt-Version: meta-v3.13
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -189,7 +189,9 @@ For each of the 10 rubric dimensions (D1-D10), one line:
   - **saturated** — >=80% of all targets scored full marks (not a discriminator; flag for rubric tightening)
   - **clean** — everyone scored at/near max but <80% saturation
 
-Use the precomputed **Dimension breakdown** table for averages. Classify D2/D3/D5 as likely **saturated** when cohort data supports it; D7/D9/D10 as likely **universal blind spots** under audit-v3.8 weighting.
+Use the precomputed **Dimension breakdown** table for averages. Classify D2/D3/D5 as likely **saturated** when cohort data supports it; D7/D9/D10 as likely **universal blind spots** under audit-v3.9 weighting.
+
+When the rollup includes **D9 sub-check cohort (preflight)**, summarize which D9.1–D9.5 sub-checks dominate cohort failure (lowest pass rates) in section 5 under D9. When audit reports include `D9.1=pass|fail` … `D9.5=pass|fail` in section B row 9, prefer those audited sub-check rates over preflight alone for narrative; use preflight as generation-gap signal when audit sub-checks are absent.
 
 ### 6. Performance & cost
 
@@ -228,12 +230,12 @@ Run all five checks and record the verdict per check, then an overall verdict:
 
 - **Check 1 — Cohort median**: median total across all valid runs. PASS if <= 80; WARN if 80 < median <= 85; FAIL if > 85 (rubric too lenient).
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
-- **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target).
+- **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target). For D9, cite rollup **D9 sub-check cohort** pass rates when present to name the dominant missing sub-check (healthcheck vs logging vs restart vs USER vs SIGTERM).
 - **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
 - **Check 5 — D10 floor (code quality)**: median D10 across all valid runs.
   - **PASS** if 3 ≤ median D10 < 8 (cohort shows meaningful toolchain spread).
   - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant D10 justification patterns from section B.
-  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.8 D10 triggers.
+  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.9 D10 triggers and enforcing the D8/D9 calibration cap on D10.
   - **FAIL** if median D10 < 3 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
   - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4/v3.5); list affected runs in the appendix and do NOT let Check 5 influence the overall verdict.
 
@@ -281,7 +283,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.8` and whose underlying benchmark prompt metadata is `benchmark-v3.2` (and `benchmark-followup-v3.2` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.7` are excluded from cross-cell comparison until re-audited under `audit-v3.8`. Likewise, older benchmark submissions audited under earlier audit prompts should be flagged because rubric semantics differ — list them in the appendix as `mixed-version` and exclude from rankings unless the meta-analysis explicitly opts them in. List all mismatches in the appendix.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.9` and whose underlying benchmark prompt metadata is `benchmark-v3.3` (and `benchmark-followup-v3.3` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.8` or benchmark `v3.2` are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
