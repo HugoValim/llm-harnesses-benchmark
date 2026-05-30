@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.result_validation import ValidationResult  # noqa: E402
-from run_benchmark import (  # noqa: E402
-    _previous_attempt_stalled,
-    _run_with_result_validation,
+from benchmark.campaign_dispatch import (  # noqa: E402
+    previous_attempt_stalled,
+    run_with_result_validation,
 )
 
 
@@ -43,20 +43,20 @@ def test_run_with_validation_retries_until_pass(tmp_path: Path, monkeypatch) -> 
     ]
 
     monkeypatch.setattr(
-        "run_benchmark.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_benchmark_result",
         lambda *args, **kwargs: outcomes.pop(0),
     )
     monkeypatch.setattr(
-        "run_benchmark.validation_retryable",
+        "benchmark.campaign_dispatch.validation_retryable",
         lambda payload: True,
     )
     wiped: list[Path] = []
     monkeypatch.setattr(
-        "run_benchmark.wipe_result_dir",
+        "benchmark.campaign_dispatch.wipe_result_dir",
         lambda path: wiped.append(path),
     )
 
-    payload = _run_with_result_validation(
+    payload = run_with_result_validation(
         "demo",
         result_dir,
         {"slug": "demo", "provider": "ollama_cloud"},
@@ -72,7 +72,7 @@ def test_run_with_validation_retries_until_pass(tmp_path: Path, monkeypatch) -> 
 
 def test_run_with_validation_rejects_negative_retries() -> None:
     with pytest.raises(ValueError, match="max_retries"):
-        _run_with_result_validation(
+        run_with_result_validation(
             "demo",
             Path("/tmp/x"),
             {},
@@ -83,21 +83,21 @@ def test_run_with_validation_rejects_negative_retries() -> None:
 
 
 def test_previous_attempt_stalled_none_payload() -> None:
-    assert _previous_attempt_stalled(None) is False
+    assert previous_attempt_stalled(None) is False
 
 
 def test_previous_attempt_stalled_top_level_flag() -> None:
-    assert _previous_attempt_stalled({"stalled": True}) is True
+    assert previous_attempt_stalled({"stalled": True}) is True
 
 
 def test_previous_attempt_stalled_phase_flag() -> None:
     payload = {"phases": [{"phase": "phase1"}, {"phase": "phase2", "stalled": True}]}
-    assert _previous_attempt_stalled(payload) is True
+    assert previous_attempt_stalled(payload) is True
 
 
 def test_previous_attempt_stalled_clean_payload() -> None:
     payload = {"status": "completed", "phases": [{"phase": "phase1", "stalled": False}]}
-    assert _previous_attempt_stalled(payload) is False
+    assert previous_attempt_stalled(payload) is False
 
 
 def test_run_with_validation_sleeps_after_stalled_attempt(
@@ -123,15 +123,17 @@ def test_run_with_validation_sleeps_after_stalled_attempt(
         ),
     ]
     monkeypatch.setattr(
-        "run_benchmark.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_benchmark_result",
         lambda *a, **k: outcomes.pop(0),
     )
-    monkeypatch.setattr("run_benchmark.validation_retryable", lambda _payload: True)
-    monkeypatch.setattr("run_benchmark.wipe_result_dir", lambda _p: None)
+    monkeypatch.setattr(
+        "benchmark.campaign_dispatch.validation_retryable", lambda _payload: True
+    )
+    monkeypatch.setattr("benchmark.campaign_dispatch.wipe_result_dir", lambda _p: None)
     sleeps: list[float] = []
-    monkeypatch.setattr("run_benchmark.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("benchmark.campaign_dispatch.time.sleep", lambda s: sleeps.append(s))
 
-    _run_with_result_validation(
+    run_with_result_validation(
         "demo",
         result_dir,
         {"slug": "demo", "provider": "ollama_cloud"},
@@ -161,15 +163,17 @@ def test_run_with_validation_no_sleep_on_non_stall_failure(
         ),
     ]
     monkeypatch.setattr(
-        "run_benchmark.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_benchmark_result",
         lambda *a, **k: outcomes.pop(0),
     )
-    monkeypatch.setattr("run_benchmark.validation_retryable", lambda _payload: True)
-    monkeypatch.setattr("run_benchmark.wipe_result_dir", lambda _p: None)
+    monkeypatch.setattr(
+        "benchmark.campaign_dispatch.validation_retryable", lambda _payload: True
+    )
+    monkeypatch.setattr("benchmark.campaign_dispatch.wipe_result_dir", lambda _p: None)
     sleeps: list[float] = []
-    monkeypatch.setattr("run_benchmark.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("benchmark.campaign_dispatch.time.sleep", lambda s: sleeps.append(s))
 
-    _run_with_result_validation(
+    run_with_result_validation(
         "demo",
         result_dir,
         {"slug": "demo", "provider": "openrouter"},
