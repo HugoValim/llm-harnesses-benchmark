@@ -198,10 +198,40 @@ def expand_ollama_cloud_config(
     )
 
 
+def _validate_registry_model_num_runs(model: dict[str, Any]) -> int:
+    """Require a positive integer ``num_runs`` on each registry model row."""
+    slug = model.get("slug", "<unknown>")
+    value = model.get("num_runs")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"models.json model {slug!r} requires positive integer num_runs, "
+            f"got {value!r}"
+        )
+    if value < 1:
+        raise ValueError(
+            f"models.json model {slug!r} requires num_runs >= 1, got {value!r}"
+        )
+    return value
+
+
+def _resolve_model_num_runs(model: dict[str, Any]) -> int:
+    """Return configured ``num_runs``, defaulting inline/test rows to ``1``."""
+    if "num_runs" not in model:
+        return 1
+    return _validate_registry_model_num_runs(model)
+
+
 def _normalize_registry_models(models: Any) -> list[dict[str, Any]]:
     if not isinstance(models, list):
         return []
-    return [clone_json(model) for model in models if isinstance(model, dict)]
+    out: list[dict[str, Any]] = []
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        row = clone_json(model)
+        row["num_runs"] = _resolve_model_num_runs(row)
+        out.append(row)
+    return out
 
 
 def registry_by_slug(models: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -296,6 +326,7 @@ def _build_registry_model_row(model: dict[str, Any], harness: str) -> dict[str, 
         raise ValueError(
             f"harness {harness!r} model {row.get('slug')!r} needs string id"
         )
+    row["num_runs"] = _resolve_model_num_runs(row)
     return row
 
 

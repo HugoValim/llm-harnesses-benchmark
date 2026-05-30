@@ -10,7 +10,7 @@ from typing import Any
 
 from benchmark.config import summarize_project
 from benchmark.d9_preflight import write_d9_preflight
-from benchmark.result_layout import split_target_slug, target_dir
+from benchmark.result_layout import REPLICATE_DIR_PATTERN, split_target_slug, target_dir
 from benchmark.util import USAGE_LIMIT_REACHED, load_json, migrate_to_v2
 
 
@@ -162,6 +162,18 @@ def _validate_phase_row(
     return issues
 
 
+def _resolve_target_identity(result_dir: Path) -> tuple[str | None, str]:
+    """Resolve harness and model slug from a benchmark result leaf directory."""
+    if REPLICATE_DIR_PATTERN.match(result_dir.name):
+        return split_target_slug(result_dir.parent.name)
+    return split_target_slug(result_dir.name)
+
+
+def resolve_result_target_identity(result_dir: Path) -> tuple[str | None, str]:
+    """Public wrapper for :func:`_resolve_target_identity`."""
+    return _resolve_target_identity(result_dir)
+
+
 def validate_benchmark_result(
     result_dir: Path,
     *,
@@ -173,7 +185,7 @@ def validate_benchmark_result(
     Recomputes ``project_summary`` from disk and re-derives status from the row.
     """
     result_dir = result_dir.resolve()
-    harness, slug = split_target_slug(result_dir.name)
+    harness, slug = _resolve_target_identity(result_dir)
     row, load_issues = _load_result_row(result_dir)
     if row is None:
         return ValidationResult(

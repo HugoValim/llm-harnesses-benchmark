@@ -17,9 +17,14 @@ from benchmark.result_layout import (  # noqa: E402
     audit_result_json,
     audit_stream_ndjson,
     audit_stderr_log,
+    benchmark_target_slug_from_leaf,
     discover_benchmark_target_dirs,
     discover_project_result_jsons,
+    format_replicate_dir,
     layout_from_repo,
+    matches_benchmark_only_filter,
+    parse_benchmark_target_path,
+    replicate_result_dir,
     resolve_run_layout,
     split_target_slug,
     target_dir,
@@ -102,17 +107,85 @@ class TestRunLayout(unittest.TestCase):
             found = discover_benchmark_target_dirs(root)
             self.assertEqual([p.name for p in found], ["codex-demo"])
 
+    def test_discover_nested_replicate_targets(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "codex-demo" / "run_01" / "project").mkdir(parents=True)
+            (root / "codex-demo" / "run_02" / "project").mkdir(parents=True)
+            found = discover_benchmark_target_dirs(root)
+            self.assertEqual(
+                [p.name for p in found],
+                ["run_01", "run_02"],
+            )
+
+    def test_replicate_path_helpers(self) -> None:
+        projects = Path("/tmp/r/run_02/projects")
+        self.assertEqual(format_replicate_dir(1), "run_01")
+        self.assertEqual(
+            replicate_result_dir(projects, "codex", "demo", 2),
+            Path("/tmp/r/run_02/projects/codex-demo/run_02"),
+        )
+        parsed = parse_benchmark_target_path("codex-demo/run_01")
+        self.assertEqual(parsed.target_group, "codex-demo")
+        self.assertEqual(parsed.replicate_id, "run_01")
+        self.assertEqual(parsed.harness, "codex")
+        self.assertEqual(parsed.model_slug, "demo")
+
+    def test_nested_audit_target_dir(self) -> None:
+        root = Path("/tmp/audit-reports")
+        self.assertEqual(
+            audit_target_dir(root, "auditor", "codex-demo/run_01"),
+            Path("/tmp/audit-reports/auditor/codex-demo/run_01"),
+        )
+
+    def test_matches_benchmark_only_filter(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            leaf = root / "codex-demo" / "run_01"
+            leaf.mkdir(parents=True)
+            result_path = leaf / "result.json"
+            result_path.write_text("{}")
+            only = {"codex-demo"}
+            self.assertTrue(
+                matches_benchmark_only_filter(result_path, only, root)
+            )
+            self.assertTrue(
+                matches_benchmark_only_filter(result_path, {"run_01"}, root)
+            )
+            self.assertFalse(
+                matches_benchmark_only_filter(result_path, {"other"}, root)
+            )
+
+    def test_benchmark_target_slug_from_leaf(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            leaf = root / "codex-demo" / "run_02"
+            leaf.mkdir(parents=True)
+            self.assertEqual(
+                benchmark_target_slug_from_leaf(leaf, root),
+                "codex-demo/run_02",
+            )
+
     def test_discover_project_result_jsons(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            target = root / "codex-demo"
-            target.mkdir()
-            (target / "result.json").write_text("{}")
+            legacy = root / "codex-demo"
+            (legacy / "project").mkdir(parents=True)
+            (legacy / "result.json").write_text("{}")
+            nested = root / "codex-other" / "run_01"
+            (nested / "project").mkdir(parents=True)
+            (nested / "result.json").write_text("{}")
             paths = discover_project_result_jsons(root)
-            self.assertEqual(len(paths), 1)
-            self.assertEqual(paths[0].name, "result.json")
+            self.assertEqual(len(paths), 2)
+            self.assertEqual({p.parent.name for p in paths}, {"codex-demo", "run_01"})
 
 
 class TestAuditPaths(unittest.TestCase):
