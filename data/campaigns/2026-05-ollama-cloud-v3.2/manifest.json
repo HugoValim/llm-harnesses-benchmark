@@ -1,0 +1,53 @@
+{
+  "id": "2026-05-ollama-cloud-v3.2",
+  "label": "2026 05 Ollama Cloud V3.2",
+  "date": "2026-05-30",
+  "prompt_versions": {
+    "benchmark": "benchmark-v3.2",
+    "benchmark_followup": "benchmark-followup-v3.2",
+    "audit": "audit-v3.8",
+    "meta": "meta-v3.11"
+  },
+  "auditor_slug": "codex_gpt_5_5",
+  "meta_analysis": "audit-reports/codex_gpt_5_5/meta-analysis.md",
+  "audit_root": "audit-reports/codex_gpt_5_5",
+  "benchmark_results_root": "results",
+  "targets": [
+    "claude-claude_opus_4_7",
+    "claude-deepseek_v4_flash_ollama_cloud",
+    "claude-deepseek_v4_pro_ollama_cloud",
+    "claude-gemma4_ollama_cloud",
+    "claude-glm_5_1_ollama_cloud",
+    "claude-kimi_k2_6_ollama_cloud",
+    "claude-minimax_m2_7_ollama_cloud",
+    "claude-nemotron_3_super_ollama_cloud",
+    "claude-qwen3_5_ollama_cloud",
+    "codex-codex_gpt_5_5",
+    "codex-deepseek_v4_flash_ollama_cloud",
+    "codex-deepseek_v4_pro_ollama_cloud",
+    "codex-gemma4_ollama_cloud",
+    "codex-glm_5_1_ollama_cloud",
+    "codex-kimi_k2_6_ollama_cloud",
+    "codex-minimax_m2_7_ollama_cloud",
+    "codex-nemotron_3_super_ollama_cloud",
+    "codex-qwen3_5_ollama_cloud",
+    "cursor-composer_2_0",
+    "cursor-composer_2_5",
+    "opencode-deepseek_v4_flash_ollama_cloud",
+    "opencode-deepseek_v4_pro_ollama_cloud",
+    "opencode-gemma4_ollama_cloud",
+    "opencode-glm_5_1_ollama_cloud",
+    "opencode-kimi_k2_6_ollama_cloud",
+    "opencode-minimax_m2_7_ollama_cloud",
+    "opencode-nemotron_3_super_ollama_cloud",
+    "opencode-qwen3_5_ollama_cloud"
+  ],
+  "harnesses": [
+    "opencode",
+    "codex",
+    "claude",
+    "cursor"
+  ],
+  "models_config_sha256": "bcf12d05d93d07823ddb08a2d82ff56b070fa80332c4b3151fef3770e4b936ed",
+  "harnesses_config_sha256": "3e4b4de4a5fe6ffef4c14e0c65343d24d1da72ca1390288e3d17a2f0542107a9"
+}

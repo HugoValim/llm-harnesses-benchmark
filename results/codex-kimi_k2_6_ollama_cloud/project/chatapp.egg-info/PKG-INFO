@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: chatapp
+Version: 0.1.0
+Summary: Django Channels chat with Ollama streaming
+Requires-Python: >=3.13
+Requires-Dist: django<5.2,>=5.1
+Requires-Dist: channels[daphne]>=4.2
+Requires-Dist: langchain-ollama>=0.1
+Requires-Dist: httpx
+Requires-Dist: whitenoise>=6
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-django>=4.9; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
+Requires-Dist: ruff>=0.7; extra == "dev"
+Requires-Dist: mypy>=1.13; extra == "dev"
+Requires-Dist: bandit[toml]>=1.7; extra == "dev"
+Requires-Dist: coverage>=7.6; extra == "dev"
+Requires-Dist: pip-audit>=2.7; extra == "dev"
+Requires-Dist: django-stubs[compatible-mypy]; extra == "dev"

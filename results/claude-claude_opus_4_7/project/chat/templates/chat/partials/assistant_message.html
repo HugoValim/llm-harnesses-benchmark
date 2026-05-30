@@ -1,0 +1,18 @@
+<div
+  hx-swap-oob="beforeend:#messages"
+  class="flex items-start gap-3"
+>
+  <span class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+    AI
+  </span>
+  <div class="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-2 text-sm leading-relaxed">
+    <span
+      id="assistant-content-{{ turn_id }}"
+      class="whitespace-pre-wrap break-words"
+    ></span><span
+      id="assistant-typing-{{ turn_id }}"
+      class="ml-1 inline-block animate-pulse text-slate-400"
+      >▋</span
+    >
+  </div>
+</div>

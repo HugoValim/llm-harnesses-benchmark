@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/css/app.css -o ./chat/static/chat/css/app.css --minify",
+    "watch:css": "tailwindcss -i ./assets/css/app.css -o ./chat/static/chat/css/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.0",
+    "tailwindcss": "4.3.0"
+  }
+}

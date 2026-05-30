@@ -1,0 +1,12 @@
+<article id="{{ message_id }}" class="mx-auto max-w-4xl">
+  <div class="{% if role == 'user' %}ml-auto max-w-2xl rounded bg-cyan-500 px-4 py-3 text-neutral-950{% else %}mr-auto max-w-3xl rounded border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100{% endif %}">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-normal {% if role == 'user' %}text-neutral-800{% else %}text-neutral-400{% endif %}">
+      {{ role }}
+    </div>
+    {% if role == "assistant" %}
+      <div id="assistant-content-{{ message_id }}" class="whitespace-pre-wrap text-sm leading-6">{{ content }}</div>
+    {% else %}
+      <div class="whitespace-pre-wrap text-sm leading-6">{{ content }}</div>
+    {% endif %}
+  </div>
+</article>

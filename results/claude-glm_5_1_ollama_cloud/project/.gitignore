@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+staticfiles/
+node_modules/
+.env
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+pytest_cache/
+pip-audit-results.json

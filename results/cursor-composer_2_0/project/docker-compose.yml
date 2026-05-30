@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

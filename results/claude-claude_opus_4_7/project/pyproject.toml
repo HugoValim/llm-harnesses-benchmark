@@ -1,0 +1,107 @@
+[project]
+name = "ollama-chat"
+version = "1.0.0"
+description = "ChatGPT-style streaming chat SPA built on Django, Channels, HTMX and LangChain/Ollama."
+requires-python = ">=3.13"
+dependencies = [
+    "Django==5.1.15",
+    "channels==4.2.2",
+    "daphne==4.2.1",
+    "langchain-ollama==0.3.10",
+    "langchain-core==1.4.0",
+    "httpx==0.28.1",
+    "whitenoise==6.12.0",
+    "python-dotenv==1.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "pytest-django==4.12.0",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.15.15",
+    "mypy==2.1.0",
+    "django-stubs[compatible-mypy]==6.0.5",
+    "bandit[toml]==1.9.4",
+    "coverage==7.14.1",
+    "pip-audit==2.10.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["chat", "config"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+filterwarnings = [
+    # Expected under test: no DJANGO_SECRET_KEY is set, so an ephemeral key is used.
+    "ignore:DJANGO_SECRET_KEY:RuntimeWarning",
+    # Expected under test: static assets are served from finders, not STATIC_ROOT.
+    "ignore:No directory at:UserWarning",
+]
+
+# ---------------------------------------------------------------------------
+# ruff (lint + format)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv", "node_modules", "staticfiles", "_runtime_verification", "**/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C90", "S", "ASYNC", "DJ", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # assert is expected in tests
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+# ---------------------------------------------------------------------------
+# mypy (+ django-stubs)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+files = ["chat", "config"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+exclude = "migrations"
+
+[[tool.mypy.overrides]]
+module = ["channels.*", "langchain_ollama.*", "langchain_core.*", "whitenoise.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+# ---------------------------------------------------------------------------
+# bandit
+# ---------------------------------------------------------------------------
+[tool.bandit]
+exclude_dirs = [".venv", "node_modules", "tests", "staticfiles", "_runtime_verification"]
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["chat", "config"]
+omit = ["*/migrations/*", "config/wsgi.py", "manage.py"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 1

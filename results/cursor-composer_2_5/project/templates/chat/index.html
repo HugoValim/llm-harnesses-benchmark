@@ -1,0 +1,33 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ollama Chat</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/ext/ws.js"></script>
+  </head>
+  <body class="h-full bg-slate-950 text-slate-100">
+    <div class="flex h-full flex-col">
+      {% include "chat/partials/header.html" %}
+
+      <main
+        id="chat-panel"
+        class="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-4"
+        hx-ext="ws"
+        ws-connect="/ws/chat/"
+      >
+        <div
+          id="messages"
+          class="flex-1 space-y-4 overflow-y-auto py-6"
+          aria-live="polite"
+        ></div>
+
+        {% include "chat/partials/composer.html" %}
+      </main>
+    </div>
+    <script src="{% static 'js/chat-ui.js' %}"></script>
+  </body>
+</html>

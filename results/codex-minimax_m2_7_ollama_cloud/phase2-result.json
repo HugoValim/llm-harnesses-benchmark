@@ -1,0 +1,68 @@
+{
+  "assistant_output_excerpt": "All checks pass. Here's the verification summary:\n\n**Toolchain** \u2014 all clean:\n- `ruff check .` \u2014 PASS, 0 errors\n- `ruff format --check .` \u2014 PASS, 37 files formatted\n- `mypy chat chat_project` \u2014 PASS, 0 issues in 17 files\n- `bandit -r chat chat_project` \u2014 PASS, High: 0, Medium: 0\n- `pip-audit` \u2014 PASS, no vulnerabilities\n- `pytest .` \u2014 PASS, 17/17 tests in ~4s\n- `coverage run -m pytest .` \u2014 PASS, 74% coverage\n\n**App Boot**:\n- Daphne starts on port 8000, HTTP 200 on `/`\n- HTML contains `hx-ext=\"ws\"`, `ws-connect=\"/ws/chat/\"`, `ws-send` \u2014 confirmed\n- No raw `new WebSocket` anywhere \u2014 uses HTMX ws extension as required\n- WebSocket upgrade returns 101 Switching Protocols (origin header required)\n\n**WebSocket Route**:\n- `ChatConsumer` handles connect, disconnect, reset, multi-token streaming, and error paths (11 pytest tests)\n- `OllamaConnectionError` surfaces as typed `{\"type\":\"error\"}` when Ollama unreachable\n\n**Docker**:\n- `docker build -t chat-web .` \u2014 PASS\n- `docker compose up --build -d` \u2014 PASS, both containers up\n- `curl localhost:8000/` \u2014 200 with HTMX ws wiring\n- WebSocket upgrade inside container \u2014 101 confirmed\n\n**Blocker** (environmental, not code):\n- Ollama unreachable inside Docker containers \u2014 expected in this benchmark environment; the app handles it cleanly via `OllamaConnectionError` \u2192 typed WebSocket error. Not a code bug.\n\n`VERIFY.md` updated with full command/result/blocker breakdown.",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch --yes codex --model minimax-m2.7:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-minimax_m2_7_ollama_cloud/project -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 518.9,
+  "ended_at": "2026-05-23T07:47:25+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "harness": "codex",
+    "id": "minimax-m2.7:cloud",
+    "label": "MiniMax M2.7 (Ollama Cloud)",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "selection_reason": "MiniMax M2.7 served by Ollama Cloud as a mid-tier Python-stack benchmark model.",
+    "slug": "minimax_m2_7_ollama_cloud"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e53c5-bbfc-7f61-9968-38cc8d41ce86",
+  "output_tokens_per_second": 16.59,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/results/codex-minimax_m2_7_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/codex-minimax_m2_7_ollama_cloud/followup-prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/results/codex-minimax_m2_7_ollama_cloud/followup-opencode-stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/results/codex-minimax_m2_7_ollama_cloud/followup-opencode-output.ndjson"
+  },
+  "phase": "phase2",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 48,
+    "present": {
+      "asgi_py": true,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": true,
+      "dockerfile": true,
+      "manage_py": true,
+      "pyproject_toml": true,
+      "readme_lower": false,
+      "readme_md": true,
+      "requirements_txt": false,
+      "settings_py": true,
+      "tests_present": true
+    },
+    "works_as_intended": "yes",
+    "works_note": "Django + Channels app, tests, README, and container files detected."
+  },
+  "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-23T07:38:46+00:00",
+  "status": "completed",
+  "stderr_excerpt": "2026-05-23T07:38:48.187207Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-23T07:42:52.064134Z ERROR codex_core::tools::router: error=failed to parse function arguments: invalid type: integer `15514`, expected a string at line 1 column 17\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 1332087,
+    "output": 8606,
+    "total": 1340693
+  },
+  "tokens_per_second": 2583.72
+}

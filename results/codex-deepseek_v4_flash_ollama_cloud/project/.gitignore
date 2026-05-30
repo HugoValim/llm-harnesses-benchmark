@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.venv13/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Node
+node_modules/
+package-lock.json
+
+# Cache
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage/
+
+# Env
+.env

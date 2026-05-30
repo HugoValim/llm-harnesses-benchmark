@@ -1,0 +1,26 @@
+Prompt-Version: benchmark-followup-v3.2
+
+This is phase 2 of 2 and a continuation of the existing project in the current working directory. Do not regenerate the app. Do not create a second app. Validate and fix the current codebase in place.
+
+Do not ask for confirmation. Do not stop with a plan. Continue until validation is complete or until you hit a hard environment blocker that cannot be resolved from inside the workspace.
+
+Validate the project end-to-end in this order:
+1. Create or reuse the local virtualenv with Python 3.13.13 from mise, install the project's dependencies, and run migrations if the settings require a database.
+2. Run the automated test suite and the configured static checks that are practical in this environment: ruff, mypy, bandit, coverage, and pip-audit.
+3. Run the local app under an ASGI server (daphne or uvicorn) and prove it boots.
+4. Prove the HTTP page is reachable.
+5. Confirm the rendered page uses the HTMX WebSocket extension (`hx-ext="ws"` plus `ws-connect` / `ws-send`) for streaming. If the app uses app-owned raw `new WebSocket(...)` JavaScript for the streaming path, fix it before continuing.
+6. Prove the WebSocket route accepts a connection and can stream multiple mocked or real chunks through the app path.
+7. Run `docker build`.
+8. Run `docker compose up --build` long enough to prove the served port is reachable and the WebSocket route is wired.
+
+Environment and blocker rules:
+- `OLLAMA_HOST` defaults to `http://localhost:11434` and `OLLAMA_MODEL` defaults to `qwen2.5:7b`; both must still be env-driven in app and Docker compose.
+- Check whether the Ollama server is reachable. If it is unavailable, do not mark the app broken solely for that reason. Instead verify that the app reports the dependency failure cleanly and record the blocker in the verification summary.
+- The Ollama backend is not reachable from inside Docker containers in this benchmark environment. A `/health/` endpoint that depends on Ollama will return 503 inside Docker — this is an expected environmental constraint, not a code bug. Treat the Docker run as passing if the container starts and serves HTML on the expected port. Do not loop on health-check failures caused solely by Ollama being unreachable inside Docker.
+- Do not print secrets, copy secret file contents into the repo, or write secret-like placeholders into source, `.env`, Dockerfile, compose, logs, or README examples.
+- If a validation step fails because of project code, fix it and rerun the smallest relevant command before moving on. If the same step fails after 3 attempts without a meaningful change to the code or config, stop retrying, record the failure, and move to the next step. Do not loop on a command that is failing for an environmental reason outside the project code.
+
+Before finishing, update the verification summary in README or `VERIFY.md` with each command attempted, its result, and any unresolved environment blocker. Use a concrete command/result/blocker format, not a generic "validated" note.
+
+If this is running in a fresh session rather than a continued one, first inspect the existing project in the current working directory, understand the current implementation state, and then perform the same runtime validation work before making any additional fixes.

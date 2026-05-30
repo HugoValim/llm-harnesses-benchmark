@@ -1,0 +1,63 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat</title>
+  <link href="{% static 'css/output.css' %}" rel="stylesheet">
+  <script src="{% static 'js/htmx.min.js' %}"></script>
+  <script src="{% static 'js/htmx-ws.js' %}"></script>
+</head>
+<body class="h-full bg-gray-950 text-gray-100">
+  <div id="app" class="flex flex-col h-full max-w-3xl mx-auto">
+    <header class="border-b border-gray-800 px-4 py-3">
+      <h1 class="text-lg font-semibold">Chat</h1>
+    </header>
+
+    <div id="messages"
+         ws-connect="/ws/chat/"
+         hx-swap="beforeend"
+         class="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+    </div>
+
+    <div class="border-t border-gray-800 px-4 py-3">
+      {% include "chat/input.html" %}
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const messagesEl = document.getElementById("messages");
+
+      function scrollToBottom() {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      // Scroll on new content from HTMX WS
+      messagesEl.addEventListener("htmx:wsAfterMessage", () => {
+        scrollToBottom();
+      });
+
+      // Add user message to DOM before sending via WS
+      const form = document.getElementById("chat-form");
+      const input = document.getElementById("chat-input");
+
+      form.addEventListener("htmx:wsBeforeSend", (e) => {
+        const msg = input.value.trim();
+        if (!msg) {
+          e.preventDefault();
+          return;
+        }
+        input.value = "";
+        const escaped = msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const userDiv = document.createElement("div");
+        userDiv.className = "flex justify-end";
+        userDiv.innerHTML = `<div class="bg-blue-600 rounded-2xl px-4 py-2 max-w-[80%] whitespace-pre-wrap">${escaped}</div>`;
+        messagesEl.appendChild(userDiv);
+        scrollToBottom();
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<form class="flex items-end gap-2" ws-send>
+  {% csrf_token %}
+  <label class="sr-only" for="message">Message</label>
+  <textarea
+    id="message"
+    name="message"
+    rows="2"
+    class="min-h-[44px] flex-1 resize-none rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none ring-0 placeholder:text-zinc-500 focus:border-sky-500"
+    placeholder="Message…"
+    autocomplete="off"
+  ></textarea>
+  <button
+    type="submit"
+    class="inline-flex h-[44px] items-center justify-center rounded-xl bg-sky-600 px-4 text-sm font-medium text-white hover:bg-sky-500"
+  >
+    Send
+  </button>
+</form>

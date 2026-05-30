@@ -1,0 +1,8 @@
+[lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "DTZ", "T20", "FIX", "EM", "ISC", "PIE", "TCH", "RET", "SLF", "PGH", "FLY", "PERF", "RUF"]
+ignore = ["E501", "DTZ001", "DTZ002", "T201"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

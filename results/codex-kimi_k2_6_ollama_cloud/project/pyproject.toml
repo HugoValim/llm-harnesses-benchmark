@@ -1,0 +1,31 @@
+[project]
+name = "chatapp"
+version = "0.1.0"
+description = "Django Channels chat with Ollama streaming"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.1,<5.2",
+    "channels[daphne]>=4.2",
+    "langchain-ollama>=0.1",
+    "httpx",
+    "whitenoise>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.9",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "bandit[toml]>=1.7",
+    "coverage>=7.6",
+    "pip-audit>=2.7",
+    "django-stubs[compatible-mypy]",
+]
+
+[tool.bandit]
+exclude_dirs = [".venv", "venv", "tests", "tailwindcss"]
+
+[tool.setuptools]
+packages = ["chat", "config"]

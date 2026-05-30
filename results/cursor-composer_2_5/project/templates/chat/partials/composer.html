@@ -1,0 +1,21 @@
+<form
+  id="chat-form"
+  class="sticky bottom-0 flex gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-lg"
+  ws-send
+>
+  <label for="message-input" class="sr-only">Message</label>
+  <textarea
+    id="message-input"
+    name="message"
+    rows="1"
+    required
+    placeholder="Send a message…"
+    class="min-h-[2.5rem] flex-1 resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+  ></textarea>
+  <button
+    type="submit"
+    class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+  >
+    Send
+  </button>
+</form>

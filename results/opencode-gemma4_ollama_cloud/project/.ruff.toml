@@ -1,0 +1,11 @@
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "C90"]
+ignore = []
+
+[format]
+quote-style = "double"
+indent-style = "space"
+

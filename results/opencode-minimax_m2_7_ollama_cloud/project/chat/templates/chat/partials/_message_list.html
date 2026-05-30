@@ -1,0 +1,11 @@
+<div id="message-list" class="chat-messages">
+    {% for message in messages %}
+    <div class="message {{ message.role }}{% if message.streaming %} streaming{% endif %}">
+        {{ message.content }}
+    </div>
+    {% empty %}
+    <div class="message assistant">
+        Hello! I'm an AI assistant. How can I help you today?
+    </div>
+    {% endfor %}
+</div>

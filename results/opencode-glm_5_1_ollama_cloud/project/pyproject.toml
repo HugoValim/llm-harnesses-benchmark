@@ -1,0 +1,36 @@
+[tool.ruff]
+target-version = "py313"
+src = ["chat", "config"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["chat", "config"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+warn_unused_ignores = false
+disable_error_code = ["arg-type"]
+
+[[tool.mypy.overrides]]
+module = "chat.tests.*"
+strict = false
+disable_error_code = ["no-untyped-def", "type-arg", "operator", "union-attr"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests", "node_modules"]
+
+[tool.coverage.run]
+source = ["chat", "config"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true

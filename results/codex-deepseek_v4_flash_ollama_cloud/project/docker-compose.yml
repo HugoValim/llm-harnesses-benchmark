@@ -1,0 +1,23 @@
+services:
+  chat:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}"
+      DJANGO_DEBUG: "${DJANGO_DEBUG:-False}"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}"
+      OLLAMA_HOST: "${OLLAMA_HOST:-http://ollama:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:7b}"
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

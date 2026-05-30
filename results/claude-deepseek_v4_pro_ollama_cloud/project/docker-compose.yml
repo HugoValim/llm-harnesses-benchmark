@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me-in-production}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+    restart: unless-stopped

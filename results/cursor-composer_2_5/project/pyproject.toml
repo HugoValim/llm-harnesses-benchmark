@@ -1,0 +1,83 @@
+[project]
+name = "ollama-chat"
+version = "0.1.0"
+description = "Django Channels chat SPA with Ollama streaming via LangChain"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.1,<6",
+    "channels>=4.2,<5",
+    "daphne>=4.1,<5",
+    "httpx>=0.28,<1",
+    "whitenoise>=6.9,<7",
+    "langchain-ollama>=0.3,<1",
+    "langchain-core>=0.3,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3,<10",
+    "pytest-django>=4.9,<5",
+    "pytest-asyncio>=1.0,<2",
+    "pytest-cov>=6.0,<7",
+    "ruff>=0.9,<1",
+    "mypy>=1.14,<2",
+    "django-stubs>=5.1,<6",
+    "bandit>=1.8,<2",
+    "pip-audit>=2.7,<3",
+    "coverage[toml]>=7.6,<8",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["chat*", "config*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["chat", "config"]
+omit = ["*/tests/*", "manage.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["chat", "config", "tests", "manage.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+strict = true
+files = ["chat", "config"]
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["channels.*", "daphne.*", "langchain_ollama.*", "langchain_core.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]
+
+[tool.bandit.assert_used]
+skips = ["*/tests/*"]

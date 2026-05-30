@@ -1,0 +1,21 @@
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+strict = false
+exclude = ["tests"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "core.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]

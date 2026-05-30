@@ -1,0 +1,54 @@
+Prompt-Version: benchmark-v3.0
+
+Build a Python web application using Django and Django Channels. This is a controlled benchmark task: implement the requested app inside the current working directory and record evidence for what you verified. First make a short implementation plan for yourself, then implement without asking for confirmation. Do not stop with only a plan.
+
+Required deliverables (all must be present; these map directly to the audit rubric):
+1. Django + Django Channels application (no Django REST Framework, no authentication, no Celery).
+2. Python 3.13.13 from mise for the local environment and Docker image.
+3. ChatGPT-style single-page web UI, not an API-only service.
+4. Tailwind CSS via the official Tailwind CLI, with source CSS, built static CSS, and a documented build command.
+5. HTMX with the WebSocket extension for partial DOM updates as tokens stream.
+6. Channels `AsyncWebsocketConsumer` for WebSocket model streaming.
+7. `langchain-ollama` `ChatOllama` as the only LLM client path.
+8. `OLLAMA_HOST` and `OLLAMA_MODEL` read from environment variables with defaults `http://localhost:11434` and `qwen2.5:7b`; app and Docker compose must pass them through.
+9. No secrets in source, `.env`, Dockerfile, compose, logs, or README examples. `OLLAMA_HOST` and `OLLAMA_MODEL` are not secrets but must stay env-driven.
+10. Real token streaming from Ollama -> LangChain -> WebSocket -> browser UI; no stubbed model responses in production code.
+11. pytest with pytest-django and pytest-asyncio tests for views, consumer streaming, mocked LangChain/Ollama path, and template rendering.
+12. ruff (lint + format), mypy, bandit, coverage.py, and pip-audit configured for the project.
+13. Dockerfile and docker-compose.yml using an ASGI server (daphne or uvicorn).
+14. Real README with setup, local run, Tailwind build, test commands, Docker run, and `ollama pull qwen2.5:7b` note.
+15. All project files created directly in `.`. Do not navigate to parent directories. Do not create a nested wrapper directory such as `chat_app/` unless `.` is already a Django project.
+16. `.env.example` documenting `OLLAMA_HOST` and `OLLAMA_MODEL` with their defaults.
+17. A short verification summary in README or a dedicated `VERIFY.md` listing commands run, pass/fail result, and any environment blocker.
+
+Use the tools available in this runtime. If a tool call fails, recover and continue implementing. Do not depend on a specific agent harness tool name.
+
+Use Django's `startproject` and `startapp` generators to scaffold the project. Configure only the apps needed for the chat UI plus Django Channels. The chat history can live in memory per browser session or per consumer; a database is not required for the chat itself, but Django's default sqlite database is fine if migrations are needed for framework boot.
+
+Use normal Django project structure. Avoid putting all logic into one template, one consumer, or one static file. Split the LLM client into a small service module that the WebSocket consumer calls. Use Django template partials/includes for repeated UI fragments. Keep production code free of test fakes.
+
+Security and config requirements:
+- Django `SECRET_KEY` must come from `DJANGO_SECRET_KEY` or `SECRET_KEY` with no hardcoded fallback and no placeholder literal in source, Dockerfile, compose, or docs.
+- Docker/production `DEBUG` must default to `False`; local development may enable it only through an environment variable.
+- Docker/production `ALLOWED_HOSTS` must not be `["*"]`; read a narrowed list from env or default to localhost values.
+- Do not print secret values or copy secret file contents into the repo.
+- Keep Django's default security middleware, including CSRF and SecurityMiddleware, unless a documented framework reason requires otherwise.
+
+LLM integration requirements:
+- Import `ChatOllama` from `langchain_ollama`.
+- Construct it with `model` from `OLLAMA_MODEL` and `base_url` from `OLLAMA_HOST`.
+- Stream through `.astream(...)` and forward each chunk's content to the WebSocket as it arrives.
+- Maintain multi-turn chat context for the active conversation.
+- Surface an understandable UI error if Ollama is unreachable or streaming fails.
+- Add a preflight or health-check path that can report Ollama reachability without exposing secrets.
+
+Testing and tooling requirements:
+- Tests must mock the LLM client with a named fake class or fixture and assert multiple streamed chunks, not only the final concatenated message.
+- Include a consumer test with `WebsocketCommunicator`.
+- Include view/template tests that prove the SPA and partials render.
+- Configure coverage, ruff, mypy, bandit, and pip-audit in reproducible project files.
+- Document the exact verification commands.
+
+This is phase 1 of 2. Focus on implementation, tests, project structure, and reproducible evidence. Do not spend time on full browser/Docker runtime validation beyond what is needed to keep implementation moving.
+
+Work exclusively inside `.`. Do not create files outside of `.`. Do not create a second Django app unless the current one is clearly unusable.

@@ -1,0 +1,5 @@
+Django>=6.0,<6.1
+channels>=4.0,<5.0
+djangotailwind>=4.0,<5.0
+daphne>=4.0,<5.0
+langchain-ollama>=1.0,<2.0

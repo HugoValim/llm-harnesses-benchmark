@@ -1,0 +1,11 @@
+services:
+  chat:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+    <header class="bg-white shadow-sm border-b border-gray-200 px-4 py-3">
+        <h1 class="text-xl font-semibold text-gray-800">Chat</h1>
+    </header>
+    
+    <main class="flex-1 overflow-hidden">
+        <div id="chat-container" class="h-full overflow-y-auto p-4 space-y-4">
+            <div id="messages" class="max-w-3xl mx-auto space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">AI</div>
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3 max-w-[80%]">
+                        <p class="text-gray-700">Hello! How can I help you today?</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <footer class="bg-white border-t border-gray-200 p-4">
+        <div class="max-w-3xl mx-auto">
+            <form id="chat-form" class="flex gap-3" hx-ext="ws" ws-connect="/ws/chat/">
+                <input
+                    type="text"
+                    id="message-input"
+                    name="message"
+                    placeholder="Type your message..."
+                    class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    autocomplete="off"
+                >
+                <button
+                    type="submit"
+                    ws-send
+                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                    Send
+                </button>
+            </form>
+        </div>
+    </footer>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagesContainer = document.getElementById('messages');
+            const chatContainer = document.getElementById('chat-container');
+            const messageInput = document.getElementById('message-input');
+            const chatForm = document.getElementById('chat-form');
+            
+            let currentAssistantMessage = null;
+            
+            function scrollToBottom() {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            function addUserMessage(text) {
+                const messageHtml = `
+                    <div class="flex items-start gap-3 justify-end">
+                        <div class="bg-blue-600 rounded-lg shadow-sm px-4 py-3 max-w-[80%]">
+                            <p class="text-white">${escapeHtml(text)}</p>
+                        </div>
+                        <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm font-medium">You</div>
+                    </div>
+                `;
+                messagesContainer.insertAdjacentHTML('beforeend', messageHtml);
+                scrollToBottom();
+            }
+            
+            function createAssistantMessage() {
+                const messageHtml = `
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">AI</div>
+                        <div class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3 max-w-[80%]">
+                            <p class="text-gray-700 assistant-content"></p>
+                        </div>
+                    </div>
+                `;
+                messagesContainer.insertAdjacentHTML('beforeend', messageHtml);
+                currentAssistantMessage = messagesContainer.lastElementChild.querySelector('.assistant-content');
+                scrollToBottom();
+            }
+            
+            function appendToken(text) {
+                if (currentAssistantMessage) {
+                    currentAssistantMessage.textContent += text;
+                    scrollToBottom();
+                }
+            }
+            
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            chatForm.addEventListener('ws:message', function(event) {
+                const data = JSON.parse(event.detail.data);
+                
+                if (data.type === 'token') {
+                    if (!currentAssistantMessage) {
+                        createAssistantMessage();
+                    }
+                    appendToken(data.content);
+                } else if (data.type === 'complete') {
+                    currentAssistantMessage = null;
+                } else if (data.type === 'error') {
+                    const errorHtml = `
+                        <div class="flex items-start gap-3 justify-center">
+                            <div class="bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded-lg">
+                                <p>${escapeHtml(data.message)}</p>
+                            </div>
+                        </div>
+                    `;
+                    messagesContainer.insertAdjacentHTML('beforeend', errorHtml);
+                    scrollToBottom();
+                }
+            });
+            
+            chatForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const message = messageInput.value.trim();
+                if (message) {
+                    addUserMessage(message);
+                    messageInput.value = '';
+                    const ws = chatForm.ws;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ message: message }));
+                    }
+                }
+            });
+            
+            messageInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    chatForm.dispatchEvent(new Event('submit'));
+                }
+            });
+        });
+    </script>
+</body>
+</html>

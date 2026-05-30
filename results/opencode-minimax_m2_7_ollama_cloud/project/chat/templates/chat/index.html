@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatGPT-style Chat</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/htmx.min.js" defer></script>
+    <script src="/static/js/ws.js" defer></script>
+</head>
+<body hx-ext="ws" ws-connect="/ws/chat/{{ session_id }}/">
+    {% include "chat/partials/_message_list.html" %}
+    {% include "chat/partials/_chat_input.html" %}
+</body>
+</html>

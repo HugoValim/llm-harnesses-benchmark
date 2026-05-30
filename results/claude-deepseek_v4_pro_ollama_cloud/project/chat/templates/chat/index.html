@@ -1,0 +1,132 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <link rel="stylesheet" href="{% static 'css/output.css' %}">
+    <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/htmx-ext-ws@2.0.0/dist/ws.js" crossorigin="anonymous"></script>
+</head>
+<body class="h-full bg-gray-950 text-gray-100" hx-ext="ws" ws-connect="/ws/chat/">
+    <div class="flex h-full max-w-3xl mx-auto flex-col">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+            <h1 class="text-lg font-semibold">Chat</h1>
+            <span class="text-xs text-gray-500" id="model-badge">Ollama</span>
+        </header>
+
+        <main id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+            <div class="text-center text-gray-600 mt-12">
+                <p class="text-sm">Send a message to start chatting.</p>
+            </div>
+        </main>
+
+        <footer class="border-t border-gray-800 px-4 py-3 shrink-0">
+            <form id="chat-form" class="flex gap-2" ws-send>
+                {% csrf_token %}
+                <input
+                    type="text"
+                    name="message"
+                    id="message-input"
+                    placeholder="Type a message..."
+                    autocomplete="off"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent
+                           placeholder-gray-500"
+                >
+                <button
+                    type="submit"
+                    id="send-button"
+                    class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white
+                           px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                    Send
+                </button>
+            </form>
+        </footer>
+    </div>
+
+    <div id="ws-errors" class="hidden"></div>
+
+    <script>
+        document.body.addEventListener('htmx:wsAfterSend', function() {
+            document.getElementById('message-input').value = '';
+            document.getElementById('send-button').disabled = true;
+        });
+
+        document.body.addEventListener('htmx:wsConfigSend', function(evt) {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (!message) {
+                evt.preventDefault();
+                return;
+            }
+        });
+
+        function appendUserMessage(text) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'flex justify-end';
+            div.innerHTML = '<div class="bg-gray-800 rounded-lg px-4 py-2 max-w-[80%] text-sm">' +
+                escapeHtml(text) + '</div>';
+            container.appendChild(div);
+            container.querySelector('.text-center')?.remove();
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function createStreamingBubble() {
+            const container = document.getElementById('chat-messages');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex justify-start';
+            wrapper.id = 'streaming-bubble';
+            const bubble = document.createElement('div');
+            bubble.className = 'bg-gray-800 rounded-lg px-4 py-2 max-w-[80%] text-sm';
+            bubble.id = 'streaming-content';
+            wrapper.appendChild(bubble);
+            container.appendChild(wrapper);
+            return bubble;
+        }
+
+        function finalizeStreamingBubble() {
+            const bubble = document.getElementById('streaming-bubble');
+            if (bubble) bubble.removeAttribute('id');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.body.addEventListener('htmx:wsBeforeMessage', function(evt) {
+            try {
+                const msg = JSON.parse(evt.detail.message);
+                if (msg.type === 'stream_start') {
+                    const input = document.getElementById('message-input');
+                    appendUserMessage(input.value.trim());
+                    createStreamingBubble();
+                } else if (msg.type === 'token') {
+                    const bubble = document.getElementById('streaming-content');
+                    if (bubble) {
+                        bubble.textContent += msg.content;
+                        const container = document.getElementById('chat-messages');
+                        container.scrollTop = container.scrollHeight;
+                    }
+                } else if (msg.type === 'stream_end') {
+                    finalizeStreamingBubble();
+                    document.getElementById('send-button').disabled = false;
+                } else if (msg.type === 'error') {
+                    const bubble = document.getElementById('streaming-content') || createStreamingBubble();
+                    bubble.textContent = 'Error: ' + msg.content;
+                    bubble.className += ' text-red-400';
+                    finalizeStreamingBubble();
+                    document.getElementById('send-button').disabled = false;
+                }
+            } catch(e) {
+                // non-JSON messages ignored
+            }
+        });
+    </script>
+</body>
+</html>

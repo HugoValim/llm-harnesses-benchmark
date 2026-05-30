@@ -1,0 +1,32 @@
+{% extends "chat/base.html" %}
+{% load static %}
+
+{% block title %}Ollama Chat{% endblock %}
+
+{% block body %}
+  <div class="mx-auto flex h-full max-w-3xl flex-col px-3 py-4">
+    {% include "chat/partials/header.html" %}
+
+    <div
+      id="chat-root"
+      class="mt-4 flex min-h-0 flex-1 flex-col gap-3"
+      hx-ext="ws"
+      ws-connect="/ws/chat/"
+    >
+      <div id="error-banner" class="hidden" aria-hidden="true"></div>
+
+      <div
+        id="thread"
+        class="min-h-[280px] flex-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
+      >
+        <div class="text-sm text-zinc-400">
+          Ask anything. Replies stream token-by-token over the WebSocket.
+        </div>
+      </div>
+
+      <div id="typing-indicator" class="hidden"></div>
+
+      {% include "chat/partials/composer.html" %}
+    </div>
+  </div>
+{% endblock %}

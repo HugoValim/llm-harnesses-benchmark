@@ -1,0 +1,11 @@
+# Development & CI tooling. Install with: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest==9.0.3
+pytest-django==4.12.0
+pytest-asyncio==1.4.0
+ruff==0.15.15
+mypy==2.1.0
+django-stubs[compatible-mypy]==6.0.5
+bandit[toml]==1.9.4
+coverage==7.14.1
+pip-audit==2.10.0

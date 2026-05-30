@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_volume:/root/.ollama
+    # Note: The Ollama container needs to be run with privileged access or with specific device access for GPU.
+    # For CPU-only usage, the above is sufficient. For GPU, additional configuration is needed.
+    # We are not exposing the Ollama port to the host in this compose file, but we are linking it.
+    # However, we set the OLLAMA_HOST in the web service to point to the ollama service.
+    # For local development, you might want to run Ollama on the host and set OLLAMA_HOST=http://host.docker.internal:11434
+    # or adjust accordingly.
+
+volumes:
+  static_volume:
+  ollama_volume:

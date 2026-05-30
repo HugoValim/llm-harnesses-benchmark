@@ -1,0 +1,58 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ollama Chat</title>
+    <link rel="stylesheet" href="{% static 'css/output.css' %}" />
+    <script src="{% static 'js/htmx.min.js' %}" defer></script>
+    <script src="{% static 'js/ws.js' %}" defer></script>
+  </head>
+  <body class="h-full bg-slate-100 text-slate-900">
+    <div
+      id="chat-app"
+      hx-ext="ws"
+      ws-connect="/ws/chat/"
+      class="mx-auto flex h-full max-w-3xl flex-col bg-white shadow-lg"
+    >
+      {% include "chat/partials/header.html" %}
+
+      <main class="flex-1 overflow-y-auto px-4 py-6">
+        <div id="messages" class="flex flex-col gap-4">
+          {% include "chat/partials/welcome.html" %}
+        </div>
+      </main>
+
+      <footer class="border-t border-slate-200 bg-white px-4 py-3">
+        <form
+          id="chat-form"
+          ws-send
+          class="flex items-end gap-2"
+          autocomplete="off"
+        >
+          <textarea
+            id="message-input"
+            name="message"
+            rows="1"
+            placeholder="Send a message…"
+            class="max-h-40 flex-1 resize-none rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          ></textarea>
+          <button
+            type="submit"
+            class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          >
+            Send
+          </button>
+        </form>
+        <p class="mt-2 text-center text-xs text-slate-400">
+          Enter to send · Shift+Enter for a new line
+        </p>
+      </footer>
+    </div>
+
+    {# UI polish only: Enter-to-send, input reset, and autoscroll. The token
+       streaming path itself is driven entirely by the HTMX WebSocket extension. #}
+    <script src="{% static 'js/chat-ui.js' %}" defer></script>
+  </body>
+</html>

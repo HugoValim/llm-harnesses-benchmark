@@ -1,0 +1,28 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-default-dev-secret-for-docker-compose}
+    volumes:
+      - .:/app
+    depends_on:
+      - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+
+volumes:
+  ollama_data:

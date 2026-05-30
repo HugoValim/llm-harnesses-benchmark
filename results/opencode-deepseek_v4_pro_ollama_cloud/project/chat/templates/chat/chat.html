@@ -1,0 +1,153 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-950 text-gray-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <link rel="stylesheet" href="{% static 'chat/css/tailwind.css' %}">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-ws@2.0.0/ws.js"></script>
+</head>
+<body class="h-full flex flex-col" hx-ext="ws" ws-connect="/ws/chat/">
+    <header class="flex-none bg-gray-900 border-b border-gray-800 px-4 py-3">
+        <h1 class="text-lg font-semibold text-gray-100">Chat</h1>
+    </header>
+
+    <main class="flex-1 overflow-y-auto px-4 py-4 space-y-4" id="chat-messages">
+        <div id="messages-container">
+            {% include "chat/partials/welcome.html" %}
+        </div>
+    </main>
+
+    <footer class="flex-none bg-gray-900 border-t border-gray-800 p-4">
+        <form id="chat-form" ws-send="submit" class="flex gap-3">
+            {% csrf_token %}
+            <input
+                type="text"
+                name="message"
+                id="message-input"
+                placeholder="Type your message..."
+                autofocus
+                autocomplete="off"
+                class="flex-1 bg-gray-800 text-gray-100 placeholder-gray-500 rounded-lg px-4 py-2.5 border border-gray-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            >
+            <button
+                type="submit"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg px-6 py-2.5 transition-colors"
+            >
+                Send
+            </button>
+        </form>
+    </footer>
+
+    <template id="user-message-template">
+        <div class="flex justify-end">
+            <div class="bg-emerald-700 text-gray-100 rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]">
+                <p class="whitespace-pre-wrap message-content"></p>
+            </div>
+        </div>
+    </template>
+
+    <template id="assistant-token-template">
+        <div class="flex justify-start assistant-token-group">
+            <div class="bg-gray-800 text-gray-100 rounded-2xl rounded-bl-md px-4 py-2.5 max-w-[80%]">
+                <p class="whitespace-pre-wrap message-content"></p>
+            </div>
+        </div>
+    </template>
+
+    <template id="error-template">
+        <div class="flex justify-center">
+            <div class="bg-red-900/60 text-red-200 border border-red-700 rounded-lg px-4 py-2.5 max-w-[80%]">
+                <p class="message-content text-sm"></p>
+            </div>
+        </div>
+    </template>
+
+    <template id="system-template">
+        <div class="flex justify-center">
+            <p class="text-gray-500 text-sm message-content"></p>
+        </div>
+    </template>
+
+    <script>
+    (function () {
+        const container = document.getElementById("messages-container");
+        const input = document.getElementById("message-input");
+        const form = document.getElementById("chat-form");
+
+        let currentAssistantEl = null;
+
+        function createElement(tplId, content) {
+            const tpl = document.getElementById(tplId);
+            if (!tpl) return null;
+            const clone = tpl.content.cloneNode(true);
+            const msg = clone.querySelector(".message-content");
+            if (msg) msg.textContent = content;
+            return clone;
+        }
+
+        function clearWelcome() {
+            const welcome = container.querySelector(".welcome-message");
+            if (welcome) welcome.remove();
+        }
+
+        document.body.addEventListener("htmx:wsAfterMessage", function (evt) {
+            let data;
+            try {
+                data = JSON.parse(evt.detail.message);
+            } catch (e) {
+                return;
+            }
+            clearWelcome();
+            switch (data.type) {
+                case "system": {
+                    const el = createElement("system-template", data.content);
+                    if (el) container.appendChild(el);
+                    break;
+                }
+                case "user": {
+                    if (currentAssistantEl) currentAssistantEl = null;
+                    const el = createElement("user-message-template", data.content);
+                    if (el) container.appendChild(el);
+                    break;
+                }
+                case "assistant_token": {
+                    if (!currentAssistantEl) {
+                        const el = createElement("assistant-token-template", "");
+                        if (el) {
+                            container.appendChild(el);
+                            const wrapper = container.lastElementChild;
+                            if (wrapper && wrapper.classList.contains("assistant-token-group")) {
+                                currentAssistantEl = wrapper.querySelector(".message-content");
+                            }
+                        }
+                    }
+                    if (currentAssistantEl) {
+                        currentAssistantEl.textContent += data.content;
+                    }
+                    container.parentElement.scrollTop = container.parentElement.scrollHeight;
+                    break;
+                }
+                case "assistant_done":
+                    currentAssistantEl = null;
+                    break;
+                case "error": {
+                    currentAssistantEl = null;
+                    const el = createElement("error-template", data.content);
+                    if (el) container.appendChild(el);
+                    break;
+                }
+            }
+        });
+
+        form.addEventListener("submit", function () {
+            setTimeout(function () {
+                input.value = "";
+            }, 0);
+        });
+    })();
+    </script>
+</body>
+</html>

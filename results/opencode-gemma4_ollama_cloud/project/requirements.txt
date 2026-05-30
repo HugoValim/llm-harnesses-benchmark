@@ -1,0 +1,11 @@
+django
+channels[daphne]
+langchain-ollama
+pytest
+pytest-django
+pytest-asyncio
+ruff
+mypy
+bandit
+coverage
+pip-audit

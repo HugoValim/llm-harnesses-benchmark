@@ -1,0 +1,5 @@
+Collecting python-json-logger
+  Using cached python_json_logger-4.1.0-py3-none-any.whl.metadata (3.7 kB)
+Using cached python_json_logger-4.1.0-py3-none-any.whl (15 kB)
+Installing collected packages: python-json-logger
+Successfully installed python-json-logger-4.1.0

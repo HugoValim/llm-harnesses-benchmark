@@ -1,0 +1,47 @@
+{% extends 'chat_app/base.html' %}
+
+{% block content %}
+<div
+  class="flex-1 overflow-y-auto p-4 space-y-4"
+  id="messages"
+  hx-ext="ws"
+  ws-connect="/ws/chat/"
+  hx-swap="beforeend"
+>
+</div>
+
+<form
+  class="p-4 border-t border-gray-700 flex gap-2"
+  ws-send
+  id="chat-form"
+  _="on submit put '' into <input/>'s value"
+>
+  <input
+    type="text"
+    name="message"
+    required
+    autocomplete="off"
+    class="flex-1 bg-gray-800 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    placeholder="Type a message..."
+  />
+  <button
+    type="submit"
+    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg"
+  >
+    Send
+  </button>
+</form>
+
+<script>
+  document.body.addEventListener('htmx:wsBeforeSend', function() {
+    const input = document.querySelector('#chat-form input[name="message"]');
+    if (input) input.disabled = true;
+  });
+  document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
+    if (evt.detail.elt.querySelector('[data-done="true"]')) {
+      const input = document.querySelector('#chat-form input[name="message"]');
+      if (input) { input.disabled = false; input.focus(); }
+    }
+  });
+</script>
+{% endblock %}

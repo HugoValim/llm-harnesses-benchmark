@@ -1,0 +1,13 @@
+<form id="chat-form" class="flex gap-2">
+    {% csrf_token %}
+    <input id="message-input"
+           type="text"
+           placeholder="Type your message..."
+           autofocus
+           class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    <button id="send-btn"
+            type="submit"
+            class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        Send
+    </button>
+</form>

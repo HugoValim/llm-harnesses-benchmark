@@ -1,0 +1,12 @@
+<div
+  hx-swap-oob="beforeend:#messages"
+  class="flex items-start gap-3"
+>
+  <span class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+    !
+  </span>
+  <div class="max-w-[80%] rounded-2xl rounded-tl-sm border border-red-200 bg-red-50 px-4 py-2 text-sm leading-relaxed text-red-700">
+    <p class="font-medium">The assistant is unavailable right now.</p>
+    <p class="mt-1 text-xs text-red-500">{{ detail }}</p>
+  </div>
+</div>

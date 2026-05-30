@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-channels-chat"
+version = "0.1.0"
+description = "Django + Channels chat UI with Ollama streaming"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "Django>=5.1,<6",
+    "channels[daphne]>=4.1,<5",
+    "daphne>=4.1,<5",
+    "httpx>=0.27,<0.29",
+    "langchain-core>=0.3,<0.4",
+    "langchain-ollama>=0.2,<0.3",
+    "python-dotenv>=1.0,<2",
+    "whitenoise>=6.8,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "bandit[toml]>=1.7,<2",
+    "coverage[toml]>=7.6,<8",
+    "django-stubs>=5.1,<6",
+    "mypy>=1.11,<2",
+    "pip-audit>=2.7,<3",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.3,<2",
+    "pytest-django>=4.9,<5",
+    "ruff>=0.8,<0.10",
+    "types-pyOpenSSL",
+]
+
+[tool.setuptools.packages.find]
+include = ["chat*", "chat_project*"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["chat", "chat_project"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+no_implicit_optional = true
+show_error_codes = true
+mypy_path = ["."]
+files = ["chat", "chat_project"]
+
+[[tool.mypy.overrides]]
+module = ["channels.*", "channels.testing.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["chat.tests.*"]
+disallow_untyped_defs = false
+
+[tool.django-stubs]
+django_settings_module = "chat_project.settings"
+
+[tool.bandit]
+exclude_dirs = [".venv", "node_modules", "htmlcov", "migrations", "chat/tests"]
+skips = ["B101"]
+
+[tool.coverage.run]
+branch = true
+source = ["chat"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 0
+show_missing = true
+skip_covered = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "chat_project.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

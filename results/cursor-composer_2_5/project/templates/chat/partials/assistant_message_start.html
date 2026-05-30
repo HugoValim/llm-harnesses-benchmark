@@ -1,0 +1,11 @@
+<div id="messages" hx-swap-oob="beforeend">
+  <div class="flex justify-start">
+    <div
+      id="assistant-{{ message_id }}"
+      class="max-w-[85%] rounded-2xl rounded-bl-md border border-slate-700 bg-slate-900 px-4 py-3 text-sm leading-relaxed text-slate-100 shadow"
+    >
+      <span id="tokens-{{ message_id }}"></span
+      ><span id="cursor-{{ message_id }}" class="streaming-cursor text-emerald-400">▍</span>
+    </div>
+  </div>
+</div>

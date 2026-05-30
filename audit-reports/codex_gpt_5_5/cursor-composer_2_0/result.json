@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Using `benchmark-ai-code` skill for rubric audit. Need inspect generated project + installed packages, then write `report.md`.\nSpec locked: audit-v3.8, benchmark-v3.2 deliverables, fixed 100-point table. Now reading file inventory and package source before scoring API claims.\nProject has normal Django layout at root, not nested generated app dir. Next: inspect config, consumer, LLM layer, templates, tests, Docker, docs with line refs.\nLLM path appears real: `langchain_ollama.ChatOllama`, `astream`, token OOB swaps. Need package grep now; no hallucination scoring until verified.\nEvidence now enough for scoring. Only mandatory critical failure found so far: missing consumer `disconnect`; checking actual test run and git/output target before writing report.\nWriting `report.md` now. Scores: strong functional streaming/tests, one CF for missing disconnect, big D9 loss, and prompt-version mismatch flagged in metadata.\nDone: `report.md` written in `audit-reports/codex_gpt_5_5/cursor-composer_2_0/report.md`.\n\nScore: `80 / 100`, tier `B`.  \nVerification: target project `pytest` run passed: `7 passed in 2.17s`. Report file present, 506 words.",
+  "command": [
+    "bash",
+    "-lc",
+    "codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/cursor-composer_2_0 -m gpt-5.5 -c model_reasoning_effort=xhigh -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 356.14,
+  "ended_at": "2026-05-29T13:36:26+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "codex_reasoning_effort": "xhigh",
+    "id": "gpt-5.5",
+    "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
+    "provider": "openai",
+    "runner_type": "codex",
+    "slug": "codex_gpt_5_5"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e73ed-eb4d-7bb1-95ed-231ae398f33a",
+  "output_tokens_per_second": 42.85,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/cursor-composer_2_0",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/cursor-composer_2_0/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/cursor-composer_2_0/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/cursor-composer_2_0/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 7,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "f5399050e0d4ff7af740d1cab7e54b6ed38b40d03cdd00956c05f8217d8da6bd",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-29T13:30:30+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 894685,
+    "output": 15260,
+    "total": 909945
+  },
+  "tokens_per_second": 2555.02
+}

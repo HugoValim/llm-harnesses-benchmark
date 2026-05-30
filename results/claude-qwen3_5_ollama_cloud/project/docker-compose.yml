@@ -1,0 +1,31 @@
+services:
+  chat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # SECURITY: Secret key required - no default
+      - DJANGO_SECRET_KEY
+      # Security settings
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      # Ollama configuration (not secrets, but env-driven)
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+    depends_on: []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+# Note: To connect to a local Ollama instance:
+# - On Linux: extra_hosts added above for host.docker.internal
+# - On Mac/Windows: host.docker.internal is auto-resolved
+# Or run Ollama in a separate container and reference it by service name

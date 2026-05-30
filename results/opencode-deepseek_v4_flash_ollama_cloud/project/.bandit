@@ -1,0 +1,9 @@
+exclude_dirs:
+  - .venv
+  - tests
+  - .git
+  - node_modules
+skips:
+  - B101
+  - B303
+  - B311

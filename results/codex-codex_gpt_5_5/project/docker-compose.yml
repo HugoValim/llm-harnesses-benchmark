@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY before docker compose up}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    ports:
+      - "8000:8000"

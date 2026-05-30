@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatGPT-style Chat</title>
+    {% load static %}
+    <!-- Tailwind CSS -->
+    <link href="{% static 'css/tailwind.css' %}" rel="stylesheet">
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- HTMX WebSocket Extension -->
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+</head>
+<body class="flex min-h-screen flex-col items-center justify-center bg-gray-50">
+    <div id="chat-app" class="w-full max-w-2xl space-y-4">
+        {% block content %}
+        {% endblock %}
+    </div>
+</body>
+</html>

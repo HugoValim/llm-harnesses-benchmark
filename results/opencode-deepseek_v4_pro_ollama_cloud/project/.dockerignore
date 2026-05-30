@@ -1,0 +1,13 @@
+.venv
+.git
+__pycache__
+*.pyc
+*.pyo
+.env
+migrations
+db.sqlite3
+htmlcov
+.coverage
+coverage.xml
+node_modules
+staticfiles

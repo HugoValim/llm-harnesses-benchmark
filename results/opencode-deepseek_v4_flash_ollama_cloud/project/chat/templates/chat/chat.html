@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat</title>
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/output.css' %}">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/ext/ws.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+  <header class="bg-white shadow px-6 py-4">
+    <h1 class="text-xl font-semibold text-gray-800">Chat</h1>
+  </header>
+
+  <main class="flex-1 flex flex-col max-w-3xl mx-auto w-full p-4">
+    <div id="chat-messages"
+         class="flex-1 overflow-y-auto space-y-4 mb-4 p-4 bg-white rounded shadow"
+         hx-ext="ws"
+         ws-connect="/ws/chat/">
+      {% include 'chat/_messages.html' %}
+    </div>
+
+    <form id="chat-form"
+          ws-send
+          class="flex gap-2">
+      {% csrf_token %}
+      <input type="text"
+             name="message"
+             id="message-input"
+             class="flex-1 border border-gray-300 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+             placeholder="Type your message..."
+             autocomplete="off"
+             required>
+      <button type="submit"
+              class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">
+        Send
+      </button>
+    </form>
+  </main>
+
+  <script>
+    document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
+      var data;
+      try {
+        data = JSON.parse(evt.detail.message);
+      } catch(e) {
+        return;
+      }
+      var container = document.getElementById('chat-messages');
+      var lastMsg = container.querySelector('.assistant-message:last-child');
+      if (data.type === 'token') {
+        if (!lastMsg) {
+          var div = document.createElement('div');
+          div.className = 'assistant-message bg-blue-50 p-3 rounded';
+          div.textContent = '';
+          container.appendChild(div);
+          lastMsg = div;
+        }
+        lastMsg.textContent += data.content;
+        container.scrollTop = container.scrollHeight;
+      } else if (data.type === 'done') {
+        var input = document.getElementById('message-input');
+        if (input) input.value = '';
+      } else if (data.type === 'error') {
+        var div = document.createElement('div');
+        div.className = 'error-message bg-red-50 text-red-700 p-3 rounded';
+        div.textContent = data.content;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+  </script>
+</body>
+</html>

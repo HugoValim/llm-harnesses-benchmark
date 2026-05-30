@@ -1,0 +1,11 @@
+/* Tailwind source stylesheet.
+ *
+ * Build the production stylesheet with the official Tailwind CLI:
+ *   npx @tailwindcss/cli@4 -i ./assets/css/input.css -o ./static/css/output.css --minify
+ *
+ * The @source directives tell Tailwind which files to scan for class names.
+ */
+@import "tailwindcss";
+
+@source "../../chat/templates";
+@source "../../static/js";

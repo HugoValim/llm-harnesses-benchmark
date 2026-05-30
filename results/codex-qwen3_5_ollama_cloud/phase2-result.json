@@ -1,0 +1,68 @@
+{
+  "assistant_output_excerpt": "Validation complete.\n\n**Summary:**\n\n| Step | Result |\n|------|--------|\n| Venv + deps (Python 3.13.13) | \u2705 PASS |\n| Migrations | \u2705 PASS |\n| Tests (17) | \u2705 PASS (83% coverage) |\n| Ruff check/format | \u2705 PASS |\n| Mypy | \u26a0\ufe0f 9 errors (Django stubs + test annotations) |\n| Bandit | \u2705 PASS |\n| pip-audit | \u26a0\ufe0f 3 vulns (pip, pytest - transitive) |\n| ASGI server boot | \u2705 PASS (daphne on :8000) |\n| HTTP reachability | \u2705 PASS (200 OK) |\n| HTMX ws extension | \u2705 PASS (`hx-ext=\"ws\"`, `ws-connect`, `ws-send`) |\n| WebSocket connect | \u2705 PASS (receives `{\"type\":\"connected\"}`) |\n| Docker build | \u2705 PASS (240s, collectstatic OK) |\n| Docker compose | \u2705 PASS (port 8000 reachable) |\n| Health endpoint in Docker | \u26a0\ufe0f 503 (Ollama unreachable - expected env constraint) |\n\n**Fixes applied:**\n- Added `DJANGO_SECRET_KEY` to Dockerfile ENV (build-time placeholder for collectstatic)\n- Created `.env` file for local development\n\n**Files changed:**\n- `Dockerfile` - Added placeholder secret key for build\n- `.env` - Created with local dev secrets\n- `VERIFY.md` - Updated with full command/results/blocker table\n\nOllama unreachability from Docker is a documented environmental constraint, not a code bug. App handles it gracefully with 503 response.",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch --yes codex --model qwen3.5:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-qwen3_5_ollama_cloud/project -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 1823.73,
+  "ended_at": "2026-05-22T18:07:12+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "harness": "codex",
+    "id": "qwen3.5:cloud",
+    "label": "Qwen 3.5 (Ollama Cloud)",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "selection_reason": "Qwen 3.5 served by Ollama Cloud for agentic Python-stack benchmark coverage.",
+    "slug": "qwen3_5_ollama_cloud"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e50c2-efc5-7f90-b1f1-755ae9a42e6c",
+  "output_tokens_per_second": 6.92,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/results/codex-qwen3_5_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/codex-qwen3_5_ollama_cloud/followup-prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/results/codex-qwen3_5_ollama_cloud/followup-opencode-stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/results/codex-qwen3_5_ollama_cloud/followup-opencode-output.ndjson"
+  },
+  "phase": "phase2",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 42,
+    "present": {
+      "asgi_py": true,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": true,
+      "dockerfile": true,
+      "manage_py": true,
+      "pyproject_toml": true,
+      "readme_lower": false,
+      "readme_md": true,
+      "requirements_txt": true,
+      "settings_py": true,
+      "tests_present": true
+    },
+    "works_as_intended": "yes",
+    "works_note": "Django + Channels app, tests, README, and container files detected."
+  },
+  "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-22T17:36:48+00:00",
+  "status": "completed",
+  "stderr_excerpt": "2026-05-22T17:36:53.168513Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-22T17:44:19.846047Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n2026-05-22T17:53:32.560112Z ERROR codex_core::tools::router: error=unsupported call: apply_patch\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 3987809,
+    "output": 12615,
+    "total": 4000424
+  },
+  "tokens_per_second": 2193.54
+}

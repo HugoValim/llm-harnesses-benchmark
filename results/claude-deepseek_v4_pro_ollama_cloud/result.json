@@ -1,0 +1,138 @@
+{
+  "assistant_turns": 371,
+  "command": [
+    "ollama",
+    "launch",
+    "claude",
+    "--model",
+    "deepseek-v4-pro:cloud",
+    "--",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--dangerously-skip-permissions",
+    "--verbose",
+    "<prompt>"
+  ],
+  "elapsed_seconds": 2296.19,
+  "ended_at": "2026-05-18T08:15:19+00:00",
+  "exit_code": 0,
+  "file_count": 42,
+  "followup_prompt_sha256": "bf86cbe9f5cf245ba911e3a1c9cffbe3e4ac1aed08da7c973a9c73c3a62eeae3",
+  "label": "DeepSeek V4 Pro (Ollama Cloud) via Claude Code",
+  "main_model": "deepseek-v4-pro:cloud",
+  "model_usage": {
+    "deepseek-v4-pro:cloud": {
+      "cacheCreationInputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "contextWindow": 200000,
+      "costUSD": 25.93916,
+      "inputTokens": 8210384,
+      "maxOutputTokens": 32000,
+      "outputTokens": 51867,
+      "webSearchRequests": 0
+    }
+  },
+  "no_progress_timeout_seconds": 360,
+  "num_turns": 219,
+  "paths": {
+    "followup_prompt": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/followup-prompt.txt",
+    "followup_stderr_log": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/followup-stderr.log",
+    "followup_stream_ndjson": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/followup-stream.ndjson",
+    "project_dir": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/prompt.txt",
+    "stderr_log": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/stderr.log",
+    "stream_ndjson": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/stream.ndjson"
+  },
+  "phases": [
+    {
+      "elapsed_seconds": 1568.1,
+      "ended_at": "2026-05-18T08:03:11+00:00",
+      "exit_code": 0,
+      "file_count": 41,
+      "model_usage": {
+        "deepseek-v4-pro:cloud": {
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "contextWindow": 200000,
+          "costUSD": 25.93916,
+          "inputTokens": 5011767,
+          "maxOutputTokens": 32000,
+          "outputTokens": 35213,
+          "webSearchRequests": 0
+        }
+      },
+      "num_turns": 120,
+      "phase": "phase1",
+      "prompt_sha256": "9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28",
+      "stalled": false,
+      "started_at": "2026-05-18T07:37:03+00:00",
+      "status": "completed",
+      "timed_out": false
+    },
+    {
+      "elapsed_seconds": 728.09,
+      "ended_at": "2026-05-18T08:15:19+00:00",
+      "exit_code": 0,
+      "file_count": 42,
+      "model_usage": {
+        "deepseek-v4-pro:cloud": {
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "contextWindow": 200000,
+          "costUSD": 16.409435000000002,
+          "inputTokens": 3198617,
+          "maxOutputTokens": 32000,
+          "outputTokens": 16654,
+          "webSearchRequests": 0
+        }
+      },
+      "num_turns": 99,
+      "phase": "phase2",
+      "prompt_sha256": "bf86cbe9f5cf245ba911e3a1c9cffbe3e4ac1aed08da7c973a9c73c3a62eeae3",
+      "stalled": false,
+      "started_at": "2026-05-18T08:03:11+00:00",
+      "status": "completed",
+      "timed_out": false
+    }
+  ],
+  "prompt_sha256": "9940ae82ac8c1b8d3c5b76c2d5c0db62ed9e775d949e7b324c5b6c6e96f7ec28",
+  "slug": "deepseek_v4_pro_ollama_cloud",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-18T07:37:03+00:00",
+  "status": "completed",
+  "stop_reason": "end_turn",
+  "subagent": null,
+  "subagent_invocation_counts": {},
+  "subagent_invocations": [],
+  "timed_out": false,
+  "timeout_seconds": 5400,
+  "tool_use_counts": {
+    "Bash": 98,
+    "Edit": 17,
+    "Grep": 1,
+    "Read": 50,
+    "Skill": 1,
+    "TodoWrite": 16,
+    "Write": 33
+  },
+  "usage_total": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "",
+    "input_tokens": 3198617,
+    "iterations": [],
+    "output_tokens": 16654,
+    "server_tool_use": {
+      "web_fetch_requests": 0,
+      "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+  }
+}

@@ -1,0 +1,30 @@
+[line-length]
+line-length = 88
+
+[target-version]
+target-version = "py38"
+
+[select]
+I = ["I"]
+E = ["E"]
+F = ["F"]
+W = ["W"]
+C90 = ["M"]
+
+[ignore]
+# Skip linting migrations
+skip-migrations = true
+
+# Other common exclusions
+# E501: Line too long (handled by black)
+# F401: Module imported but not used (sometimes intentional)
+# W293: Blank line contains whitespace (handled by black)
+ignore = ["E501", "F401", "W293"]
+
+[format]
+# Use black-like formatting
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+skip-nomagic-trailing-comma = false

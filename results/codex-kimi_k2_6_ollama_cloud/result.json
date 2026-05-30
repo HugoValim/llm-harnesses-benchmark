@@ -1,0 +1,215 @@
+{
+  "assistant_output_excerpt": "**Validation complete.**\n\n**Fix applied**\n- `pyproject.toml`: added `[tool.setuptools] packages = [\"chat\", \"config\"]` to resolve editable-install failure caused by automatic package discovery picking up `static/` and `templates/`.\n\n**Results**\n\n- **Setup**: `.venv` on Python 3.13.13, deps installed, migrations applied.\n- **Tests**: 8 passed.\n- **Static checks**: `ruff` clean, `mypy` clean, `bandit` clean, `coverage` 94%, `pip-audit` clean.\n- **Local ASGI**: `daphne` boots on `127.0.0.1:8000`. HTTP page returns 200 with `hx-ext=\"ws\"`, `ws-connect=\"/ws/chat/\"`, `ws-send=\"\"`. WebSocket connects and streamed 9 real tokens end-to-end.\n- **Docker**: `docker build` succeeds. `docker compose up` starts the container on port 8000. HTML and WebSocket wiring confirmed.\n\n**Environment blocker**\n- Ollama is **not reachable from inside Docker** in this environment (`host.docker.internal:11434` unresolvable). `/health/` returns `{\"ollama_reachable\": false}` and chat streaming returns an error token inside the container. This is expected per the benchmark rules and is recorded in `VERIFY.md`.",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch --yes codex --model kimi-k2.6:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 2554.92,
+  "ended_at": "2026-05-22T16:28:03+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "followup_prompt_sha256": "c224e7df59e60904bae7d1eb4b06abbf08f814cfe95effe0e025b1a67ece2ed5",
+  "harness": "codex",
+  "model": {
+    "harness": "codex",
+    "id": "kimi-k2.6:cloud",
+    "label": "Kimi K2.6 (Ollama Cloud)",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "selection_reason": "Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.",
+    "slug": "kimi_k2_6_ollama_cloud"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e506c-2c52-76f3-90ab-05457ac94d50",
+  "output_tokens_per_second": 7.77,
+  "paths": {
+    "followup_prompt": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-prompt.txt",
+    "followup_stderr": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-opencode-stderr.log",
+    "followup_stdout": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-opencode-output.ndjson",
+    "project_dir": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/prompt.txt",
+    "session_export": null,
+    "stderr": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/opencode-stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/opencode-output.ndjson"
+  },
+  "phase": "phase2",
+  "phases": [
+    {
+      "assistant_output_excerpt": "Project built and verified in `.`.\n\n**What shipped**\n\n- Django + Channels ASGI app (`chat/`, `config/`) with `AsyncWebsocketConsumer` streaming via `langchain_ollama.ChatOllama`\n- Single-page chat UI in `chat/templates/chat/` using HTMX `hx-ext=\"ws\"` with `ws-connect` / `ws-send`\n- Tailwind CSS built with the official CLI (`static/src/input.css` \u2192 `static/dist/output.css`)\n- `OLLAMA_HOST` / `OLLAMA_MODEL` env-driven with defaults; `SECRET_KEY` from env only, no hardcoded fallback\n- `Dockerfile` (`python:3.13.13-slim-bookworm`) + `docker-compose.yml` running `daphne`\n- `.env.example`, `README.md`, `VERIFY.md`\n\n**Tooling results (all pass)**\n\n- `ruff check .` \u2192 clean\n- `ruff format --check .` \u2192 18 files formatted\n- `mypy chat tests` \u2192 no issues\n- `bandit -r . -c pyproject.toml` \u2192 no issues\n- `DJANGO_SECRET_KEY=test pytest -v` \u2192 8 passed\n- `coverage run -m pytest && coverage report` \u2192 94%\n- `pip-audit` \u2192 no known vulnerabilities\n\nKey files:\n- `chat/consumers.py` \u2014 WebSocket consumer with real `disconnect`, group cleanup, and stream cancellation\n- `chat/services.py` \u2014 `ChatOllama` wrapper with `astream` chunk forwarding\n- `tests/test_services.py` \u2014 named `FakeOllamaClient` mock asserting multiple streamed tokens\n- `config/settings.py` \u2014 defaults `DEBUG=False`, `ALLOWED_HOSTS=localhost`, no `SECRET_KEY` placeholder",
+      "command": [
+        "bash",
+        "-lc",
+        "ollama launch --yes codex --model kimi-k2.6:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project -"
+      ],
+      "continued_from_session": null,
+      "elapsed_seconds": 995.36,
+      "ended_at": "2026-05-22T16:02:03+00:00",
+      "exit_code": 0,
+      "finish_reason": "stop",
+      "model": {
+        "harness": "codex",
+        "id": "kimi-k2.6:cloud",
+        "label": "Kimi K2.6 (Ollama Cloud)",
+        "provider": "ollama_cloud",
+        "runner_type": "ollama",
+        "selection_reason": "Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.",
+        "slug": "kimi_k2_6_ollama_cloud"
+      },
+      "no_progress_timeout_seconds": 900,
+      "opencode_session_id": "019e505d-1ad7-7e03-9226-7419e1bba6a3",
+      "output_tokens_per_second": 21.27,
+      "paths": {
+        "project_dir": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project",
+        "prompt": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/prompt.txt",
+        "stderr": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/opencode-stderr.log",
+        "stdout": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/opencode-output.ndjson"
+      },
+      "phase": "phase1",
+      "preview_output_tokens_per_second": null,
+      "preview_output_tokens_per_second_average": null,
+      "project_summary": {
+        "file_count": 41,
+        "present": {
+          "asgi_py": true,
+          "compose_yaml": false,
+          "compose_yml": false,
+          "docker_compose_yaml": false,
+          "docker_compose_yml": true,
+          "dockerfile": true,
+          "manage_py": true,
+          "pyproject_toml": true,
+          "readme_lower": false,
+          "readme_md": true,
+          "requirements_txt": false,
+          "settings_py": true,
+          "tests_present": true
+        },
+        "works_as_intended": "yes",
+        "works_note": "Django + Channels app, tests, README, and container files detected."
+      },
+      "prompt_sha256": "824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634",
+      "stall_reason": null,
+      "stalled": false,
+      "started_at": "2026-05-22T15:45:28+00:00",
+      "status": "completed",
+      "stderr_excerpt": "2026-05-22T15:45:39.527484Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n",
+      "timed_out": false,
+      "timeout_seconds": 3000,
+      "tokens": {
+        "input": 4008327,
+        "output": 21167,
+        "total": 4029494
+      },
+      "tokens_per_second": 4048.28
+    },
+    {
+      "assistant_output_excerpt": "**Validation complete.**\n\n**Fix applied**\n- `pyproject.toml`: added `[tool.setuptools] packages = [\"chat\", \"config\"]` to resolve editable-install failure caused by automatic package discovery picking up `static/` and `templates/`.\n\n**Results**\n\n- **Setup**: `.venv` on Python 3.13.13, deps installed, migrations applied.\n- **Tests**: 8 passed.\n- **Static checks**: `ruff` clean, `mypy` clean, `bandit` clean, `coverage` 94%, `pip-audit` clean.\n- **Local ASGI**: `daphne` boots on `127.0.0.1:8000`. HTTP page returns 200 with `hx-ext=\"ws\"`, `ws-connect=\"/ws/chat/\"`, `ws-send=\"\"`. WebSocket connects and streamed 9 real tokens end-to-end.\n- **Docker**: `docker build` succeeds. `docker compose up` starts the container on port 8000. HTML and WebSocket wiring confirmed.\n\n**Environment blocker**\n- Ollama is **not reachable from inside Docker** in this environment (`host.docker.internal:11434` unresolvable). `/health/` returns `{\"ollama_reachable\": false}` and chat streaming returns an error token inside the container. This is expected per the benchmark rules and is recorded in `VERIFY.md`.",
+      "command": [
+        "bash",
+        "-lc",
+        "ollama launch --yes codex --model kimi-k2.6:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project -"
+      ],
+      "continued_from_session": null,
+      "elapsed_seconds": 1559.56,
+      "ended_at": "2026-05-22T16:28:03+00:00",
+      "exit_code": 0,
+      "finish_reason": "stop",
+      "model": {
+        "harness": "codex",
+        "id": "kimi-k2.6:cloud",
+        "label": "Kimi K2.6 (Ollama Cloud)",
+        "provider": "ollama_cloud",
+        "runner_type": "ollama",
+        "selection_reason": "Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.",
+        "slug": "kimi_k2_6_ollama_cloud"
+      },
+      "no_progress_timeout_seconds": 900,
+      "opencode_session_id": "019e506c-2c52-76f3-90ab-05457ac94d50",
+      "output_tokens_per_second": 7.77,
+      "paths": {
+        "project_dir": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/project",
+        "prompt": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-prompt.txt",
+        "stderr": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-opencode-stderr.log",
+        "stdout": "/home/hugo/projects/python-benchmark/results/codex-kimi_k2_6_ollama_cloud/followup-opencode-output.ndjson"
+      },
+      "phase": "phase2",
+      "preview_output_tokens_per_second": null,
+      "preview_output_tokens_per_second_average": null,
+      "project_summary": {
+        "file_count": 45,
+        "present": {
+          "asgi_py": true,
+          "compose_yaml": false,
+          "compose_yml": false,
+          "docker_compose_yaml": false,
+          "docker_compose_yml": true,
+          "dockerfile": true,
+          "manage_py": true,
+          "pyproject_toml": true,
+          "readme_lower": false,
+          "readme_md": true,
+          "requirements_txt": false,
+          "settings_py": true,
+          "tests_present": true
+        },
+        "works_as_intended": "yes",
+        "works_note": "Django + Channels app, tests, README, and container files detected."
+      },
+      "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+      "stall_reason": null,
+      "stalled": false,
+      "started_at": "2026-05-22T16:02:03+00:00",
+      "status": "completed",
+      "stderr_excerpt": "2026-05-22T16:02:07.057180Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-22T16:11:46.734214Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n",
+      "timed_out": false,
+      "timeout_seconds": 3000,
+      "tokens": {
+        "input": 3441393,
+        "output": 12121,
+        "total": 3453514
+      },
+      "tokens_per_second": 2214.42
+    }
+  ],
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "primary_prompt_sha256": "824151405541142ace3f163e87515489e06dc71c22349197ae682fbc79ccc634",
+  "project_summary": {
+    "file_count": 45,
+    "present": {
+      "asgi_py": true,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": true,
+      "dockerfile": true,
+      "manage_py": true,
+      "pyproject_toml": true,
+      "readme_lower": false,
+      "readme_md": true,
+      "requirements_txt": false,
+      "settings_py": true,
+      "tests_present": true
+    },
+    "works_as_intended": "yes",
+    "works_note": "Django + Channels app, tests, README, and container files detected."
+  },
+  "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+  "result_schema_version": 2,
+  "session_exported": false,
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-22T16:02:03+00:00",
+  "status": "completed",
+  "stderr_excerpt": "2026-05-22T16:02:07.057180Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-22T16:11:46.734214Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 3441393,
+    "output": 12121,
+    "total": 3453514
+  },
+  "tokens_per_second": 2214.42
+}

@@ -1,0 +1,30 @@
+{
+  "project_dir": "/home/hugo/projects/python-benchmark/results/claude-deepseek_v4_pro_ollama_cloud/project",
+  "hits": [
+    {
+      "pattern": "direct_ollama_import",
+      "file": ".venv/lib/python3.13/site-packages/langchain_ollama/_utils.py",
+      "line": 10,
+      "text": "from ollama import Client, ResponseError"
+    },
+    {
+      "pattern": "direct_ollama_import",
+      "file": ".venv/lib/python3.13/site-packages/langchain_ollama/chat_models.py",
+      "line": 45,
+      "text": "from ollama import AsyncClient, Client, Message"
+    },
+    {
+      "pattern": "direct_ollama_import",
+      "file": ".venv/lib/python3.13/site-packages/langchain_ollama/embeddings.py",
+      "line": 8,
+      "text": "from ollama import AsyncClient, Client"
+    },
+    {
+      "pattern": "direct_ollama_import",
+      "file": ".venv/lib/python3.13/site-packages/langchain_ollama/llms.py",
+      "line": 14,
+      "text": "from ollama import AsyncClient, Client, Options"
+    }
+  ],
+  "hit_count": 4
+}

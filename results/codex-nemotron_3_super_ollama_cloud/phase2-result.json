@@ -1,0 +1,68 @@
+{
+  "assistant_output_excerpt": "",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch --yes codex --model nemotron-3-super:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-nemotron_3_super_ollama_cloud/project -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 737.16,
+  "ended_at": "2026-05-23T07:06:17+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "harness": "codex",
+    "id": "nemotron-3-super:cloud",
+    "label": "Nemotron 3 Super (Ollama Cloud)",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "selection_reason": "NVIDIA Nemotron 3 Super served by Ollama Cloud for reasoning and coding benchmark coverage.",
+    "slug": "nemotron_3_super_ollama_cloud"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e539c-c452-7543-b114-4f4816e371eb",
+  "output_tokens_per_second": 111.78,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/results/codex-nemotron_3_super_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/codex-nemotron_3_super_ollama_cloud/followup-prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/results/codex-nemotron_3_super_ollama_cloud/followup-opencode-stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/results/codex-nemotron_3_super_ollama_cloud/followup-opencode-output.ndjson"
+  },
+  "phase": "phase2",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 38,
+    "present": {
+      "asgi_py": true,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": true,
+      "dockerfile": true,
+      "manage_py": true,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": true,
+      "requirements_txt": true,
+      "settings_py": true,
+      "tests_present": true
+    },
+    "works_as_intended": "yes",
+    "works_note": "Django + Channels app, tests, README, and container files detected."
+  },
+  "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-23T06:54:00+00:00",
+  "status": "completed",
+  "stderr_excerpt": "2026-05-23T06:54:03.345323Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-23T06:54:03.712570Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when UnexpectedContentType(Some(\"text/plain; body: upstream connect error or disconnect/reset before headers. retried and the latest reset reason: remote connection failure, transport failure reason: delayed connect error: Connection refused\"))\n2026-05-23T06:57:37.126772Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 119\n2026-05-23T06:58:00.722887Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 34\n2026-05-23T06:58:08.834000Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 36\n2026-05-23T06:58:34.787559Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 33\n2026-05-23T07:00:57.593088Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 28\n2026-05-23T07:01:00.989926Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 28\n2026-05-23T07:01:03.858017Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 28\n2026-05-23T07:01:26.998820Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 18\n2026-05-23T07:01:31.039809Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `cmd` at line 1 column 17\n2026-05-23T07:01:45.477708Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n2026-05-23T07:01:57.558738Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 5194713,
+    "output": 82401,
+    "total": 5277114
+  },
+  "tokens_per_second": 7158.71
+}

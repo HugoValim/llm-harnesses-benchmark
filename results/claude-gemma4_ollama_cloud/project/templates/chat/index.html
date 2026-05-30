@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Chat</title>
+    <link rel="stylesheet" href="/static/css/output.css">
+    <script src="https://unpkg.com/htmx.org@2.0.0"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.0/extensions/ws.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen flex flex-col">
+    <header class="p-4 border-b border-gray-800 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Ollama Chat</h1>
+        <div id="status-indicator" class="flex items-center text-sm text-gray-400">
+            <span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
+            Disconnected
+        </div>
+    </header>
+
+    <main id="chat-window"
+          hx-ext="ws"
+          ws-connect="/ws/chat/"
+          class="flex-1 overflow-y-auto p-4 space-y-4">
+        <div id="messages" class="max-w-3xl mx-auto space-y-4">
+            <!-- Messages will be appended here -->
+            <div class="bg-gray-800 p-3 rounded-lg max-w-xs self-start">
+                Welcome! How can I help you today?
+            </div>
+        </div>
+    </main>
+
+    <footer class="p-4 border-t border-gray-800">
+        <form ws-send class="max-w-3xl mx-auto flex gap-2">
+            <input type="text"
+                   name="message"
+                   placeholder="Type a message..."
+                   class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   required>
+            <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                Send
+            </button>
+        </form>
+    </footer>
+
+    <script>
+        // Update status indicator when socket opens/closes
+        document.body.addEventListener('htmx:wsOpen', () => {
+            const indicator = document.getElementById('status-indicator');
+            indicator.innerHTML = '<span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Connected';
+        });
+        document.body.addEventListener('htmx:wsClose', () => {
+            const indicator = document.getElementById('status-indicator');
+            indicator.innerHTML = '<span class="w-2 h-2 bg-red-500 rounded-full mr-2"></span> Disconnected';
+        });
+
+        // Auto-scroll to bottom when messages are added
+        const observer = new MutationObserver(() => {
+            const chatWindow = document.getElementById('chat-window');
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        });
+        observer.observe(document.getElementById('messages'), { childList: true, subtree: true });
+    </script>
+</body>
+</html>

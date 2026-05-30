@@ -1,0 +1,43 @@
+<div class="chat-input-container">
+    <div class="connection-status connected" id="connection-status">
+        Connected
+    </div>
+    <form id="chat-form" class="chat-input-wrapper"
+          ws-send
+          _="on submit set #message-input.value to ''">
+        <textarea
+            id="message-input"
+            name="message"
+            placeholder="Type your message..."
+            rows="1"
+            required
+            hx-target="#message-list"
+            hx-swap="beforeend"
+        ></textarea>
+        <button type="submit" class="send-button" id="send-button">
+            Send
+        </button>
+    </form>
+</div>
+
+<script>
+    document.getElementById('chat-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const input = document.getElementById('message-input');
+        const message = input.value.trim();
+        if (message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user';
+            messageDiv.textContent = message;
+            document.getElementById('message-list').appendChild(messageDiv);
+            input.value = '';
+
+            const assistantDiv = document.createElement('div');
+            assistantDiv.className = 'message assistant streaming';
+            assistantDiv.textContent = '';
+            document.getElementById('message-list').appendChild(assistantDiv);
+
+            this.dispatchEvent(new CustomEvent('ws-send', { detail: { message: message }, bubbles: true }));
+        }
+    });
+</script>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Ollama Stream</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col">
+    <header class="bg-white border-b border-gray-200 px-4 py-3">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <h1 class="text-xl font-semibold text-gray-800">Chat</h1>
+            <div id="connection-status" class="text-sm text-gray-500">Connecting...</div>
+        </div>
+    </header>
+    
+    <main class="flex-1 overflow-hidden">
+        <div class="max-w-4xl mx-auto h-full flex flex-col">
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">AI</div>
+                    <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 max-w-2xl">
+                        <p class="text-gray-800">Hello! I'm ready to chat. Send me a message.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-200 p-4 bg-white">
+                <form id="chat-form" class="flex gap-3" ws-send>
+                    <input 
+                        type="text" 
+                        id="message-input" 
+                        name="message"
+                        placeholder="Type your message..." 
+                        class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        ws-connect="/ws/chat/"
+                        autocomplete="off"
+                    >
+                    <button 
+                        type="submit" 
+                        class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        Send
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageInput = document.getElementById('message-input');
+            const chatForm = document.getElementById('chat-form');
+            const connectionStatus = document.getElementById('connection-status');
+            
+            let currentAssistantMessage = null;
+            
+            htmx.on('htmx:wsOpen', function(evt) {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.classList.add('text-green-600');
+            });
+            
+            htmx.on('htmx:wsClose', function(evt) {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.classList.remove('text-green-600');
+                connectionStatus.classList.add('text-red-600');
+            });
+            
+            htmx.on('message', function(evt) {
+                const data = JSON.parse(evt.detail.data);
+                
+                if (data.type === 'connected') {
+                    console.log('WebSocket connected');
+                } else if (data.type === 'stream_start') {
+                    currentAssistantMessage = document.createElement('div');
+                    currentAssistantMessage.className = 'flex items-start gap-3';
+                    currentAssistantMessage.innerHTML = `
+                        <div class="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-sm font-medium">AI</div>
+                        <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 max-w-2xl">
+                            <p class="text-gray-800 streaming-content"></p>
+                        </div>
+                    `;
+                    chatMessages.appendChild(currentAssistantMessage);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                } else if (data.type === 'stream_chunk') {
+                    if (currentAssistantMessage) {
+                        const contentEl = currentAssistantMessage.querySelector('.streaming-content');
+                        if (contentEl) {
+                            contentEl.textContent += data.content;
+                        }
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                } else if (data.type === 'stream_end') {
+                    currentAssistantMessage = null;
+                } else if (data.type === 'error') {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'flex items-start gap-3';
+                    errorDiv.innerHTML = `
+                        <div class="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white text-sm font-medium">!</div>
+                        <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 max-w-2xl">
+                            <p class="text-red-800">${data.message}</p>
+                        </div>
+                    `;
+                    chatMessages.appendChild(errorDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    currentAssistantMessage = null;
+                }
+            });
+            
+            chatForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const message = messageInput.value.trim();
+                if (message) {
+                    const userMessageDiv = document.createElement('div');
+                    userMessageDiv.className = 'flex items-start gap-3 justify-end';
+                    userMessageDiv.innerHTML = `
+                        <div class="bg-blue-600 text-white rounded-lg px-4 py-3 max-w-2xl">
+                            <p>${message}</p>
+                        </div>
+                        <div class="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center text-white text-sm font-medium">You</div>
+                    `;
+                    chatMessages.appendChild(userMessageDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    
+                    htmx.trigger(chatForm, 'ws-send', {
+                        detail: { message: JSON.stringify({ message: message }) }
+                    });
+                    
+                    messageInput.value = '';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

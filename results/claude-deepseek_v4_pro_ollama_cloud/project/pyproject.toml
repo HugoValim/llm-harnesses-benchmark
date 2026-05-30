@@ -1,0 +1,50 @@
+[project]
+name = "llm-chat"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = [
+    "daphne.*",
+    "channels.*",
+    "langchain_ollama.*",
+    "langchain_core.*",
+    "tqdm.*",
+    "autobahn.*",
+    "twisted.*",
+    "txaio.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+testpaths = ["chat/tests"]
+
+[tool.coverage.run]
+source = ["chat"]
+omit = ["chat/tests/*", "chat/migrations/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.bandit]
+exclude_dirs = [".venv", ".git", "chat/tests"]
+skips = ["B101"]

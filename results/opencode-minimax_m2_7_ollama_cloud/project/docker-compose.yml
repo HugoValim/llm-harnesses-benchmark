@@ -1,0 +1,21 @@
+services:
+  web:
+    build: .
+    container_name: chat-web
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - chat-net
+
+networks:
+  chat-net:
+    driver: bridge

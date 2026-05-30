@@ -1,0 +1,19 @@
+# Keep the build context small and free of host-specific / generated artifacts.
+.git
+.gitignore
+.venv
+node_modules
+__pycache__
+*.py[cod]
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+staticfiles
+db.sqlite3
+.env
+_runtime_verification
+tests
+assets
+*.md

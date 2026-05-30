@@ -1,0 +1,7 @@
+[mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+
+[mypy-langchain_ollama]
+ignore_missing_imports = true

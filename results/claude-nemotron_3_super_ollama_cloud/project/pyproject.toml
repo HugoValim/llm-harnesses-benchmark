@@ -1,0 +1,98 @@
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.py$'
+extend-exclude = '''
+/(
+  \.git
+| \.hg
+| \.mypy_cache
+| \.tox
+| \.venv
+| _build
+| buck-out
+| build
+| dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+follow_imports = "silent"
+show_error_codes = true
+show_absolute_path = true
+show_error_context = true
+files = "."
+
+[tool.bandit]
+# Bandit configuration can be added here if needed
+# For now, we'll rely on command-line options
+
+[tool.coverage.run]
+source = "."
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/venv/*",
+    "*/__pycache__/*",
+    "manage.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self\\.debug",
+    "if settings\\.DEBUG",
+    "if settings\\.TESTING",
+    "if __name__ == .__main__.:"  
+]
+show_missing = True
+skip_covered = False
+precision = 2
+skip_full = False
+show_missing = True
+skip_covered = False
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.coverage.annotate]
+directory = "annotate_coverage"
+
+[tool.coverage]
+# Additional coverage settings
+
+[tool.iso]
+# ISO configuration (if using isort)
+profile = "black"
+
+[tool.ruff]
+select = ["E", "F", "W", "C90", "I"]
+ignore = ["E501", "F401", "W293"]
+line-length = 88
+target-version = "py38"
+extend-select = []
+extend-ignore = []
+per-file-ignores = {
+  "migrations/*" = ["all"],
+  "tests/*" = ["S101", "S106"],  # Allow hardcoded passwords and assertions in tests
+}
+exclude = [
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+]

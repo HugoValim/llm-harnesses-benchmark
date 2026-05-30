@@ -1,0 +1,14 @@
+<div hx-ext="ws" ws-connect="/ws/chat/" class="border-t border-gray-800 px-4 py-3">
+    <form ws-send class="flex gap-2">
+        <input type="text"
+               name="message"
+               id="chat-input"
+               placeholder="Type a message..."
+               autocomplete="off"
+               class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            Send
+        </button>
+    </form>
+</div>

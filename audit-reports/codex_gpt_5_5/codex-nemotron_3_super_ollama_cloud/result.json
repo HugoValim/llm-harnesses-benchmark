@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Using `benchmark-ai-code` skill -> rubric audit + evidence-first scoring. First: inspect project tree + installed package APIs.\nProject scan next. Need inventory + source API proof before any \u201cwrong/hallucinated\u201d call.\nNo `.venv` package paths matched -> package-source verification likely unavailable. Now inspect app files + hidden files; line refs drive scores.\nFound real service module with `ChatOllama.astream`, but tests only join received HTML and disconnect is `pass`. Continue checking infra/tooling/secrets.\nTailwind package has no CLI binary (`p.bin = null`, no `node_modules/.bin`) while script calls `tailwindcss`. That makes build wiring invalid despite a generated CSS artifact.\n`npm run buildcss` hung after rebuild warnings; killed only that npm/tailwind process. Check diff so audit run did not leave source dirty.\nScore draft: many hard fails: `.env` secret/debug, bare disconnect, unconfigured claimed tools, broken Tailwind CLI wiring, false-green streaming test. Writing compact report now.\nSanity pass found metadata value too compressed and non-ASCII quotes in ledger. Fixing report only.\nWrote `report.md`.\n\nScore: `26 / 100`, Tier `D`.\n\nVerification:\n- `wc -w report.md` -> `641`\n- dimension rows -> `10`\n- non-ASCII check -> none\n- package-source verification marked unverified because project `.venv` is absent.",
+  "command": [
+    "bash",
+    "-lc",
+    "codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-nemotron_3_super_ollama_cloud -m gpt-5.5 -c model_reasoning_effort=xhigh -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 485.24,
+  "ended_at": "2026-05-29T13:30:29+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "codex_reasoning_effort": "xhigh",
+    "id": "gpt-5.5",
+    "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
+    "provider": "openai",
+    "runner_type": "codex",
+    "slug": "codex_gpt_5_5"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e73e6-7d37-76b1-adca-6de77df1cb83",
+  "output_tokens_per_second": 39.22,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-nemotron_3_super_ollama_cloud",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-nemotron_3_super_ollama_cloud/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-nemotron_3_super_ollama_cloud/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-nemotron_3_super_ollama_cloud/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 7,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "88dd5547fc579fea5987b498826d258e46e359abf03e6fb19b2ee8e912fad047",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-29T13:22:24+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "2026-05-29T13:26:25.976087Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 1587595,
+    "output": 19032,
+    "total": 1606627
+  },
+  "tokens_per_second": 3310.99
+}

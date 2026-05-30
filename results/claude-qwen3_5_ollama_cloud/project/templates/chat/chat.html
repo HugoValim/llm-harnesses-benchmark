@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat - Ollama Streaming</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <!-- HTMX + WebSocket extension for real-time updates -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+</head>
+<body class="chat-container">
+    <header class="chat-header">
+        <h1>AI Chat</h1>
+        <div class="connection-status" id="connection-status">
+            <span class="status-indicator disconnected"></span>
+            <span class="status-text">Disconnected</span>
+        </div>
+    </header>
+
+    <main class="chat-main">
+        <div class="messages-container" id="messages-container">
+            <div class="message system-message">
+                <div class="message-content">
+                    Welcome! Send a message to start chatting.
+                    Responses stream in real-time from Ollama.
+                </div>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typing-indicator" style="display: none;">
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+        </div>
+    </main>
+
+    <footer class="chat-input-area">
+        <form id="chat-form" class="chat-form">
+            <textarea
+                id="message-input"
+                name="message"
+                placeholder="Type your message..."
+                rows="1"
+                autocomplete="off"
+            ></textarea>
+            <button type="submit" id="send-button" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2"/>
+                </svg>
+            </button>
+        </form>
+        <div class="model-info" id="model-info">
+            Model: <span id="model-name">Loading...</span>
+        </div>
+    </footer>
+
+    <!-- Error toast container -->
+    <div id="error-toast" class="error-toast" style="display: none;">
+        <span id="error-message"></span>
+        <button class="error-dismiss" onclick="dismissError()">&times;</button>
+    </div>
+
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>

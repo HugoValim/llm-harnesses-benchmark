@@ -1,0 +1,73 @@
+[project]
+name = "chat_project"
+version = "0.0.1"
+description = "Django Channels chat app with HTMX and Ollama streaming"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.0",
+    "channels[daphne]",
+    "langchain-ollama>=0.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-django",
+    "pytest-asyncio",
+    "coverage",
+    "ruff",
+    "mypy",
+    "bandit",
+    "pip-audit",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+    "C90",
+]
+ignore = ["E501"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.bandit]
+exclude_dirs = [".git", ".venv", "static", "staticfiles"]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "manage.py",
+    "*/settings.py",
+    "*/asgi.py",
+    "*/wsgi.py",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+skip_covered = false
+show_missing = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "chat_project.settings"
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+testpaths = ["chat_app/tests"]

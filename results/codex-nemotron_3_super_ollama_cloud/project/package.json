@@ -1,0 +1,17 @@
+{
+  "name": "project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "buildcss": "tailwindcss -i ./static/src/input.css -o ./static/css/tailwind.css --minify",
+    "watchcss": "tailwindcss -i ./static/src/input.css -o ./static/css/tailwind.css --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tailwindcss": "^4.0.0"
+  }
+}

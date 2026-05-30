@@ -1,0 +1,15 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <link rel="stylesheet" href="{% static 'output.css' %}">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/htmx-ext-ws@1.9.12/ws.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 h-screen flex flex-col">
+    {% block content %}{% endblock %}
+</body>
+</html>

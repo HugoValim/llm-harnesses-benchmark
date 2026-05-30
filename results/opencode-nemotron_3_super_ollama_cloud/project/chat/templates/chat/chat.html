@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Django Channels Chat</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+    <link href="/static/dist/output.css" rel="stylesheet">
+</head>
+<body class="min-h-screen flex flex-col bg-gray-50">
+    <div class="flex-1 w-full max-w-4xl mx-auto p-4">
+        <div class="h-[70vh] overflow-y-auto mb-4 space-y-2 p-4 bg-white rounded-lg shadow" id="chat-messages" hx-ext="ws" ws-connect="/ws/chat/" ws-receive="wsReceiveMessage" ws-send>
+            <!-- Messages will be populated here via WebSocket -->
+        </div>
+        <form class="flex gap-2" hx-post="/" hx-target="#chat-messages" hx-swap="beforeend">
+            <input type="text" name="message" placeholder="Type a message..." class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" autocomplete="off" required>
+            <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Send
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function wsReceiveMessage(evt) {
+            const data = JSON.parse(evt.detail);
+            const messagesDiv = document.getElementById('chat-messages');
+            
+            if (data.type === 'user_message') {
+                // Display user message
+                const userMessageDiv = document.createElement('div');
+                userMessageDiv.className = 'mb-2';
+                userMessageDiv.innerHTML = `
+                    <div class="flex justify-end">
+                        <div class="bg-blue-500 text-white px-3 py-2 rounded-lg rounded-br-lg max-w-[80%]">
+                            ${data.message}
+                        </div>
+                    </div>
+                `;
+                messagesDiv.appendChild(userMessageDiv);
+            } else if (data.type === 'assistant_chunk') {
+                // Append assistant chunk to the last message
+                const lastMessage = messagesDiv.lastElementChild;
+                if (lastMessage && lastMessage.classList.contains('assistant-response')) {
+                    const contentDiv = lastMessage.querySelector('[data-chunk-content]');
+                    if (contentDiv) {
+                        contentDiv.textContent += data.chunk;
+                    }
+                } else {
+                    // Create new assistant message container
+                    const assistantMessageDiv = document.createElement('div');
+                    assistantMessageDiv.className = 'mb-2 assistant-response';
+                    assistantMessageDiv.innerHTML = `
+                        <div class="flex justify-start">
+                            <div class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-3 py-2 rounded-lg rounded-bl-lg max-w-[80%]">
+                                <span data-chunk-content></span>
+                            </div>
+                        </div>
+                    `;
+                    const contentSpan = assistantMessageDiv.querySelector('[data-chunk-content]');
+                    contentSpan.textContent = data.chunk;
+                    messagesDiv.appendChild(assistantMessageDiv);
+                }
+                // Scroll to bottom
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            } else if (data.type === 'assistant_complete') {
+                // Finalize the assistant message
+                const lastMessage = messagesDiv.lastElementChild;
+                if (lastMessage && lastMessage.classList.contains('assistant-response')) {
+                    // Message is already complete, just ensure proper styling
+                    lastMessage.classList.add('animate-pulse');
+                }
+            } else if (data.type === 'error') {
+                // Display error message
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'mb-2';
+                errorDiv.innerHTML = `
+                    <div class="flex justify-center">
+                        <div class="bg-red-500 text-white px-3 py-2 rounded-lg max-w-[80%]">
+                            ${data.message}
+                        </div>
+                    </div>
+                `;
+                messagesDiv.appendChild(errorDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+    </script>
+</body>
+</html>

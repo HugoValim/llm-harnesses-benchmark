@@ -1,0 +1,107 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatLLM</title>
+  <link rel="stylesheet" href="{% static 'chat/css/output.css' %}">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/ext/ws.js"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
+  <header class="border-b border-gray-800 px-4 py-3">
+    <h1 class="text-xl font-semibold tracking-tight">ChatLLM</h1>
+  </header>
+
+  <main id="chat-main" class="flex-1 flex flex-col max-w-3xl mx-auto w-full px-4">
+    <div id="messages"
+         class="flex-1 overflow-y-auto py-4 space-y-4"
+         hx-ext="ws"
+         ws-connect="/ws/chat/">
+      <div class="text-center text-gray-500 text-sm py-8">
+        Send a message to start chatting.
+      </div>
+    </div>
+
+    <div id="chat-input-area" class="border-t border-gray-800 py-3">
+      <form id="chat-form"
+            class="flex gap-2"
+            ws-send>
+        {% csrf_token %}
+        <input type="text"
+               name="message"
+               id="msg-input"
+               placeholder="Type your message..."
+               required
+               autofocus
+               class="flex-1 rounded-lg bg-gray-800 border border-gray-700 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500">
+        <button type="submit"
+                class="rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-medium transition-colors">
+          Send
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    (function() {
+      const messagesEl = document.getElementById('messages');
+      const form = document.getElementById('chat-form');
+      const input = document.getElementById('msg-input');
+
+      // Listen for incoming WebSocket messages via htmx
+      document.body.addEventListener('htmx:wsAfterMessage', function(evt) {
+        var data;
+        try {
+          data = JSON.parse(evt.detail.message);
+        } catch(e) {
+          return;
+        }
+
+        if (data.type === 'chunk') {
+          // Append to or create assistant message
+          var lastMsg = messagesEl.querySelector('.msg-assistant:last-child');
+          if (!lastMsg) {
+            lastMsg = document.createElement('div');
+            lastMsg.className = 'msg-assistant p-3 rounded-lg bg-gray-800 border border-gray-700';
+            lastMsg.innerHTML = '<div class="text-xs text-gray-400 mb-1">Assistant</div><div class="content"></div>';
+            messagesEl.appendChild(lastMsg);
+            // Remove placeholder
+            var placeholder = messagesEl.querySelector('.text-center.text-gray-500');
+            if (placeholder) placeholder.remove();
+          }
+          var contentEl = lastMsg.querySelector('.content');
+          contentEl.textContent += data.content;
+        } else if (data.type === 'done') {
+          input.disabled = false;
+          input.focus();
+        } else if (data.type === 'error') {
+          var errEl = document.createElement('div');
+          errEl.className = 'msg-error p-3 rounded-lg bg-red-900/30 border border-red-800 text-red-300 text-sm';
+          errEl.textContent = data.content;
+          messagesEl.appendChild(errEl);
+          input.disabled = false;
+        }
+      });
+
+      form.addEventListener('htmx:wsSend', function() {
+        input.disabled = true;
+        // Show user message
+        var userMsg = document.createElement('div');
+        userMsg.className = 'msg-user p-3 rounded-lg bg-blue-900/30 border border-blue-800 ml-12';
+        userMsg.innerHTML = '<div class="text-xs text-blue-400 mb-1">You</div><div class="content">' + escapeHtml(input.value) + '</div>';
+        messagesEl.appendChild(userMsg);
+        var placeholder = messagesEl.querySelector('.text-center.text-gray-500');
+        if (placeholder) placeholder.remove();
+      });
+
+      function escapeHtml(text) {
+        var d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+      }
+    })();
+  </script>
+</body>
+</html>

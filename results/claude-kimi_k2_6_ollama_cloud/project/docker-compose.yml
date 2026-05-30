@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8004:8000"
+    environment:
+      - DJANGO_SECRET_KEY
+      - DEBUG=${DEBUG:-0}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8000", "chat_project.asgi:application"]

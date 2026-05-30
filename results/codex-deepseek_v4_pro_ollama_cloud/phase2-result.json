@@ -1,0 +1,69 @@
+{
+  "assistant_output_excerpt": "## Validation complete. All 20 checkpoints pass.\n\n**Tests**: 12/12 pass, 76% coverage\n**Static checks**: ruff, mypy (strict), bandit, pip-audit \u2014 all clean\n**Runtime**: daphne boots, HTTP 200, page serves with `hx-ext=\"ws\"` + `ws-connect` + `ws-send`\n**WebSocket**: accepts connection, streams tokens from qwen2.5:7b via Ollama\n**Docker**: builds clean (193MB), container starts, port 8000 serves correct HTML with HTMX WS extension\n**Health**: 503 in Docker (Ollama unreachable) \u2014 expected environment constraint\n\n**Two fixes applied**:\n- `Dockerfile`: build-time `ARG DJANGO_SECRET_KEY` for `collectstatic`, cleared after build\n- `.dockerignore`: created \u2014 excluded `.venv`, `node_modules`, test caches (image 1.09GB \u2192 193MB)\n\n**No code bugs found.** The template correctly uses HTMX WebSocket extension (`ws-connect`/`ws-send`) \u2014 no raw `new WebSocket(...)` JavaScript.",
+  "command": [
+    "bash",
+    "-lc",
+    "ollama launch --yes codex --model deepseek-v4-pro:cloud -- exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/results/codex-deepseek_v4_pro_ollama_cloud/project -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 1758.22,
+  "ended_at": "2026-05-22T16:34:55+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "harness": "codex",
+    "id": "deepseek-v4-pro:cloud",
+    "known_issues": "Phase 2 follow-up is disabled for the OpenCode mapping because opencode's ai-sdk strips reasoning_content but the DeepSeek API requires it echoed back.",
+    "label": "DeepSeek V4 Pro (Ollama Cloud)",
+    "provider": "ollama_cloud",
+    "runner_type": "ollama",
+    "selection_reason": "DeepSeek V4 Pro served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch.",
+    "slug": "deepseek_v4_pro_ollama_cloud"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e506f-6d33-7d60-90e6-9bb9a8dc1f95",
+  "output_tokens_per_second": 14.65,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/results/codex-deepseek_v4_pro_ollama_cloud/project",
+    "prompt": "/home/hugo/projects/python-benchmark/results/codex-deepseek_v4_pro_ollama_cloud/followup-prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/results/codex-deepseek_v4_pro_ollama_cloud/followup-opencode-stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/results/codex-deepseek_v4_pro_ollama_cloud/followup-opencode-output.ndjson"
+  },
+  "phase": "phase2",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 39,
+    "present": {
+      "asgi_py": true,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": true,
+      "dockerfile": true,
+      "manage_py": true,
+      "pyproject_toml": true,
+      "readme_lower": false,
+      "readme_md": true,
+      "requirements_txt": true,
+      "settings_py": true,
+      "tests_present": true
+    },
+    "works_as_intended": "yes",
+    "works_note": "Django + Channels app, tests, README, and container files detected."
+  },
+  "prompt_sha256": "14d18a37c91098a78ee7a8488f9386e25ab226178d7cd0020802256e9b4bbc5b",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-22T16:05:37+00:00",
+  "status": "completed",
+  "stderr_excerpt": "2026-05-22T16:05:40.274835Z ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion: failed to decode models response: missing field `models` at line 1 column 895; body: {\"object\":\"list\",\"data\":[{\"id\":\"gemma4:31b-cloud\",\"object\":\"model\",\"created\":1778675618,\"owned_by\":\"library\"},{\"id\":\"gemini-3-flash-preview:cloud\",\"object\":\"model\",\"created\":1778675596,\"owned_by\":\"library\"},{\"id\":\"nemotron-3-super:cloud\",\"object\":\"model\",\"created\":1778675594,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-flash:cloud\",\"object\":\"model\",\"created\":1778675590,\"owned_by\":\"library\"},{\"id\":\"qwen2.5:7b\",\"object\":\"model\",\"created\":1778585063,\"owned_by\":\"library\"},{\"id\":\"deepseek-v4-pro:cloud\",\"object\":\"model\",\"created\":1778228363,\"owned_by\":\"library\"},{\"id\":\"minimax-m2.7:cloud\",\"object\":\"model\",\"created\":1778228361,\"owned_by\":\"library\"},{\"id\":\"glm-5.1:cloud\",\"object\":\"model\",\"created\":1778228359,\"owned_by\":\"library\"},{\"id\":\"qwen3.5:cloud\",\"object\":\"model\",\"created\":1778228357,\"owned_by\":\"library\"},{\"id\":\"kimi-k2.6:cloud\",\"object\":\"model\",\"created\":1778228354,\"owned_by\":\"library\"}]}\n\n2026-05-22T16:07:17.186059Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n2026-05-22T16:09:23.261984Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n2026-05-22T16:17:52.142601Z ERROR codex_core::tools::router: error=unsupported call: apply_patch\n",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 6945003,
+    "output": 25757,
+    "total": 6970760
+  },
+  "tokens_per_second": 3964.67
+}

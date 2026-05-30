@@ -1,0 +1,13 @@
+<header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+  <div class="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+    <div>
+      <h1 class="text-lg font-semibold tracking-tight">Ollama Chat</h1>
+      <p class="text-sm text-slate-400">Streaming via Django Channels + LangChain</p>
+    </div>
+    <a
+      href="{% url 'ollama_health' %}"
+      class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+      >Health</a
+    >
+  </div>
+</header>

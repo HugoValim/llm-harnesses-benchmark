@@ -1,0 +1,179 @@
+{% extends 'chat/base.html' %}
+{% load static %}
+
+{% block title %}Chat - Ollama{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full max-w-4xl mx-auto">
+    {# Header #}
+    <header class="flex-shrink-0 px-4 py-3 border-b border-gray-700">
+        <h1 class="text-xl font-semibold text-center">Chat</h1>
+        <p class="text-xs text-center text-gray-400">{{ ollama_model }}</p>
+    </header>
+
+    {# Messages area #}
+    <div id="messages"
+         class="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+         hx-ext="ws"
+         ws-connect="/ws/chat/">
+        {# Messages rendered by HTMX WebSocket responses #}
+    </div>
+
+    {# Input area #}
+    <footer class="flex-shrink-0 border-t border-gray-700 p-4">
+        <div id="input-area">
+            {% include 'chat/_input.html' %}
+        </div>
+    </footer>
+</div>
+
+<script>
+(function() {
+    const wsScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = wsScheme + '//' + window.location.host + '/ws/chat/';
+    let socket = null;
+    let assistantDiv = null;
+    let isProcessing = false;
+
+    function connect() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+
+            if (data.type === 'user-message') {
+                appendUserMessage(data.message);
+            } else if (data.type === 'info') {
+                showInfo(data.message);
+            } else if (data.type === 'chunk') {
+                appendChunk(data.content);
+            } else if (data.type === 'error') {
+                showError(data.message);
+                isProcessing = false;
+                enableInput();
+            } else if (data.type === 'done') {
+                finalizeAssistant();
+                isProcessing = false;
+                enableInput();
+            }
+        };
+
+        socket.onclose = function() {
+            if (!isProcessing) {
+                setTimeout(connect, 3000);
+            }
+        };
+    }
+
+    function appendUserMessage(text) {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'flex justify-end';
+        div.innerHTML = '<div class="max-w-[80%] rounded-lg px-4 py-2 bg-indigo-600 text-white">' +
+            escapeHtml(text) + '</div>';
+        container.appendChild(div);
+        scrollToBottom();
+    }
+
+    function showInfo(text) {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'flex justify-start';
+        div.innerHTML = '<div class="max-w-[80%] rounded-lg px-4 py-2 bg-gray-700 text-gray-300 italic">' +
+            escapeHtml(text) + '</div>';
+        container.appendChild(div);
+        scrollToBottom();
+    }
+
+    function appendChunk(text) {
+        if (!assistantDiv) {
+            const container = document.getElementById('messages');
+            assistantDiv = document.createElement('div');
+            assistantDiv.className = 'flex justify-start';
+            assistantDiv.innerHTML = '<div class="max-w-[80%] rounded-lg px-4 py-2 bg-gray-800 text-gray-100"></div>';
+            container.appendChild(assistantDiv);
+            // Remove the info message if it exists (it's the last element before assistant)
+        }
+        const inner = assistantDiv.querySelector('div');
+        if (inner) {
+            // Replace the last text node or append
+            inner.textContent += text;
+        }
+        scrollToBottom();
+    }
+
+    function showError(text) {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'flex justify-start';
+        div.innerHTML = '<div class="max-w-[80%] rounded-lg px-4 py-2 bg-red-900 text-red-200">' +
+            escapeHtml(text) + '</div>';
+        container.appendChild(div);
+        scrollToBottom();
+    }
+
+    function finalizeAssistant() {
+        // Remove the "Waiting" info message if it exists and we have an assistant div
+        const container = document.getElementById('messages');
+        if (assistantDiv) {
+            const infoMsgs = container.querySelectorAll('.italic');
+            if (infoMsgs.length > 0) {
+                infoMsgs[infoMsgs.length - 1].remove();
+            }
+        }
+        assistantDiv = null;
+    }
+
+    function sendMessage(text) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            isProcessing = true;
+            disableInput();
+            socket.send(JSON.stringify({message: text}));
+        }
+    }
+
+    function disableInput() {
+        const input = document.getElementById('message-input');
+        const btn = document.getElementById('send-btn');
+        if (input) input.disabled = true;
+        if (btn) btn.disabled = true;
+    }
+
+    function enableInput() {
+        const input = document.getElementById('message-input');
+        const btn = document.getElementById('send-btn');
+        if (input) {
+            input.disabled = false;
+            input.value = '';
+            input.focus();
+        }
+        if (btn) btn.disabled = false;
+    }
+
+    function scrollToBottom() {
+        const container = document.getElementById('messages');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Wire up the form
+    document.addEventListener('DOMContentLoaded', function() {
+        connect();
+
+        document.getElementById('chat-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (text && !isProcessing) {
+                sendMessage(text);
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Using `benchmark-ai-code` skill. Need repo + package source evidence, then write `report.md`.\nNeed exact line refs. First pass: inventory files, deps, settings, routing, consumers, tests, docs.\nVenv exists. Next: confirm APIs in installed source, then inspect app source for trigger evidence.\nCore path looks strong. Need test evidence + scan for secrets, raw WS, direct ollama, deprecated imports, unused deps, logging/healthcheck/shutdown gaps.\nScoring now. No CF found: required APIs verified, no hardcoded secret, no disallowed direct Ollama/raw WS path. Main loss is prod hardening.\nWriting report now. Scores: 86/100, no CF, A by fixed bands; prod hardening rows consume D9.\nReport written. Checking word count, score rows, and file presence now.\nWrote audit report: `report.md`\n\nVerification:\n`wc -w` -> 513 words  \nscore table check -> `rows=10 max_sum=100`  \nfile check -> `report.md present`",
+  "command": [
+    "bash",
+    "-lc",
+    "codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-codex_gpt_5_5 -m gpt-5.5 -c model_reasoning_effort=xhigh -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 328.64,
+  "ended_at": "2026-05-29T09:13:01+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "codex_reasoning_effort": "xhigh",
+    "id": "gpt-5.5",
+    "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
+    "provider": "openai",
+    "runner_type": "codex",
+    "slug": "codex_gpt_5_5"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e72fd-2553-7fe0-8d92-0c1515991291",
+  "output_tokens_per_second": 46.13,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-codex_gpt_5_5",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-codex_gpt_5_5/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-codex_gpt_5_5/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/codex-codex_gpt_5_5/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 8,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "630462a727f80c463f18733fa09e5e92ed1dca6a089865d72f40846ee62ab97d",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-29T08:52:05+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 1069256,
+    "output": 15159,
+    "total": 1084415
+  },
+  "tokens_per_second": 3299.7
+}

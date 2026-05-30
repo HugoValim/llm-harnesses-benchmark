@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Chat - Ollama{% endblock %}
+
+{% block extra_head %}
+<style>
+  .streamed-token { display: inline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-container" hx-ext="ws">
+
+  {# Header #}
+  <header class="chat-header">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-800">Ollama Chat</h1>
+      <p class="text-xs text-gray-500" id="model-info">Model: qwen2.5:7b</p>
+    </div>
+    <button
+      id="reset-btn"
+      ws-send
+      hx-on:click="sendReset()"
+      class="text-sm text-gray-500 hover:text-red-600 transition px-3 py-1.5 rounded-md hover:bg-red-50"
+    >Reset Chat</button>
+  </header>
+
+  {# Messages #}
+  <div class="chat-messages" id="chat-messages">
+    {% include "chat/partials/message_assistant.html" with content="Hello! I am powered by Ollama. Ask me anything." only %}
+  </div>
+
+  {# Typing indicator (hidden by default) #}
+  <div id="typing-indicator" class="hidden px-6">
+    <div class="message-assistant">
+      <div class="message-bubble typing-indicator">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    </div>
+  </div>
+
+  {# Input area — form with HTMX ws-send wired to /ws/chat/ #}
+  <div class="chat-input-area">
+    <form
+      id="chat-form"
+      hx-trigger="submit"
+      ws-connect="/ws/chat/"
+      ws-send
+      class="flex gap-3 items-end"
+    >
+      <div class="flex-1">
+        <textarea
+          id="prompt-input"
+          class="w-full px-4 py-3 border border-gray-300 rounded-xl resize-none text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          rows="1"
+          name="prompt"
+          placeholder="Ask me anything..."
+          autocomplete="off"
+        ></textarea>
+      </div>
+      <button
+        type="submit"
+        id="send-btn"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+      >Send</button>
+    </form>
+  </div>
+
+</div>
+
+<script>
+  const form = document.getElementById('chat-form');
+  const input = document.getElementById('prompt-input');
+  const sendBtn = document.getElementById('send-btn');
+  const messages = document.getElementById('chat-messages');
+  const typing = document.getElementById('typing-indicator');
+  const resetBtn = document.getElementById('reset-btn');
+  let isStreaming = false;
+
+  function sendReset() {
+    const wsEl = document.querySelector('[ws-connect]');
+    if (wsEl && wsEl.ws && wsEl.ws.readyState === WebSocket.OPEN) {
+      wsEl.ws.send(JSON.stringify({ action: 'reset' }));
+    } else {
+      // fallback: dispatch via HTMX
+      const ev = new CustomEvent('send-ws', { detail: JSON.stringify({ action: 'reset' }) });
+      document.body.dispatchEvent(ev);
+    }
+  }
+
+  function appendMessage(role, content) {
+    const div = document.createElement('div');
+    if (role === 'assistant') {
+      div.className = 'message-assistant';
+      div.innerHTML = '<div class="message-bubble bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm">' + content + '</div>';
+    } else {
+      div.className = 'message-user';
+      div.innerHTML = '<div class="message-bubble bg-blue-600 text-white rounded-br-md">' + content + '</div>';
+    }
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function appendToken(token) {
+    let last = messages.querySelector('.message-assistant:last-child .message-bubble');
+    if (!last) {
+      appendMessage('assistant', '');
+      last = messages.querySelector('.message-assistant:last-child .message-bubble');
+    }
+    last.textContent += token;
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function setStreaming(val) {
+    isStreaming = val;
+    sendBtn.disabled = val;
+    input.disabled = val;
+    if (val) {
+      typing.classList.remove('hidden');
+    } else {
+      typing.classList.add('hidden');
+    }
+  }
+
+  resetBtn.addEventListener('click', sendReset);
+
+  // WebSocket message handler via HTMX extension
+  document.body.addEventListener('htmx:ws-after-message', function(e) {
+    const msg = e.detail.message;
+    let data;
+    try {
+      data = JSON.parse(msg.data);
+    } catch (err) {
+      return;
+    }
+    switch (data.type) {
+      case 'start':
+        typing.classList.remove('hidden');
+        break;
+      case 'token':
+        typing.classList.add('hidden');
+        appendToken(data.content);
+        break;
+      case 'done':
+        typing.classList.add('hidden');
+        setStreaming(false);
+        break;
+      case 'error':
+        typing.classList.add('hidden');
+        appendMessage('assistant', 'Error: ' + data.error);
+        setStreaming(false);
+        break;
+      case 'reset':
+        messages.innerHTML = '';
+        typing.classList.add('hidden');
+        setStreaming(false);
+        appendMessage('assistant', 'Chat history cleared.');
+        break;
+    }
+  });
+
+  document.body.addEventListener('htmx:ws-error', function(e) {
+    typing.classList.add('hidden');
+    appendMessage('assistant', 'WebSocket error.');
+    setStreaming(false);
+  });
+</script>
+{% endblock %}

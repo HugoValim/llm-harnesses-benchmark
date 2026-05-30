@@ -1,0 +1,11 @@
+{
+  "name": "django-chat-app",
+  "version": "1.0.0",
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./chat/static/css/src.css -o ./chat/static/css/styles.css"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.0",
+    "tailwindcss": "^4.3.0"
+  }
+}

@@ -1,0 +1,9 @@
+# Runtime dependencies (production / Docker). Pinned for reproducible builds.
+Django==5.1.15
+channels==4.2.2
+daphne==4.2.1
+langchain-ollama==0.3.10
+langchain-core==1.4.0
+httpx==0.28.1
+whitenoise==6.12.0
+python-dotenv==1.2.2

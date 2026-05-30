@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Secrets / local env
+.env
+
+# Node / Tailwind
+node_modules/
+
+# Runtime verification artifacts
+_runtime_verification/

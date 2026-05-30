@@ -1,0 +1,8 @@
+{
+  "name": "ollama-chat-assets",
+  "private": true,
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.8",
+    "tailwindcss": "^4.1.8"
+  }
+}

@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    container_name: chat-web
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: chat-ollama
+    environment:
+      - OLLAMA_MODELS=/root/.ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+volumes:
+  ollama-data:

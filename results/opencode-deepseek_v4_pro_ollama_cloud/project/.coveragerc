@@ -1,0 +1,15 @@
+[run]
+source = .
+branch = true
+omit =
+    */migrations/*
+    */tests.py
+    .venv/*
+    manage.py
+    config/wsgi.py
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

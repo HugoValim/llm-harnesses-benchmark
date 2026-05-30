@@ -1,0 +1,67 @@
+{
+  "assistant_output_excerpt": "Using `benchmark-ai-code` for audit rubric + `caveman` because local instructions require terse mode. Need verify installed package source before judging API.\nProject scan next: file inventory, config, tests, package-source grep. Specific task overrides local \u201cempty workspace\u201d note because audit target sits under `results/.../project`.\n`.venv` glob empty. Project has `venv/lib/python3.12/...`; using that installed source to verify APIs, noting path mismatch in report.\nCore files found: Django app at root, `llm_service/`, Tailwind assets, Docker/compose, `.env.example`. Reading line refs now.\nKey break found: `chat/routing.py` empty -> no WS URL, while template opens `/ws/chat/`. Also raw `new WebSocket`, not HTMX ws extension path.\nScoring now. Critical set: hardcoded secrets, missing WS route/unused HTMX ws, missing dev deps, invalid tool config, false-green streaming test, DEBUG default, pass-only disconnect, raw WS alternative.\nWriting `report.md` now. Scores use 10 locked rows, denominator sum 100.\nDone: wrote `report.md`.\n\nVerification: `wc -w report.md` -> 771 words. Score table has 10 rows, max denominators sum to 100, scores sum to 29.",
+  "command": [
+    "bash",
+    "-lc",
+    "codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -s danger-full-access -C /home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/claude-nemotron_3_super_ollama_cloud -m gpt-5.5 -c model_reasoning_effort=xhigh -"
+  ],
+  "continued_from_session": null,
+  "elapsed_seconds": 393.95,
+  "ended_at": "2026-05-30T04:00:41+00:00",
+  "exit_code": 0,
+  "finish_reason": "stop",
+  "model": {
+    "codex_reasoning_effort": "xhigh",
+    "id": "gpt-5.5",
+    "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
+    "provider": "openai",
+    "runner_type": "codex",
+    "slug": "codex_gpt_5_5"
+  },
+  "no_progress_timeout_seconds": 900,
+  "opencode_session_id": "019e7704-9ed1-7270-81e4-12a6540a833e",
+  "output_tokens_per_second": 45.83,
+  "paths": {
+    "project_dir": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/claude-nemotron_3_super_ollama_cloud",
+    "prompt": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/claude-nemotron_3_super_ollama_cloud/prompt.txt",
+    "stderr": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/claude-nemotron_3_super_ollama_cloud/stderr.log",
+    "stdout": "/home/hugo/projects/python-benchmark/audit-reports/codex_gpt_5_5/claude-nemotron_3_super_ollama_cloud/stream.ndjson"
+  },
+  "phase": "phase1",
+  "preview_output_tokens_per_second": null,
+  "preview_output_tokens_per_second_average": null,
+  "project_summary": {
+    "file_count": 7,
+    "present": {
+      "asgi_py": false,
+      "compose_yaml": false,
+      "compose_yml": false,
+      "docker_compose_yaml": false,
+      "docker_compose_yml": false,
+      "dockerfile": false,
+      "manage_py": false,
+      "pyproject_toml": false,
+      "readme_lower": false,
+      "readme_md": false,
+      "requirements_txt": false,
+      "settings_py": false,
+      "tests_present": false
+    },
+    "works_as_intended": "no",
+    "works_note": "Generated files do not resemble the requested Django project."
+  },
+  "prompt_sha256": "463a0f40e5eb61db96001fc60c4ebbe82891038256d1b53f1ce7079087f6365e",
+  "stall_reason": null,
+  "stalled": false,
+  "started_at": "2026-05-30T03:54:07+00:00",
+  "status": "completed_with_errors",
+  "stderr_excerpt": "",
+  "timed_out": false,
+  "timeout_seconds": 3000,
+  "tokens": {
+    "input": 1471853,
+    "output": 18055,
+    "total": 1489908
+  },
+  "tokens_per_second": 3781.97
+}
