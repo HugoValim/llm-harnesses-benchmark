@@ -603,7 +603,7 @@ def format_generation_metrics_block(metrics: dict[str, Any]) -> str:
     return "\n".join(
         [
             "Precomputed generation metrics (copy verbatim into section H; do not recalculate):",
-            f"- Model: {metrics.get('model_slug', 'n/a')}",
+            f"- Model: {metrics.get('display_model_slug') or metrics.get('model_slug', 'n/a')}",
             f"- Harness: {metrics.get('harness', 'n/a')}",
             f"- Harness-CLI-Version: {metrics.get('harness_cli_version') or 'n/a'}",
             *shim_line,

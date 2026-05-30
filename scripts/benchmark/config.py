@@ -204,6 +204,49 @@ def _normalize_registry_models(models: Any) -> list[dict[str, Any]]:
     return [clone_json(model) for model in models if isinstance(model, dict)]
 
 
+def registry_by_slug(models: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index registry model rows by ``slug``.
+
+    Example:
+        ``registry_by_slug(load_json(Path("config/models.json"))["models"])``
+    """
+    return {
+        str(m["slug"]): m
+        for m in models
+        if isinstance(m, dict) and m.get("slug")
+    }
+
+
+def format_display_slug(
+    slug: str,
+    *,
+    codex_reasoning_effort: str | None = None,
+) -> str:
+    """Return human-facing slug with Codex reasoning effort when configured."""
+    if codex_reasoning_effort:
+        return f"{slug}({codex_reasoning_effort})"
+    return slug
+
+
+def display_slug_for(registry: dict[str, dict[str, Any]], slug: str) -> str:
+    """Look up ``slug`` in the registry and apply reasoning-effort annotation."""
+    row = registry.get(slug, {})
+    effort = row.get("codex_reasoning_effort")
+    if isinstance(effort, str) and effort:
+        return format_display_slug(slug, codex_reasoning_effort=effort)
+    return slug
+
+
+def build_display_slug_map(models_config: Path) -> dict[str, str]:
+    """Build ``canonical_slug -> display_slug`` from ``config/models.json``."""
+    payload = load_json(models_config)
+    models = payload.get("models", [])
+    if not isinstance(models, list):
+        return {}
+    registry = registry_by_slug(models)
+    return {slug: display_slug_for(registry, slug) for slug in registry}
+
+
 def _load_registry_harness(config_path: Path, harness: str) -> dict[str, Any]:
     harnesses_path = config_path.parent / "harnesses.json"
     if not harnesses_path.exists():

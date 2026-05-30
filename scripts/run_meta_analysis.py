@@ -48,7 +48,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     validate_meta_analysis_executive_summary,
     validate_meta_analysis_ollama_ranking,
 )
-from benchmark.config import resolve_meta_harness_config  # noqa: E402
+from benchmark.config import build_display_slug_map, resolve_meta_harness_config  # noqa: E402
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.result_layout import add_run_id_arg, layout_from_repo  # noqa: E402
@@ -283,8 +283,13 @@ def main() -> int:
             return 1
 
     meta_output_dir.mkdir(parents=True, exist_ok=True)
-    comparison_md = build_comparison_table(source_dirs=meta_input_dirs)
-    statistical_md = build_statistical_summary(source_dirs=meta_input_dirs)
+    display_slug_map = build_display_slug_map(models_config_path)
+    comparison_md = build_comparison_table(
+        source_dirs=meta_input_dirs, display_slug_map=display_slug_map
+    )
+    statistical_md = build_statistical_summary(
+        source_dirs=meta_input_dirs, display_slug_map=display_slug_map
+    )
     if run_layout is not None:
         comparison_path = meta_input_dirs[0] / "comparison.md"
         meta_runs_dir = meta_input_dirs[0]
@@ -338,14 +343,17 @@ def main() -> int:
         coverage_errors = validate_meta_analysis_coverage(
             meta_output,
             source_dirs=meta_input_dirs,
+            display_slug_map=display_slug_map,
         )
         ollama_errors = validate_meta_analysis_ollama_ranking(
             meta_output,
             source_dirs=meta_input_dirs,
+            display_slug_map=display_slug_map,
         )
         exec_errors = validate_meta_analysis_executive_summary(
             meta_output,
             source_dirs=meta_input_dirs,
+            display_slug_map=display_slug_map,
         )
         all_errors = coverage_errors + ollama_errors + exec_errors
         if all_errors:

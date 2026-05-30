@@ -56,7 +56,12 @@ from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
     DEFAULT_TIMEOUT_MINUTES,
 )
-from benchmark.config import resolve_audit_harness_config  # noqa: E402
+from benchmark.config import (  # noqa: E402
+    build_display_slug_map,
+    display_slug_for,
+    registry_by_slug,
+    resolve_audit_harness_config,
+)
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 
@@ -348,10 +353,18 @@ def _auditor_dir_has_reports(auditor_dir: Path) -> bool:
     return auditor_dir.is_dir() and any(auditor_dir.glob("*/report.md"))
 
 
-def _write_auditor_comparison(auditor_dir: Path) -> Path:
+def _write_auditor_comparison(
+    auditor_dir: Path,
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> Path:
     """Rebuild ``comparison.md`` for one auditor tree; returns the output path."""
-    comparison_md = build_comparison_table(auditor_dir)
-    statistical_md = build_statistical_summary(auditor_dir)
+    comparison_md = build_comparison_table(
+        auditor_dir, display_slug_map=display_slug_map
+    )
+    statistical_md = build_statistical_summary(
+        auditor_dir, display_slug_map=display_slug_map
+    )
     comparison_path = auditor_dir / "comparison.md"
     comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
     return comparison_path
@@ -535,6 +548,7 @@ def _maybe_write_generation_metrics(
     target_slug: str,
     force: bool,
     job_slug: str,
+    model_registry: dict[str, dict],
 ) -> dict:
     """Compute and write generation-metrics.json from the benchmark result."""
     metrics_path = audit_generation_metrics_json(
@@ -545,13 +559,15 @@ def _maybe_write_generation_metrics(
         return load_json(metrics_path)
 
     benchmark_result_path = target["project_dir"].parent / "result.json"
+    model_slug = target.get("model_slug", target_slug)
     metrics = build_generation_metrics(
         target_slug=target_slug,
-        model_slug=target.get("model_slug", target_slug),
+        model_slug=model_slug,
         harness=target.get("harness", "unknown"),
         benchmark_result_path=benchmark_result_path,
         provider=target.get("provider"),
     )
+    metrics["display_model_slug"] = display_slug_for(model_registry, model_slug)
     save_json(metrics_path, metrics)
     print_line(
         f"[{job_slug}] generation metrics status={metrics.get('status')} "
@@ -601,6 +617,7 @@ def main() -> int:
     )
     benchmark_config = load_json(benchmark_config_path)
     prompt_template = prompt_template_path.read_text()
+    display_slug_map = build_display_slug_map(benchmark_config_path)
 
     if args.report_only or args.all_auditors:
         wanted_model = None
@@ -618,7 +635,9 @@ def main() -> int:
             )
             return 1
         for auditor_dir in rollup_dirs:
-            comparison_path = _write_auditor_comparison(auditor_dir)
+            comparison_path = _write_auditor_comparison(
+                auditor_dir, display_slug_map=display_slug_map
+            )
             print_line(
                 f"Comparison table + statistical summary written: {comparison_path}"
             )
@@ -653,6 +672,11 @@ def main() -> int:
     config_targets_by_slug = {
         v["slug"]: v for v in _target_metadata_rows(benchmark_config)
     }
+    model_registry = registry_by_slug(
+        list(benchmark_config.get("models", []))
+        if isinstance(benchmark_config.get("models"), list)
+        else []
+    )
     all_benchmark_targets = discover_project_dirs(
         benchmark_results_dir, config_targets_by_slug
     )
@@ -705,7 +729,10 @@ def main() -> int:
                 return job_slug, "cached", None
 
             project_dir = target["project_dir"]
-            model_slug_for_prompt = target.get("model_slug", target_slug)
+            model_slug_for_prompt = display_slug_for(
+                model_registry,
+                target.get("model_slug", target_slug),
+            )
             gen_metrics = _maybe_write_generation_metrics(
                 target=target,
                 audit_results_dir=results_dir,
@@ -713,6 +740,7 @@ def main() -> int:
                 target_slug=target_slug,
                 force=args.force,
                 job_slug=job_slug,
+                model_registry=model_registry,
             )
             benchmark_result_path = project_dir.parent / "result.json"
             generation_metrics_path = audit_generation_metrics_json(
@@ -851,7 +879,9 @@ def main() -> int:
         )
         return 1
     for auditor_dir in rollup_dirs:
-        comparison_path = _write_auditor_comparison(auditor_dir)
+        comparison_path = _write_auditor_comparison(
+            auditor_dir, display_slug_map=display_slug_map
+        )
         print_line(f"Comparison table + statistical summary written: {comparison_path}")
         _print_calibration_warnings(auditor_dir)
 

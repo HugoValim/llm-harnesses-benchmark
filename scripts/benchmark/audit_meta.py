@@ -233,8 +233,15 @@ def run_ai_meta_analysis(
     output_path = reports_dir / "meta-analysis.md"
 
     from benchmark.audit_rollup import build_precomputed_rollup  # noqa: PLC0415
+    from benchmark.config import build_display_slug_map  # noqa: PLC0415
 
-    precomputed_rollup = build_precomputed_rollup(source_dirs=resolved_inputs)
+    display_slug_map = build_display_slug_map(
+        Path(__file__).resolve().parents[2] / "config" / "models.json"
+    )
+    precomputed_rollup = build_precomputed_rollup(
+        source_dirs=resolved_inputs,
+        display_slug_map=display_slug_map,
+    )
     prompt = build_meta_prompt(
         prompt_template,
         audit_input_dirs=resolved_inputs,

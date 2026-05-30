@@ -32,6 +32,13 @@ LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = ("gpt_5_5", "claude_opus_4_7")
 _NORMALIZED_PCT_CAP = 150.0
 
 
+def _display_slug(slug: str, display_slug_map: dict[str, str] | None) -> str:
+    """Map canonical slug to human-facing slug when a display map is provided."""
+    if display_slug_map is None:
+        return slug
+    return display_slug_map.get(slug, slug)
+
+
 def _is_leader_slug(model_slug: str) -> bool:
     """Return True when ``model_slug`` matches a configured leader substring."""
     lowered = model_slug.lower()
@@ -69,6 +76,8 @@ def _pct_of_ceiling(numer: float, ceiling: float | None) -> str:
 def _normalized_scores_section(
     reports: list[ParsedReport],
     dim_labels: list[str],
+    *,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
     """Markdown block: leader ceiling + non-leader scores as % of leaders."""
     lines: list[str] = [
@@ -106,7 +115,7 @@ def _normalized_scores_section(
             "| "
             + " | ".join(
                 [
-                    slug,
+                    _display_slug(slug, display_slug_map),
                     str(len(subset)),
                     harnesses,
                     _fmt(avg_l),
@@ -147,7 +156,7 @@ def _normalized_scores_section(
                 else "-"
             )
         row_cells = [
-            slug,
+            _display_slug(slug, display_slug_map),
             harnesses or "-",
             _fmt(raw_avg),
             pct_total,
@@ -407,6 +416,8 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
 def _cross_harness_model_section(
     reports: list[ParsedReport],
     dim_labels: list[str],
+    *,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
     """For each model slug audited under >=2 harnesses, show scores side by side."""
     by_model: dict[str, list[ParsedReport]] = {}
@@ -441,7 +452,12 @@ def _cross_harness_model_section(
             key=lambda r: r.harness,
         )
         for r in slug_reports:
-            row = [slug, r.harness, _fmt(r.total), r.tier or "-"]
+            row = [
+                _display_slug(slug, display_slug_map),
+                r.harness,
+                _fmt(r.total),
+                r.tier or "-",
+            ]
             for i in range(1, NUM_DIMENSIONS + 1):
                 row.append(_fmt(r.dim_score(i)))
             lines.append("| " + " | ".join(row) + " |")
@@ -535,7 +551,11 @@ def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, o
     return out
 
 
-def build_model_coverage_table(reports: list[ParsedReport]) -> str:
+def build_model_coverage_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
     """Markdown table: model slug → harness list → run count → avg total."""
     coverage = model_harness_coverage(reports)
     if not coverage:
@@ -559,7 +579,7 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
         harness_list = ", ".join(harnesses) if harnesses else "-"
         avg = info["avg_total"]
         cells = [
-            slug,
+            _display_slug(slug, display_slug_map),
             harness_list,
             str(info["harness_count"]),
             str(info["runs"]),
@@ -574,7 +594,11 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
+def build_cursor_agent_models_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
     """Markdown table of Cursor-agent model runs (excluded from harness contest)."""
     cursor_reports = _cursor_agent_reports(reports)
     if not cursor_reports:
@@ -599,7 +623,11 @@ def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
     for slug, subset in by_slug.items():
         totals = [float(r.total) for r in subset if r.total is not None]
         avg = mean(totals) if totals else None
-        cells = [slug, str(len(subset)), _fmt(avg)]
+        cells = [
+            _display_slug(slug, display_slug_map),
+            str(len(subset)),
+            _fmt(avg),
+        ]
         sort_key = float(avg) if avg is not None else -1.0
         rows.append((sort_key, cells))
     rows.sort(key=lambda t: t[0], reverse=True)
@@ -610,15 +638,25 @@ def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
 
 def expected_section2_run_rows(
     reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[tuple[str, str, float]]:
     """Return ``(harness, model_slug, total)`` tuples for section 2 validation."""
     return [
-        (r.harness, r.model_slug or "-", float(r.total))
+        (
+            r.harness,
+            _display_slug(r.model_slug or "-", display_slug_map),
+            float(r.total),
+        )
         for r in _ranked_run_reports(reports)
     ]
 
 
-def build_all_runs_ranking_table(reports: list[ParsedReport]) -> str:
+def build_all_runs_ranking_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
     """Markdown table: one row per contest or cursor run, sorted by total desc."""
     ranked = _ranked_run_reports(reports)
     if not ranked:
@@ -643,7 +681,7 @@ def build_all_runs_ranking_table(reports: list[ParsedReport]) -> str:
                 [
                     str(rank),
                     report.harness,
-                    report.model_slug or "-",
+                    _display_slug(report.model_slug or "-", display_slug_map),
                     _fmt(float(report.total)),
                     report.tier or "-",
                 ]
@@ -655,14 +693,17 @@ def build_all_runs_ranking_table(reports: list[ParsedReport]) -> str:
 
 def expected_section2a_ollama_rows(
     reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[tuple[str, int, float, float | None, str]]:
     """Return section-2a tuples: ``(slug, n_harnesses, avg, std_dev, tier)``."""
     out: list[tuple[str, int, float, float | None, str]] = []
     for row in _ollama_ranking_rows(reports):
         std = row["std_dev"]
+        slug = str(row["slug"])
         out.append(
             (
-                str(row["slug"]),
+                _display_slug(slug, display_slug_map),
                 int(row["n_harnesses"]),  # type: ignore[arg-type]
                 float(row["avg_total"]),  # type: ignore[arg-type]
                 float(std) if isinstance(std, (int, float)) else None,
@@ -672,7 +713,11 @@ def expected_section2a_ollama_rows(
     return out
 
 
-def build_ollama_model_ranking_table(reports: list[ParsedReport]) -> str:
+def build_ollama_model_ranking_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
     """Markdown table: Ollama Cloud models ranked by cross-harness mean total."""
     ranked = _ollama_ranking_rows(reports)
     if not ranked:
@@ -709,7 +754,7 @@ def build_ollama_model_ranking_table(reports: list[ParsedReport]) -> str:
         assert isinstance(cell_avgs, dict)
         cells = [
             str(rank),
-            str(row["slug"]),
+            _display_slug(str(row["slug"]), display_slug_map),
             str(row["n_harnesses"]),
             _fmt(float(row["avg_total"])),  # type: ignore[arg-type]
             _fmt(float(row["std_dev"])) if row["std_dev"] is not None else "-",
@@ -721,10 +766,11 @@ def build_ollama_model_ranking_table(reports: list[ParsedReport]) -> str:
         lines.append("| " + " | ".join(cells) + " |")
 
     best = ranked[0]
+    best_slug = _display_slug(str(best["slug"]), display_slug_map)
     lines.extend(
         [
             "",
-            f"**Best open-source model**: `{best['slug']}` "
+            f"**Best open-source model**: `{best_slug}` "
             f"({_fmt(float(best['avg_total']))}/100 across "  # type: ignore[arg-type]
             f"{best['n_harnesses']} harnesses).",
         ]
@@ -997,6 +1043,7 @@ def executive_summary_expectations(
     reports: list[ParsedReport],
     *,
     source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Key verdict fields the executive summary must contain."""
     expectations: dict[str, object] = {}
@@ -1009,14 +1056,18 @@ def executive_summary_expectations(
 
     top_run = _top_contest_run(reports)
     if top_run is not None and top_run.total is not None:
-        expectations["top_model_slug"] = top_run.model_slug
+        expectations["top_model_slug"] = _display_slug(
+            top_run.model_slug or "-", display_slug_map
+        )
         expectations["top_model_total"] = float(top_run.total)
         expectations["top_model_harness"] = top_run.harness
 
     ollama_rows = _ollama_ranking_rows(reports)
     if ollama_rows:
         best = ollama_rows[0]
-        expectations["best_ollama_slug"] = best["slug"]
+        expectations["best_ollama_slug"] = _display_slug(
+            str(best["slug"]), display_slug_map
+        )
         expectations["best_ollama_avg"] = best["avg_total"]
         expectations["best_ollama_n_harnesses"] = best["n_harnesses"]
 
@@ -1030,6 +1081,7 @@ def build_executive_summary_skeleton(
     reports: list[ParsedReport],
     *,
     source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Deterministic verdict bullets for meta-analysis section 1."""
     lines = [
@@ -1077,8 +1129,9 @@ def build_executive_summary_skeleton(
     if top_run is not None and top_run.total is not None:
         note = _single_harness_run_note(reports, top_run.model_slug or "")
         note_clause = f" ({note})" if note else ""
+        display_slug = _display_slug(top_run.model_slug or "-", display_slug_map)
         lines.append(
-            f"- **Best model overall**: `{top_run.model_slug}` — "
+            f"- **Best model overall**: `{display_slug}` — "
             f"{_fmt(float(top_run.total))}/100 under `{top_run.harness}` "
             f"(top contest-harness run{note_clause})."
         )
@@ -1095,7 +1148,8 @@ def build_executive_summary_skeleton(
         std = best["std_dev"]
         std_clause = f" (std dev {_fmt(float(std))})" if std is not None else ""
         lines.append(
-            f"- **Best open-source model overall**: `{best['slug']}` — "
+            f"- **Best open-source model overall**: "
+            f"`{_display_slug(str(best['slug']), display_slug_map)}` — "
             f"{_fmt(avg_total)}/100 cross-harness avg across {n_harnesses} "
             f"contest harnesses{std_clause}; best on the shared Ollama Cloud grid."
         )
@@ -1151,6 +1205,7 @@ def build_precomputed_rollup(
     reports_dir: Path | None = None,
     *,
     source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Full deterministic rollup injected into the meta-analysis prompt."""
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
@@ -1169,20 +1224,34 @@ def build_precomputed_rollup(
         "individual reports only for citations and narrative.",
         "",
         build_executive_summary_skeleton(
-            reports, source_dirs=source_dirs
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
         ).rstrip(),
         "",
-        build_model_coverage_table(reports).rstrip(),
+        build_model_coverage_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
         "",
-        build_all_runs_ranking_table(reports).rstrip(),
+        build_all_runs_ranking_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
         "",
-        build_ollama_model_ranking_table(reports).rstrip(),
+        build_ollama_model_ranking_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
         "",
-        build_cursor_agent_models_table(reports).rstrip(),
+        build_cursor_agent_models_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
         "",
         build_harness_versions_table(reports, source_dirs=source_dirs).rstrip(),
         "",
-        build_statistical_summary(reports_dir, source_dirs=source_dirs).rstrip(),
+        build_statistical_summary(
+            reports_dir,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
     ]
     return "\n".join(parts) + "\n"
 
@@ -1192,12 +1261,15 @@ def validate_meta_analysis_coverage(
     *,
     source_dirs: list[Path] | None = None,
     reports_dir: Path | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
     """Compare section-2 per-run rows in meta-analysis.md to the rollup."""
     import re
 
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
-    expected = expected_section2_run_rows(reports)
+    expected = expected_section2_run_rows(
+        reports, display_slug_map=display_slug_map
+    )
     if not expected or not meta_path.is_file():
         return []
 
@@ -1258,12 +1330,15 @@ def validate_meta_analysis_ollama_ranking(
     *,
     source_dirs: list[Path] | None = None,
     reports_dir: Path | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
     """Compare section-2a Ollama ranking rows in meta-analysis.md to the rollup."""
     import re
 
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
-    expected = expected_section2a_ollama_rows(reports)
+    expected = expected_section2a_ollama_rows(
+        reports, display_slug_map=display_slug_map
+    )
     if not expected or not meta_path.is_file():
         return []
 
@@ -1329,6 +1404,7 @@ def validate_meta_analysis_executive_summary(
     *,
     source_dirs: list[Path] | None = None,
     reports_dir: Path | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
     """Compare section-1 verdict bullets in meta-analysis.md to the skeleton."""
     import re
@@ -1338,7 +1414,9 @@ def validate_meta_analysis_executive_summary(
         return []
 
     expectations = executive_summary_expectations(
-        reports, source_dirs=source_dirs
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
     )
     text = meta_path.read_text(encoding="utf-8")
     section_match = re.search(
@@ -1409,6 +1487,7 @@ def build_statistical_summary(
     reports_dir: Path | None = None,
     *,
     source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Regex-derived harness / model / dimension rollups.
 
@@ -1437,9 +1516,13 @@ def build_statistical_summary(
 
     sections = [
         _harness_section(reports, dim_labels),
-        _cross_harness_model_section(reports, dim_labels),
+        _cross_harness_model_section(
+            reports, dim_labels, display_slug_map=display_slug_map
+        ),
         _dimension_breakdown_section(reports, dim_labels),
-        _normalized_scores_section(reports, dim_labels),
+        _normalized_scores_section(
+            reports, dim_labels, display_slug_map=display_slug_map
+        ),
     ]
     for section in sections:
         if section:

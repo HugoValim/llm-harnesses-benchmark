@@ -15,6 +15,7 @@ def build_comparison_table(
     reports_dir: Path | None = None,
     *,
     source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Build the side-by-side ``Auditor | Target | D1..D9 | Total | Tier`` table.
 
@@ -42,7 +43,10 @@ def build_comparison_table(
         return "\n".join(lines)
 
     for r in reports:
-        row = [r.auditor, r.target]
+        auditor = r.auditor
+        if display_slug_map is not None:
+            auditor = display_slug_map.get(auditor, auditor)
+        row = [auditor, r.target]
         for i in range(1, NUM_DIMENSIONS + 1):
             row.append(_fmt(r.dim_score(i)))
         row.append(_fmt(r.total))
