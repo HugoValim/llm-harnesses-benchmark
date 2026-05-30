@@ -35,6 +35,8 @@ PROJECT_EPHEMERAL_DIR_NAMES: frozenset[str] = frozenset(
 
 PROJECT_EPHEMERAL_FILE_NAMES: frozenset[str] = frozenset({".coverage", ".env"})
 
+TAILWINDCSS_BINARY_PREFIX = "tailwindcss-"
+
 AUDIT_EXCLUDE_DIR_NAMES: frozenset[str] = frozenset({"_meta-analysis-runs"})
 
 AUDIT_EXCLUDE_FILE_NAMES: frozenset[str] = frozenset(
@@ -263,6 +265,11 @@ def strip_project_ephemeral(project_dir: Path) -> list[str]:
             path.unlink()
             removed.append(str(path.relative_to(project_dir)))
 
+    for path in project_dir.iterdir():
+        if path.is_file() and path.name.startswith(TAILWINDCSS_BINARY_PREFIX):
+            path.unlink()
+            removed.append(str(path.relative_to(project_dir)))
+
     return removed
 
 
@@ -339,6 +346,7 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
                 f"/{target_root}/project/node_modules/",
                 f"/{target_root}/project/twcli/",
                 f"/{target_root}/project/tailwindcss/",
+                f"/{target_root}/project/tailwindcss-*",
                 f"/{target_root}/project/staticfiles/",
                 f"/{target_root}/project/.git/",
                 f"/{target_root}/project/.mypy_cache/",
@@ -440,6 +448,8 @@ def _project_file_publishable(path: Path, project_root: Path) -> bool:
     if rel.name == "db.sqlite3" or rel.suffix == ".pyc":
         return False
     if rel.name in {"AGENTS.md", "CLAUDE.md", ".env"}:
+        return False
+    if rel.name.startswith(TAILWINDCSS_BINARY_PREFIX):
         return False
     if rel.suffix == ".log":
         return False

@@ -55,6 +55,20 @@ class TestStripProjectEphemeral(unittest.TestCase):
             self.assertTrue(any(".venv" in item for item in removed))
 
 
+class TestStripTailwindcssBinary(unittest.TestCase):
+    def test_removes_standalone_tailwindcss_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            (project / "tailwindcss-linux-x64").write_bytes(b"\0" * 1024)
+            (project / "chat" / "views.py").parent.mkdir(parents=True)
+            (project / "chat" / "views.py").write_text("ok\n")
+
+            removed = strip_project_ephemeral(project)
+            self.assertFalse((project / "tailwindcss-linux-x64").exists())
+            self.assertTrue((project / "chat" / "views.py").exists())
+            self.assertIn("tailwindcss-linux-x64", removed)
+
+
 class TestStripResultEphemeral(unittest.TestCase):
     def test_removes_stderr_and_session_export_logs(self) -> None:
         from benchmark.publish_campaign import strip_result_ephemeral
@@ -95,6 +109,7 @@ class TestGitignoreBlock(unittest.TestCase):
         self.assertIn("!/results/codex-demo/", block)
         self.assertIn("results/codex-demo/followup-stderr.log", block)
         self.assertIn("results/codex-demo/project/.env", block)
+        self.assertIn("results/codex-demo/project/tailwindcss-*", block)
         self.assertIn("results/codex-demo/project/.venv/", block)
 
     def test_update_gitignore_replaces_existing_block(self) -> None:
