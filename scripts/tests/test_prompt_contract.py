@@ -66,7 +66,7 @@ def test_audit_prompt_v38_auditor_owned_d10_no_probe() -> None:
 def test_meta_prompt_v38_includes_precomputed_rollup() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: meta-v3.9")
+    assert prompt.startswith("Prompt-Version: meta-v3.11")
     assert "Harness contest" in prompt
     assert "Cursor agent models" in prompt
     assert "Contest harnesses only" in prompt
@@ -82,3 +82,6 @@ def test_meta_prompt_v38_includes_precomputed_rollup() -> None:
     assert "Leader anchor" not in prompt
     assert "Check 5 — D10 floor" in prompt
     assert "D10/10" in prompt
+    assert "2a. Open-source (Ollama) model ranking" in prompt
+    assert "Ollama model ranking" in prompt
+    assert "Best open-source model" in prompt

@@ -41,7 +41,10 @@ from benchmark.audit_report import (  # noqa: E402
     resolve_meta_variant,
     run_ai_meta_analysis,
 )
-from benchmark.audit_rollup import validate_meta_analysis_coverage  # noqa: E402
+from benchmark.audit_rollup import (  # noqa: E402
+    validate_meta_analysis_coverage,
+    validate_meta_analysis_ollama_ranking,
+)
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
@@ -317,9 +320,14 @@ def main() -> int:
             meta_output,
             source_dirs=meta_input_dirs,
         )
-        if coverage_errors:
-            print_line("Meta-analysis harness coverage validation failed:")
-            for err in coverage_errors:
+        ollama_errors = validate_meta_analysis_ollama_ranking(
+            meta_output,
+            source_dirs=meta_input_dirs,
+        )
+        all_errors = coverage_errors + ollama_errors
+        if all_errors:
+            print_line("Meta-analysis strict validation failed:")
+            for err in all_errors:
                 print(f"  - {err}", file=sys.stderr)
             return 1
 

@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.9
+Prompt-Version: meta-v3.11
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -20,18 +20,18 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 ## Precomputed rollup (authoritative for numeric tables)
 
-The harness computed this rollup from every `report.md` under the input directories. **Section 2, 3, 4, the harness counts in section 2, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive harness counts, model averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
+The harness computed this rollup from every `report.md` under the input directories. **Section 2, 2a, 3, 4, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive run totals, harness averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
 
 {precomputed_rollup}
 
 Path prefixes identify how each target was generated:
 
 - **Harness contest** (sections 1, 3, 4, 5 per-harness averages, 7 “two of three”): `opencode`, `codex`, `claude` only. Strip the prefix to get the underlying target model slug. Same model slug under different contest harnesses = paired comparison (same model, different agent harness).
-- **Cursor agent runs** (model-only, not a harness entrant): `cursor-<model_slug>` is a Cursor Agent CLI run of that model. Copy numeric rows from the rollup **Cursor agent models** table into the appendix. Never rank `cursor` in section 3 or crown it as best harness. Section 2 **Harnesses seen** uses contest harness count only (`0` → `insufficient-data`).
+- **Cursor agent runs** (model-only, not a harness entrant): `cursor-<model_slug>` is a Cursor Agent CLI run of that model. Copy numeric rows from the rollup **Cursor agent models** table into the appendix. Never rank `cursor` in section 3 or crown it as best harness. Cursor runs appear in section 2 **All runs ranking** but do not qualify for the best-model verdict.
 
 When more than one auditor directory is listed, the same `(harness, model_slug)` cell may have multiple `report.md` files (one per auditor). Treat each as an independent sample for that cell. When ranking models or contest harnesses, AVERAGE the totals across auditors for that cell and report the cross-auditor std-dev so auditor disagreement is visible. Keep `auditor` as an extra column wherever per-cell data is shown.
 
-Benchmark leader models (`gpt_5_5`, `claude_opus_4_7`) are normal cohort members in rankings — compare them naturally; do not apply anchor-band calibration or PASS/WARN/FAIL checks.
+Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5` and `claude_opus_4_7`) are **excluded from harness comparison averages** (section 3) because they were not run under every contest harness. They remain in section 2 and the appendix.
 
 ## What you are testing
 
@@ -42,7 +42,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 ## Workflow
 
-1. Read the **Precomputed rollup** above. Copy its model-coverage harness counts, harness CLI versions table, and statistical-summary averages into your output — do not invent alternate counts.
+1. Read the **Precomputed rollup** above. Copy its all-runs ranking, harness CLI versions table, and statistical-summary averages into your output — do not invent alternate totals.
 2. For citations and narrative only, glob `*/report.md` under each input directory. Read files selectively when you need report:line evidence; do not re-glob the same path twice.
 3. For each report you read, extract when needed:
    - Per-dimension scores from section B (`D1..D10`, each `score/max`)
@@ -52,12 +52,13 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Generation metrics from section H: `Harness-CLI-Version`, `Command-Shim-Version` (when present), `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
    - When section H is missing or malformed, prefer the sibling `generation-metrics.json` in the same audit directory (written by the harness from `docs/PRICING.md` + benchmark `result.json`)
    - Record `n/a` for any missing field; never invent values
-4. Build section 2 from the **Model coverage** table in the rollup (harness count, avg total, std dev from cross-harness totals in rollup).
-5. Build section 3 from the **Harness comparison** table in the rollup.
-6. Build section 4 from the **Cross-harness model comparison** table in the rollup.
-7. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
-8. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
-9. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
+4. Build section 2 from the **All runs ranking** table in the rollup (one row per run; do not aggregate by model slug).
+5. Build section 2a from the **Ollama model ranking** table in the rollup.
+6. Build section 3 from the **Harness comparison** table in the rollup.
+7. Build section 4 from the **Cross-harness model comparison** table in the rollup.
+8. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
+9. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
+10. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
 
 ## Required output
 
@@ -69,7 +70,8 @@ Use the Write tool with that exact absolute path. The file MUST contain these se
 
 State the verdict explicitly:
 - **Best harness overall** (opencode/codex/claude contest only): `<name>` with avg total X.X/100 (N runs, std dev S.S). One-sentence why. If rollup **Cursor agent models** has rows, one clause that those runs are model benchmarks excluded from this verdict.
-- **Best model overall**: `<model_slug>` with avg total X.X/100 across N harnesses. One-sentence why.
+- **Best model overall**: `<model_slug>` with avg total X.X/100 across N contest harnesses (from **Cross-harness model comparison**). One-sentence why. Do not crown the top single run if it lacks cross-harness coverage.
+- **Best open-source model**: `<model_slug>` with cross-harness avg X.X/100 across N contest harnesses (from section 2a **Ollama model ranking**). One-sentence why.
 - Single most important harness-attributable pattern (cite a report:line).
 - Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
 - **Harness CLI versions**: when the rollup **Harness CLI versions** table shows `mixed-version` for any harness, state in one clause that the cohort spans multiple `<harness>` CLI builds and cross-harness rankings for that harness are caveated (see appendix).
@@ -77,16 +79,27 @@ State the verdict explicitly:
 
 ### 2. Best model overall
 
-| Rank | Model slug | Harnesses seen | Avg total | Std dev | Best total | Worst total | Tier majority | Verdict |
-|---:|---|---:|---:|---:|---:|---:|---|---|
+| Rank | Harness | Model slug | Total | Tier |
+|---:|---|---|---:|---|
 
 Rules:
-- Sort by avg total descending.
-- **Harnesses seen** = the **Harness count** column for that model in the precomputed **Model coverage** table (contest harnesses only: opencode, codex, claude). Copy exactly — if the rollup shows 3 and you write 2, the output is invalid. Count `0` means cursor-only or no contest coverage → verdict `insufficient-data`.
-- "Verdict" is one of: `consistent` (std dev <= 5 across contest harnesses), `harness-sensitive` (std dev > 10), `mixed` (5 < std dev <= 10), `insufficient-data` (fewer than 2 contest harnesses with valid totals).
-- **Suppress the best-model claim** for any model with `insufficient-data` — note them but do not crown them.
+- Copy rows from the precomputed **All runs ranking** table exactly — same rank order, harness, model slug, total, and tier.
+- Do **not** aggregate by model slug. Do not add avg/std/best/worst/verdict columns.
+- Includes contest harness runs (opencode, codex, claude) and cursor-agent runs.
+- **Best-model verdict** (executive summary + one sentence below the table): crown a **model slug** with valid totals under >=2 contest harnesses (cross-harness average from **Cross-harness model comparison**), not the top single run. Single-harness leaders and cursor-only runs may top the table but must not win the verdict.
 - If the top two eligible models differ by <=3 points and N<=5 for either contender, call it a tie instead of a winner.
 - Below the table, one sentence naming the winner and citing the report:line that best illustrates its strength.
+
+### 2a. Open-source (Ollama) model ranking
+
+| Rank | Model slug | N harnesses | Avg total | Std dev | Tier | Claude | Codex | Opencode |
+|---:|---|---:|---:|---:|---|---:|---:|---:|
+
+Rules:
+- Copy rows from the precomputed **Ollama model ranking** table exactly — same rank order, model slug, N harnesses, avg total, std dev, tier, and per-harness columns (Claude, Codex, Opencode).
+- Contest harnesses only (`opencode`, `codex`, `claude`); cursor runs excluded. Only `*_ollama_cloud` model slugs with >=2 contest-harness runs appear.
+- One sentence below the table naming the #1 model and citing a report:line from its highest-scoring harness run.
+- If the top two models differ by <=3 points, add a one-line sample-size caveat (treat as tie on this grid).
 
 ### 3. Harness ranking
 
@@ -94,7 +107,7 @@ Rules:
 |---:|---|---:|---:|---:|---:|---|---:|---|
 
 Rules:
-- **Contest harnesses only** (`opencode`, `codex`, `claude`). Do not include a `cursor` row. Numeric columns must match the precomputed **Harness comparison** table unless you document a version-filter exclusion in the appendix.
+- **Contest harnesses only** (`opencode`, `codex`, `claude`). Do not include a `cursor` row. Numeric columns must match the precomputed **Harness comparison** table (cross-harness cohort only — single-harness-only models excluded) unless you document a version-filter exclusion in the appendix.
 - Below the table: if rollup **Cursor agent models** is non-empty, one short paragraph summarizing those runs (avg total, N) and stating they are excluded from harness ranking.
 - Tier distribution as `A/B/C/D` counts (e.g. `3/2/0/0`).
 - Critical-failure count = sum of section-F failures across all runs of that harness.
@@ -240,7 +253,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
-  - Best-model claim requires the chosen model to have valid totals under >=2 **contest** harnesses (i.e. NOT `insufficient-data`). Cursor-only models never qualify. If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.
+  - Best-model claim requires the chosen model to have valid totals under >=2 **contest** harnesses. Cursor-only and single-harness-only models never qualify. If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.
   - Best-harness claim is among opencode/codex/claude only; `cursor` is never eligible. Requires the chosen harness to have >=2 model slugs with valid totals. If no harness qualifies, state "insufficient cross-model coverage — harness verdict suppressed".
   - When two contenders sit within 3 points of each other on a small sample (N<=5), call it a tie and explain.
 - **Calibration check is non-blocking**: record the verdict, recommend rubric changes, and continue. Do NOT refuse to publish on FAIL.

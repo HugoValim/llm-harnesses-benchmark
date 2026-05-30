@@ -17,6 +17,27 @@ from benchmark.audit_report import (  # noqa: E402
     _leader_ceiling,
     _normalized_scores_section,
 )
+from benchmark.audit_rollup import _cross_harness_cohort_slugs  # noqa: E402
+
+
+def test_cross_harness_cohort_excludes_single_harness_leaders() -> None:
+    def row(harness: str, slug: str) -> ParsedReport:
+        return ParsedReport(
+            auditor="a",
+            target=f"{harness}-{slug}",
+            harness=harness,
+            model_slug=slug,
+            total=80,
+        )
+
+    reports = [
+        row("codex", "codex_gpt_5_5"),
+        row("claude", "claude_opus_4_7"),
+        row("codex", "glm_5_1_ollama_cloud"),
+        row("claude", "glm_5_1_ollama_cloud"),
+        row("opencode", "glm_5_1_ollama_cloud"),
+    ]
+    assert _cross_harness_cohort_slugs(reports) == frozenset({"glm_5_1_ollama_cloud"})
 
 
 def test_is_leader_slug_positive() -> None:

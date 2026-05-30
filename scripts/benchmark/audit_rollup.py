@@ -9,7 +9,7 @@ meta-analyst — not the final analysis.
 from __future__ import annotations
 
 from pathlib import Path
-from statistics import mean
+from statistics import mean, stdev
 
 from benchmark.audit_report import (
     NUM_DIMENSIONS,
@@ -208,8 +208,114 @@ def _contest_harnesses_in_data(reports: list[ParsedReport]) -> list[str]:
     return sorted(present)
 
 
+def _cross_harness_cohort_slugs(reports: list[ParsedReport]) -> frozenset[str]:
+    """Model slugs audited under every contest harness present in ``reports``."""
+    by_harness: dict[str, set[str]] = {}
+    for r in reports:
+        if not _is_benchmark_harness(r.harness):
+            continue
+        if r.model_slug and r.total is not None:
+            by_harness.setdefault(r.harness, set()).add(r.model_slug)
+    if not by_harness:
+        return frozenset()
+    cohort = set.intersection(*by_harness.values())
+    return frozenset(cohort)
+
+
+def _ranked_run_reports(reports: list[ParsedReport]) -> list[ParsedReport]:
+    """Contest and cursor-agent reports with parseable totals, sorted by total desc."""
+    eligible = [
+        r
+        for r in reports
+        if r.total is not None
+        and (
+            _is_benchmark_harness(r.harness)
+            or r.harness == CURSOR_AGENT_PREFIX
+        )
+    ]
+    return sorted(eligible, key=lambda r: float(r.total), reverse=True)  # type: ignore[arg-type]
+
+
 def _avg(values: list[float]) -> float | None:
     return mean(values) if values else None
+
+
+_OLLAMA_CLOUD_SLUG_SUFFIX = "_ollama_cloud"
+_CONTEST_HARNESS_COLUMN_ORDER: tuple[str, ...] = ("claude", "codex", "opencode")
+
+
+def _is_ollama_cloud_slug(model_slug: str) -> bool:
+    """Return True when ``model_slug`` is an Ollama Cloud open-source target."""
+    return model_slug.endswith(_OLLAMA_CLOUD_SLUG_SUFFIX)
+
+
+def _cell_avg_total(
+    reports: list[ParsedReport],
+    harness: str,
+    slug: str,
+) -> float | None:
+    """Mean total for one ``(harness, model_slug)`` cell across auditors."""
+    totals = [
+        float(r.total)
+        for r in reports
+        if r.harness == harness and r.model_slug == slug and r.total is not None
+    ]
+    return mean(totals) if totals else None
+
+
+def _tier_from_total(total: float) -> str:
+    """Map a total score to rubric tier bands."""
+    if total >= 81:
+        return "A"
+    if total >= 61:
+        return "B"
+    if total >= 41:
+        return "C"
+    return "D"
+
+
+def _ollama_ranking_rows(
+    reports: list[ParsedReport],
+) -> list[dict[str, object]]:
+    """Ranked Ollama Cloud models by cross-contest-harness mean total."""
+    slugs = sorted(
+        {
+            r.model_slug
+            for r in reports
+            if r.model_slug and _is_ollama_cloud_slug(r.model_slug)
+        }
+    )
+    rows: list[dict[str, object]] = []
+    for slug in slugs:
+        cell_avgs: dict[str, float] = {}
+        for harness in _CONTEST_HARNESS_COLUMN_ORDER:
+            cell_avg = _cell_avg_total(reports, harness, slug)
+            if cell_avg is not None:
+                cell_avgs[harness] = cell_avg
+        if len(cell_avgs) < 2:
+            continue
+        values = list(cell_avgs.values())
+        avg_total = mean(values)
+        std = stdev(values) if len(values) >= 2 else None
+        rows.append(
+            {
+                "slug": slug,
+                "n_harnesses": len(cell_avgs),
+                "avg_total": avg_total,
+                "std_dev": std,
+                "tier": _tier_from_total(avg_total),
+                "cell_avgs": cell_avgs,
+            }
+        )
+
+    def _sort_key(row: dict[str, object]) -> tuple[float, float]:
+        avg = float(row["avg_total"])
+        std = row["std_dev"]
+        std_key = float(std) if isinstance(std, (int, float)) else float("inf")
+        return (-avg, std_key)
+
+    rows.sort(key=_sort_key)
+    return rows
 
 
 def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list[str]:
@@ -217,6 +323,8 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
     harnesses = _contest_harnesses_in_data(reports)
     if not harnesses:
         return []
+
+    cohort = _cross_harness_cohort_slugs(reports)
 
     header = ["Harness", "Runs", "Avg Total"]
     header.extend(f"Tier {t}" for t in TIERS)
@@ -227,15 +335,21 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
         "",
         "One row per **contest** harness (opencode, codex, claude). Cursor-agent",
         "runs are excluded — see **Cursor agent models**. Averages are taken",
-        "across every audited target under that harness. `Tier X` columns count",
-        "how many runs landed in that tier.",
+        "only over the **cross-harness cohort**: model slugs audited under every",
+        "contest harness present in the data (single-harness-only models such as",
+        "leader anchors are excluded). `Tier X` columns count how many cohort runs",
+        "landed in that tier.",
         "",
         "| " + " | ".join(header) + " |",
         "|" + "|".join(["---"] * len(header)) + "|",
     ]
 
     for harness in harnesses:
-        subset = [r for r in reports if r.harness == harness]
+        subset = [
+            r
+            for r in reports
+            if r.harness == harness and r.model_slug in cohort
+        ]
         totals = [r.total for r in subset if r.total is not None]
         tier_counts = {t: sum(1 for r in subset if r.tier == t) for t in TIERS}
         row = [
@@ -259,7 +373,9 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
         totals = [
             float(r.total)
             for r in reports
-            if r.harness == harness and r.total is not None
+            if r.harness == harness
+            and r.model_slug in cohort
+            and r.total is not None
         ]
         avg = _avg(totals)
         if avg is None:
@@ -428,10 +544,11 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
     lines = [
         "## Model coverage",
         "",
-        "Authoritative harness counts for section 2 **Harnesses seen**. "
-        "``harness_count`` is the number of distinct **contest** harnesses "
-        "(opencode, codex, claude) with a parseable total for that model slug. "
-        "Cursor-only slugs have harness count `0` — see **Cursor agent models**.",
+        "Per-model summary across contest harnesses (opencode, codex, claude). "
+        "``harness_count`` is the number of distinct contest harnesses with a "
+        "parseable total for that model slug. Cursor-only slugs have harness "
+        "count `0` — see **Cursor agent models**. Used for appendix context; "
+        "section 2 uses **All runs ranking**.",
         "",
         "| Model slug | Harnesses | Harness count | Runs | Avg total |",
         "|---|---|---:|---:|---:|",
@@ -472,8 +589,8 @@ def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
         "## Cursor agent models",
         "",
         "Runs under the ``cursor-`` path prefix (Cursor Agent CLI). **Excluded**",
-        "from harness comparison, cross-harness pairings, and section 2 harness",
-        "counts. Copy into meta-analysis appendix; do not rank as a harness.",
+        "from harness comparison and cross-harness pairings. Copy into",
+        "meta-analysis appendix; do not rank as a harness.",
         "",
         "| Model slug | Runs | Avg total |",
         "|---|---:|---:|",
@@ -488,6 +605,130 @@ def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
     rows.sort(key=lambda t: t[0], reverse=True)
     for _, cells in rows:
         lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def expected_section2_run_rows(
+    reports: list[ParsedReport],
+) -> list[tuple[str, str, float]]:
+    """Return ``(harness, model_slug, total)`` tuples for section 2 validation."""
+    return [
+        (r.harness, r.model_slug or "-", float(r.total))
+        for r in _ranked_run_reports(reports)
+    ]
+
+
+def build_all_runs_ranking_table(reports: list[ParsedReport]) -> str:
+    """Markdown table: one row per contest or cursor run, sorted by total desc."""
+    ranked = _ranked_run_reports(reports)
+    if not ranked:
+        return (
+            "## All runs ranking\n\n"
+            "*(no contest or cursor runs with parseable totals)*\n"
+        )
+
+    lines = [
+        "## All runs ranking",
+        "",
+        "Authoritative rows for section 2. One row per contest or cursor-agent",
+        "run with a parseable total, sorted by total descending.",
+        "",
+        "| Rank | Harness | Model slug | Total | Tier |",
+        "|---:|---|---|---:|---|",
+    ]
+    for rank, report in enumerate(ranked, start=1):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(rank),
+                    report.harness,
+                    report.model_slug or "-",
+                    _fmt(float(report.total)),
+                    report.tier or "-",
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def expected_section2a_ollama_rows(
+    reports: list[ParsedReport],
+) -> list[tuple[str, int, float, float | None, str]]:
+    """Return section-2a tuples: ``(slug, n_harnesses, avg, std_dev, tier)``."""
+    out: list[tuple[str, int, float, float | None, str]] = []
+    for row in _ollama_ranking_rows(reports):
+        std = row["std_dev"]
+        out.append(
+            (
+                str(row["slug"]),
+                int(row["n_harnesses"]),  # type: ignore[arg-type]
+                float(row["avg_total"]),  # type: ignore[arg-type]
+                float(std) if isinstance(std, (int, float)) else None,
+                str(row["tier"]),
+            )
+        )
+    return out
+
+
+def build_ollama_model_ranking_table(reports: list[ParsedReport]) -> str:
+    """Markdown table: Ollama Cloud models ranked by cross-harness mean total."""
+    ranked = _ollama_ranking_rows(reports)
+    if not ranked:
+        return (
+            "## Ollama model ranking\n\n"
+            "*(no Ollama Cloud models with >=2 contest-harness runs)*\n"
+        )
+
+    harness_headers = [
+        harness.capitalize() for harness in _CONTEST_HARNESS_COLUMN_ORDER
+    ]
+    header = [
+        "Rank",
+        "Model slug",
+        "N harnesses",
+        "Avg total",
+        "Std dev",
+        "Tier",
+        *harness_headers,
+    ]
+    lines = [
+        "## Ollama model ranking",
+        "",
+        "Authoritative rows for section 2a. Open-source Ollama Cloud model slugs",
+        "(``*_ollama_cloud``) ranked by mean total across contest harnesses",
+        "(opencode, codex, claude). Per-harness columns are auditor-averaged cell",
+        "totals. Models with fewer than two contest-harness runs are excluded.",
+        "",
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for rank, row in enumerate(ranked, start=1):
+        cell_avgs = row["cell_avgs"]
+        assert isinstance(cell_avgs, dict)
+        cells = [
+            str(rank),
+            str(row["slug"]),
+            str(row["n_harnesses"]),
+            _fmt(float(row["avg_total"])),  # type: ignore[arg-type]
+            _fmt(float(row["std_dev"])) if row["std_dev"] is not None else "-",
+            str(row["tier"]),
+        ]
+        for harness in _CONTEST_HARNESS_COLUMN_ORDER:
+            avg = cell_avgs.get(harness)
+            cells.append(_fmt(avg) if avg is not None else "-")
+        lines.append("| " + " | ".join(cells) + " |")
+
+    best = ranked[0]
+    lines.extend(
+        [
+            "",
+            f"**Best open-source model**: `{best['slug']}` "
+            f"({_fmt(float(best['avg_total']))}/100 across "  # type: ignore[arg-type]
+            f"{best['n_harnesses']} harnesses).",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -641,11 +882,16 @@ def build_precomputed_rollup(
     parts = [
         "## Precomputed rollup",
         "",
-        "Harness-computed from parsed ``report.md`` files. **Section 2–4 numeric "
-        "tables and the harness CLI versions table in meta-analysis.md MUST match "
-        "these values.** Use individual reports only for citations and narrative.",
+        "Harness-computed from parsed ``report.md`` files. **Section 2, 2a, 3, 4 "
+        "numeric tables and the harness CLI versions table in meta-analysis.md "
+        "MUST match these values.** Use individual reports only for citations "
+        "and narrative.",
         "",
         build_model_coverage_table(reports).rstrip(),
+        "",
+        build_all_runs_ranking_table(reports).rstrip(),
+        "",
+        build_ollama_model_ranking_table(reports).rstrip(),
         "",
         build_cursor_agent_models_table(reports).rstrip(),
         "",
@@ -662,17 +908,17 @@ def validate_meta_analysis_coverage(
     source_dirs: list[Path] | None = None,
     reports_dir: Path | None = None,
 ) -> list[str]:
-    """Compare section-2 harness counts in meta-analysis.md to the rollup."""
+    """Compare section-2 per-run rows in meta-analysis.md to the rollup."""
     import re
 
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
-    expected = model_harness_coverage(reports)
+    expected = expected_section2_run_rows(reports)
     if not expected or not meta_path.is_file():
         return []
 
     text = meta_path.read_text(encoding="utf-8")
     section_match = re.search(
-        r"#{2,3}\s*2\.\s*Best model overall(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+        r"#{2,3}\s*2\.\s*Best model overall(.*?)(?=\n#{2,3}\s+2a\.|\n#{2,3}\s+\d+\.|\Z)",
         text,
         re.DOTALL | re.IGNORECASE,
     )
@@ -681,23 +927,115 @@ def validate_meta_analysis_coverage(
 
     section = section_match.group(1)
     row_re = re.compile(
-        r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|",
+        r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*([^\|]+?)\s*\|\s*([\d.]+)\s*\|",
         re.MULTILINE,
     )
+    reported: list[tuple[str, str, float]] = []
+    for match in row_re.finditer(section):
+        harness = match.group(1).strip()
+        slug = match.group(2).strip()
+        total = float(match.group(3))
+        reported.append((harness, slug, total))
+
     errors: list[str] = []
+    if len(reported) != len(expected):
+        errors.append(
+            f"section 2 has {len(reported)} run rows but rollup has {len(expected)}"
+        )
+
+    for index, (exp_row, got_row) in enumerate(
+        zip(expected, reported), start=1
+    ):
+        exp_harness, exp_slug, exp_total = exp_row
+        got_harness, got_slug, got_total = got_row
+        if (
+            exp_harness != got_harness
+            or exp_slug != got_slug
+            or exp_total != got_total
+        ):
+            errors.append(
+                f"row {index}: expected "
+                f"{exp_harness}/{exp_slug}={exp_total} but meta-analysis has "
+                f"{got_harness}/{got_slug}={got_total}"
+            )
+
+    if len(reported) > len(expected):
+        for extra in reported[len(expected) :]:
+            errors.append(
+                f"unexpected extra row: {extra[0]}/{extra[1]}={extra[2]}"
+            )
+
+    return errors
+
+
+def validate_meta_analysis_ollama_ranking(
+    meta_path: Path,
+    *,
+    source_dirs: list[Path] | None = None,
+    reports_dir: Path | None = None,
+) -> list[str]:
+    """Compare section-2a Ollama ranking rows in meta-analysis.md to the rollup."""
+    import re
+
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    expected = expected_section2a_ollama_rows(reports)
+    if not expected or not meta_path.is_file():
+        return []
+
+    text = meta_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"#{2,3}\s*2a\.\s*Open-source \(Ollama\) model ranking"
+        r"(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not section_match:
+        return [
+            "section 2a (Open-source Ollama model ranking) not found in meta-analysis.md"
+        ]
+
+    section = section_match.group(1)
+    row_re = re.compile(
+        r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.-]+)\s*\|\s*([^\|]+?)\s*\|",
+        re.MULTILINE,
+    )
+    reported: list[tuple[str, int, float, float | None, str]] = []
     for match in row_re.finditer(section):
         slug = match.group(1).strip()
-        reported = int(match.group(2))
-        exp = expected.get(slug)
-        if exp is None:
-            continue
-        exp_count = int(exp["harness_count"])
-        if reported != exp_count:
-            harnesses = ", ".join(exp["harnesses"])  # type: ignore[arg-type]
+        n_harnesses = int(match.group(2))
+        avg_total = float(match.group(3))
+        std_raw = match.group(4).strip()
+        std_dev = None if std_raw == "-" else float(std_raw)
+        tier = match.group(5).strip()
+        reported.append((slug, n_harnesses, avg_total, std_dev, tier))
+
+    errors: list[str] = []
+    if len(reported) != len(expected):
+        errors.append(
+            f"section 2a has {len(reported)} Ollama rows but rollup has {len(expected)}"
+        )
+
+    for index, (exp_row, got_row) in enumerate(zip(expected, reported), start=1):
+        exp_slug, exp_n, exp_avg, exp_std, exp_tier = exp_row
+        got_slug, got_n, got_avg, got_std, got_tier = got_row
+        if (
+            exp_slug != got_slug
+            or exp_n != got_n
+            or exp_avg != got_avg
+            or exp_std != got_std
+            or exp_tier != got_tier
+        ):
             errors.append(
-                f"{slug}: meta-analysis reports {reported} harnesses but "
-                f"rollup has {exp_count} ({harnesses})"
+                f"section 2a row {index}: expected "
+                f"{exp_slug} n={exp_n} avg={exp_avg} std={exp_std} tier={exp_tier} "
+                f"but meta-analysis has "
+                f"{got_slug} n={got_n} avg={got_avg} std={got_std} tier={got_tier}"
             )
+
+    if len(reported) > len(expected):
+        for extra in reported[len(expected) :]:
+            errors.append(f"section 2a unexpected extra row: {extra[0]}")
+
     return errors
 
 
