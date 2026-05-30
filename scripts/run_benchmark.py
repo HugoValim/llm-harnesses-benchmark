@@ -6,8 +6,13 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import threading
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Protocol
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -26,12 +31,22 @@ from benchmark.config import (  # noqa: E402
 )
 from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
-from benchmark.result_validation import MAX_VALIDATION_RETRIES  # noqa: E402
+from benchmark.result_validation import (  # noqa: E402
+    MAX_VALIDATION_RETRIES,
+    followup_expected,
+    validate_benchmark_result,
+    validation_retryable,
+    wipe_result_dir,
+)
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
     layout_from_repo,
+    replicate_result_dir,
 )
+from benchmark.replicates import run_replicate_attempts  # noqa: E402
+from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import (  # noqa: E402
+    USAGE_LIMIT_REACHED,
     load_json,
     model_matches_harness,
     normalize_path_fields,
