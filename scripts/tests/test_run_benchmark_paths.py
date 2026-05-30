@@ -36,6 +36,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
             ollama_warmup_results=str(REPO_ROOT / "results" / "ollama_warmup.json"),
             prompt="prompts/benchmark_prompt.txt",
             results_dir="results",
+            run_id=None,
         )
 
         normalized = normalize_benchmark_paths(args)
@@ -85,6 +86,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
             ollama_warmup_results="results/warmup.json",
             prompt="prompts/benchmark_prompt.txt",
             results_dir="tmp/results",
+            run_id=None,
         )
 
         normalized = normalize_benchmark_paths(args)

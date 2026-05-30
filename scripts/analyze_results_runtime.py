@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmark.result_layout import (  # noqa: E402
+    add_run_id_arg,
+    discover_project_result_jsons,
+    layout_from_repo,
+)
 from benchmark.util import load_json, save_json, terminate_process_group, utc_now
 
 
@@ -41,6 +46,7 @@ def parse_args() -> argparse.Namespace:
         description="Verify benchmark-generated Python (Django + Channels) apps."
     )
     parser.add_argument("--results-dir", default=str(RESULTS_DIR))
+    add_run_id_arg(parser)
     parser.add_argument("--max-projects", type=int)
     parser.add_argument("--only")
     parser.add_argument("--local-timeout", type=int, default=240)
@@ -690,11 +696,20 @@ def analyze_one(
 
 def main() -> int:
     args = parse_args()
-    results_dir = Path(args.results_dir)
+    if args.run_id:
+        layout = layout_from_repo(args.run_id, REPO_ROOT)
+        results_dir = layout.projects_root
+        summary_path = layout.runtime_verification_summary_json
+    else:
+        results_dir = Path(args.results_dir)
+        summary_path = results_dir / "runtime_verification_summary.json"
     ollama_env = load_ollama_env()
     summaries: list[dict[str, Any]] = []
 
-    result_paths = sorted(results_dir.glob("*/result.json"))
+    if args.run_id:
+        result_paths = discover_project_result_jsons(results_dir)
+    else:
+        result_paths = sorted(results_dir.glob("*/result.json"))
     if args.only:
         only = {slug.strip() for slug in args.only.split(",") if slug.strip()}
         result_paths = [path for path in result_paths if path.parent.name in only]
@@ -727,7 +742,7 @@ def main() -> int:
             f"[{slug}] local={local_ok} docker_build={build_ok} docker_compose={compose_ok}"
         )
 
-    summary_path = results_dir / "runtime_verification_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     save_json(summary_path, {"generated_at": utc_now(), "results": summaries})
     print(f"summary: {summary_path}")
     return 0

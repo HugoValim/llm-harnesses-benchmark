@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Role 2: AI meta-analysis dispatch.
 
-Reads every ``audit-reports/<auditor>/<target>/report.md`` produced by
-``scripts/run_audit.py`` and dispatches an LLM meta-analyst (Claude Code
-model) against the full grid. The meta-analyst follows
+Reads every ``results/<run_id>/audit-reports/<auditor>/<target>/report.md``
+produced by ``scripts/run_audit.py`` and dispatches an LLM meta-analyst
+(Claude Code model) against the full grid. The meta-analyst follows
 ``prompts/audit_meta_analysis_prompt.txt`` and writes
-``audit-reports/<meta_model_slug>/meta-analysis.md`` (best-harness verdict,
-best-model verdict, cross-harness model pairings, dimension-level signal,
-performance & cost, critical-failure inventory, calibration check,
-recommendations). Run artifacts live under the same
-``audit-reports/<meta_model_slug>/`` directory.
+``results/<run_id>/meta-analysis.md`` (best-harness verdict, best-model
+verdict, cross-harness model pairings, dimension-level signal, performance
+& cost, critical-failure inventory, calibration check, recommendations).
 
-Before dispatch, ``audit-reports/<meta_model_slug>/comparison.md`` is
-rebuilt from the configured input auditor tree(s) so the regex rollup is
-always in sync. The AI meta-analyst itself reads the raw ``report.md`` files,
-not the rollup.
+With ``--run-id``, ``comparison.md`` and ``_meta-analysis-runs/`` live under
+``results/<run_id>/audit-reports/<auditor>/``; ``meta-analysis.md`` is at the
+run root. Legacy mode (no ``--run-id``) keeps both artifacts under
+``audit-reports/<meta_model_slug>/``.
+
+Before dispatch, ``comparison.md`` is rebuilt from the configured input
+auditor tree(s) so the regex rollup is always in sync. The AI meta-analyst
+itself reads the raw ``report.md`` files, not the rollup.
 
 Auth:
   - Anthropic meta-analysts use Claude subscription auth (``claude login``).
@@ -48,6 +50,7 @@ from benchmark.audit_rollup import (  # noqa: E402
 from benchmark.config import resolve_meta_harness_config  # noqa: E402
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
+from benchmark.result_layout import add_run_id_arg, layout_from_repo  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
     DEFAULT_TIMEOUT_MINUTES,
@@ -90,21 +93,22 @@ def parse_args() -> argparse.Namespace:
         default=str(MODELS_CONFIG_PATH),
         help="Path to models.json (shared model registry).",
     )
+    add_run_id_arg(parser)
     parser.add_argument(
         "--results-dir",
         default=str(DEFAULT_RESULTS_DIR),
         help=(
             "Root audit-reports directory. Used to resolve relative "
             "--meta-input-dir paths and as the parent of the default "
-            "--meta-output-dir."
+            "--meta-output-dir (legacy layout)."
         ),
     )
     parser.add_argument(
         "--meta-output-dir",
         default=None,
         help=(
-            "Directory for meta-analysis outputs (meta-analysis.md, "
-            "comparison.md, _meta-analysis-runs/). Default: "
+            "Directory for meta-analysis.md. Default with --run-id: "
+            "results/<run_id>/; legacy default: "
             "<results-dir>/<meta-model slug>."
         ),
     )
@@ -183,7 +187,15 @@ _META_PATH_FIELDS = (
 
 def normalize_meta_paths(args: argparse.Namespace) -> argparse.Namespace:
     """Resolve relative CLI filesystem paths against the harness checkout."""
-    return normalize_path_fields(args, REPO_ROOT, _META_PATH_FIELDS)
+    args = normalize_path_fields(args, REPO_ROOT, _META_PATH_FIELDS)
+    if args.run_id:
+        layout = layout_from_repo(args.run_id, REPO_ROOT)
+        args.results_dir = str(layout.audit_root)
+        if args.meta_output_dir is None:
+            args.meta_output_dir = str(layout.run_root)
+        layout.audit_root.mkdir(parents=True, exist_ok=True)
+        layout.run_root.mkdir(parents=True, exist_ok=True)
+    return args
 
 
 def main() -> int:
@@ -191,6 +203,7 @@ def main() -> int:
     models_config_path = Path(args.models_config)
     results_dir = Path(args.results_dir)
     meta_prompt_path = Path(args.meta_prompt)
+    run_layout = layout_from_repo(args.run_id, REPO_ROOT) if args.run_id else None
 
     if not meta_prompt_path.exists():
         print(
@@ -268,12 +281,16 @@ def main() -> int:
             )
             return 1
 
-    # Rebuild the regex rollup under the meta output dir. The AI meta-analyst
-    # reads the raw report.md files; this artifact is for humans.
     meta_output_dir.mkdir(parents=True, exist_ok=True)
     comparison_md = build_comparison_table(source_dirs=meta_input_dirs)
     statistical_md = build_statistical_summary(source_dirs=meta_input_dirs)
-    comparison_path = meta_output_dir / "comparison.md"
+    if run_layout is not None:
+        comparison_path = meta_input_dirs[0] / "comparison.md"
+        meta_runs_dir = meta_input_dirs[0]
+    else:
+        comparison_path = meta_output_dir / "comparison.md"
+        meta_runs_dir = meta_output_dir
+    comparison_path.parent.mkdir(parents=True, exist_ok=True)
     comparison_path.write_text(comparison_md.rstrip() + "\n\n" + statistical_md)
     print_line(f"Comparison table + statistical summary written: {comparison_path}")
 
@@ -296,6 +313,7 @@ def main() -> int:
             no_progress_timeout_seconds=args.no_progress_minutes * 60,
             force=args.force,
             rate_limit_policy=rate_limit_policy_from_args(args),
+            meta_runs_dir=meta_runs_dir,
         )
     except NotImplementedError as exc:
         print(f"Meta-analysis dispatch failed: {exc}", file=sys.stderr)
@@ -311,7 +329,7 @@ def main() -> int:
     else:
         print_line(
             f"WARNING: meta-analysis run finished but {meta_output} was not written. "
-            f"Check {meta_output_dir / '_meta-analysis-runs' / meta_variant['slug']}."
+            f"Check {meta_runs_dir / '_meta-analysis-runs' / meta_variant['slug']}."
         )
         return 1
 

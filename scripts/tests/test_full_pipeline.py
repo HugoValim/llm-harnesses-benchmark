@@ -105,22 +105,46 @@ def test_resolve_meta_config_default_auditor_uses_codex() -> None:
 def test_phase_audit_dry_run_passes_codex_harness(capsys: pytest.CaptureFixture[str]) -> None:
     phase_audit(
         MODELS_CONFIG,
-        REPO_ROOT / "results",
-        REPO_ROOT / "audit-reports",
+        REPO_ROOT / "results" / "run_02" / "projects",
+        REPO_ROOT / "results" / "run_02" / "audit-reports",
         DEFAULT_AUDITOR_SLUG,
         "codex",
+        run_id="run_02",
         dry_run=True,
     )
     out = capsys.readouterr().out
+    assert "--run-id run_02" in out
     assert "--harness codex" in out
     assert f"--model {DEFAULT_AUDITOR_SLUG}" in out
+
+
+def test_build_benchmark_argv_with_run_id() -> None:
+    steps = build_matrix(MODELS_CONFIG)
+    batch = group_build_batches(steps)[0]
+    argv = build_benchmark_argv(
+        batch,
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        jobs=2,
+        extra_args=[],
+        run_id="run_02",
+    )
+    assert "--run-id" in argv
+    assert "run_02" in argv
+    assert "--results-dir" not in argv
 
 
 def test_list_steps_cli() -> None:
     import subprocess
 
     completed = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "run_full_benchmark.py"), "--list-steps"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "run_full_benchmark.py"),
+            "--run-id",
+            "run_01",
+            "--list-steps",
+        ],
         check=True,
         capture_output=True,
         text=True,

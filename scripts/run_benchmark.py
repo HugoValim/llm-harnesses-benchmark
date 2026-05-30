@@ -33,7 +33,11 @@ from benchmark.result_validation import (  # noqa: E402
     validation_retryable,
     wipe_result_dir,
 )
-from benchmark.result_layout import target_dir as layout_target_dir  # noqa: E402
+from benchmark.result_layout import (  # noqa: E402
+    add_run_id_arg,
+    layout_from_repo,
+    target_dir as layout_target_dir,
+)
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
@@ -300,8 +304,16 @@ def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
 
     Example:
         ``--results-dir results`` becomes ``<repo>/results``.
+        ``--run-id run_02`` sets ``results_dir`` to ``<repo>/results/run_02/projects``.
     """
-    return normalize_path_fields(args, REPO_ROOT, _BENCHMARK_PATH_FIELDS)
+    args = normalize_path_fields(args, REPO_ROOT, _BENCHMARK_PATH_FIELDS)
+    if args.run_id:
+        layout = layout_from_repo(args.run_id, REPO_ROOT)
+        args.results_dir = str(layout.projects_root)
+        args.ollama_warmup_results = str(layout.ollama_warmup_json)
+        layout.projects_root.mkdir(parents=True, exist_ok=True)
+        layout.run_root.mkdir(parents=True, exist_ok=True)
+    return args
 
 
 def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
@@ -343,8 +355,12 @@ def parse_args() -> argparse.Namespace:
         "--harness",
         required=True,
         choices=sorted(HARNESS_CHOICES),
-        help="Which agent runner to use (results go under results/<harness>-<slug>/).",
+        help=(
+            "Which agent runner to use (results go under "
+            "results/<run_id>/projects/<harness>-<slug>/ with --run-id)."
+        ),
     )
+    add_run_id_arg(parser)
     parser.add_argument(
         "--models-config",
         dest="config",

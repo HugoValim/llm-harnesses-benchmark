@@ -230,7 +230,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
    - Prompt-Version (MUST equal `audit-v3.8`; primary benchmark prompt must be `benchmark-v3.2`; follow-up prompt must be `benchmark-followup-v3.2` when present — mismatched submissions are flagged and excluded from comparison until re-run)
-   - Source (path under `results/`, git hash, or chat link)
+   - Source (path under `results/<run_id>/projects/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)
 

@@ -203,6 +203,7 @@ def run_ai_meta_analysis(
     no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
     rate_limit_policy: RateLimitWaitPolicy | None = None,
+    meta_runs_dir: Path | None = None,
 ) -> dict:
     """Dispatch an LLM to write the meta-analysis markdown file.
 
@@ -241,7 +242,8 @@ def run_ai_meta_analysis(
         precomputed_rollup=precomputed_rollup,
     )
 
-    meta_run_dir = reports_dir / "_meta-analysis-runs" / variant["slug"]
+    meta_runs_base = (meta_runs_dir if meta_runs_dir is not None else reports_dir).resolve()
+    meta_run_dir = meta_runs_base / "_meta-analysis-runs" / variant["slug"]
     meta_run_dir.mkdir(parents=True, exist_ok=True)
     (meta_run_dir / "prompt.txt").write_text(prompt)
 

@@ -192,7 +192,7 @@ class TestManifestRoundTrip(unittest.TestCase):
 class TestBuildManifestFromRepo(unittest.TestCase):
     def test_build_manifest_reads_prompt_versions(self) -> None:
         targets = discover_targets_from_auditor(
-            REPO_ROOT / "audit-reports",
+            REPO_ROOT / "results" / "run_01" / "audit-reports",
             "codex_gpt_5_5",
         )
         manifest = build_manifest(
@@ -202,11 +202,29 @@ class TestBuildManifestFromRepo(unittest.TestCase):
             targets=targets,
             repo_root=REPO_ROOT,
             campaign_date="2026-05-29",
+            run_id="run_01",
         )
         self.assertEqual(manifest.prompt_versions["benchmark"], "benchmark-v3.2")
         self.assertEqual(manifest.prompt_versions["audit"], "audit-v3.8")
         self.assertEqual(len(manifest.targets), 28)
         self.assertIn("codex", manifest.harnesses)
+
+    def test_build_manifest_run_scoped_paths(self) -> None:
+        manifest = build_manifest(
+            campaign_id="2026-06-test",
+            label="Run scoped",
+            auditor_slug="codex_gpt_5_5",
+            targets=["codex-demo"],
+            repo_root=REPO_ROOT,
+            run_id="run_02",
+        )
+        self.assertEqual(manifest.run_id, "run_02")
+        self.assertEqual(manifest.benchmark_results_root, "results/run_02/projects")
+        self.assertEqual(
+            manifest.audit_root,
+            "results/run_02/audit-reports/codex_gpt_5_5",
+        )
+        self.assertEqual(manifest.meta_analysis, "results/run_02/meta-analysis.md")
 
 
 if __name__ == "__main__":

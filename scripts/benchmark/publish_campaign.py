@@ -82,9 +82,10 @@ class CampaignManifest:
     harnesses: list[str]
     models_config_sha256: str
     harnesses_config_sha256: str
+    run_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "id": self.id,
             "label": self.label,
             "date": self.date,
@@ -98,6 +99,9 @@ class CampaignManifest:
             "models_config_sha256": self.models_config_sha256,
             "harnesses_config_sha256": self.harnesses_config_sha256,
         }
+        if self.run_id is not None:
+            payload["run_id"] = self.run_id
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> CampaignManifest:
@@ -131,6 +135,7 @@ class CampaignManifest:
             harnesses=list(harnesses),
             models_config_sha256=str(payload["models_config_sha256"]),
             harnesses_config_sha256=str(payload["harnesses_config_sha256"]),
+            run_id=str(payload["run_id"]) if payload.get("run_id") else None,
         )
 
 
@@ -186,13 +191,21 @@ def build_manifest(
     campaign_date: str | None = None,
     benchmark_results_root: str = "results",
     audit_root: str = "audit-reports",
+    run_id: str | None = None,
 ) -> CampaignManifest:
     """Assemble a campaign manifest from repo paths and discovered targets."""
     prompts_dir = repo_root / "prompts"
     models_config = repo_root / "config" / "models.json"
     harnesses_config = repo_root / "config" / "harnesses.json"
-    audit_root_path = repo_root / audit_root
-    meta_analysis = f"{audit_root}/{auditor_slug}/meta-analysis.md"
+
+    if run_id is not None:
+        benchmark_results_root = f"results/{run_id}/projects"
+        audit_root = f"results/{run_id}/audit-reports/{auditor_slug}"
+        meta_analysis = f"results/{run_id}/meta-analysis.md"
+    else:
+        audit_root_path = repo_root / audit_root
+        meta_analysis = f"{audit_root}/{auditor_slug}/meta-analysis.md"
+        audit_root = f"{audit_root}/{auditor_slug}"
 
     return CampaignManifest(
         id=campaign_id,
@@ -210,12 +223,13 @@ def build_manifest(
         },
         auditor_slug=auditor_slug,
         meta_analysis=meta_analysis,
-        audit_root=f"{audit_root}/{auditor_slug}",
+        audit_root=audit_root,
         benchmark_results_root=benchmark_results_root,
         targets=sorted(targets),
         harnesses=infer_harnesses(targets),
         models_config_sha256=file_sha256(models_config),
         harnesses_config_sha256=file_sha256(harnesses_config),
+        run_id=run_id,
     )
 
 
@@ -418,10 +432,19 @@ def collect_publish_paths(repo_root: Path, manifest: CampaignManifest) -> list[P
     """Return repo-relative paths intended for git publication."""
     paths: list[Path] = []
     audit_dir = repo_root / manifest.audit_root
-    for rel in ("meta-analysis.md", "comparison.md"):
-        path = audit_dir / rel
-        if path.is_file():
-            paths.append(path)
+    comparison_path = audit_dir / "comparison.md"
+    if comparison_path.is_file():
+        paths.append(comparison_path)
+
+    if manifest.run_id is not None:
+        meta_path = repo_root / manifest.meta_analysis
+        if meta_path.is_file():
+            paths.append(meta_path)
+    else:
+        for rel in ("meta-analysis.md", "comparison.md"):
+            path = audit_dir / rel
+            if path.is_file():
+                paths.append(path)
 
     for target in manifest.targets:
         target_dir = audit_dir / target
@@ -487,15 +510,21 @@ def update_latest_symlinks(
     *,
     campaign_id: str,
     auditor_slug: str,
+    run_id: str | None = None,
 ) -> None:
-    """Point data/campaigns/latest and audit-reports/latest at the campaign."""
+    """Point data/campaigns/latest and results/latest at the campaign."""
     campaigns_root = repo_root / "data" / "campaigns"
     campaigns_root.mkdir(parents=True, exist_ok=True)
     update_symlink(campaigns_root / "latest", campaigns_root / campaign_id)
 
-    audit_reports_root = repo_root / "audit-reports"
-    audit_reports_root.mkdir(parents=True, exist_ok=True)
-    update_symlink(audit_reports_root / "latest", audit_reports_root / auditor_slug)
+    results_root = repo_root / "results"
+    results_root.mkdir(parents=True, exist_ok=True)
+    if run_id is not None:
+        update_symlink(results_root / "latest", results_root / run_id)
+    else:
+        audit_reports_root = repo_root / "audit-reports"
+        audit_reports_root.mkdir(parents=True, exist_ok=True)
+        update_symlink(audit_reports_root / "latest", audit_reports_root / auditor_slug)
 
 
 def publish_campaign(
@@ -524,6 +553,7 @@ def publish_campaign(
             repo_root,
             campaign_id=manifest.id,
             auditor_slug=manifest.auditor_slug,
+            run_id=manifest.run_id,
         )
 
     publish_paths = collect_publish_paths(repo_root, manifest)

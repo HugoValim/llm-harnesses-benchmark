@@ -10,7 +10,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.result_layout import split_target_slug  # noqa: E402
+from benchmark.result_layout import (  # noqa: E402
+    add_run_id_arg,
+    discover_project_result_jsons,
+    layout_from_repo,
+    split_target_slug,
+)
 from benchmark.result_validation import (  # noqa: E402
     followup_expected,
     validate_benchmark_result,
@@ -27,6 +32,7 @@ def parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "results",
         help="Benchmark output root (default: results/).",
     )
+    add_run_id_arg(parser)
     parser.add_argument(
         "--only",
         help="Comma-separated result directory names (e.g. opencode-qwen3_5_ollama_cloud).",
@@ -57,7 +63,11 @@ def _registry_by_slug(models_config: Path) -> dict[str, dict]:
 
 def main() -> int:
     args = parse_args()
-    results_dir = args.results_dir.resolve()
+    if args.run_id:
+        layout = layout_from_repo(args.run_id, REPO_ROOT)
+        results_dir = layout.projects_root.resolve()
+    else:
+        results_dir = args.results_dir.resolve()
     only = None
     if args.only:
         only = {part.strip() for part in args.only.split(",") if part.strip()}
@@ -76,7 +86,10 @@ def main() -> int:
         )
         return 1
 
-    result_paths = sorted(results_dir.glob("*/result.json"))
+    if args.run_id:
+        result_paths = discover_project_result_jsons(results_dir)
+    else:
+        result_paths = sorted(results_dir.glob("*/result.json"))
     if only:
         result_paths = [p for p in result_paths if p.parent.name in only]
 

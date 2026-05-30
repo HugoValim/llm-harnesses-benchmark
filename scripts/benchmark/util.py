@@ -109,7 +109,8 @@ def init_project_git(project_dir: Path) -> None:
 def _workspace_shape_message() -> str:
     return (
         "expected workspace shape: "
-        "results_dir/<harness>-<slug>/project as an isolated git repo"
+        "results_dir/<harness>-<slug>/project as an isolated git repo "
+        "(or results/<run_id>/projects/<harness>-<slug>/project with --run-id)"
     )
 
 

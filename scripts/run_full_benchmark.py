@@ -7,15 +7,17 @@ Phase 1 runs an explicit (harness, model) matrix:
 
 Phase 2 audits all benchmark results; Phase 3 runs cross-auditor meta-analysis.
 
+All outputs land under ``results/<run_id>/`` (``--run-id`` required).
+
 Environment (defaults: ``codex_gpt_5_5`` / codex harness for audit and meta):
   AUDITOR_SLUG, META_ANALYSIS_AUDITOR_SLUG, META_ANALYSIS_HARNESS, META_ANALYSIS_INPUT_DIR
 
 Examples:
-  python3 scripts/run_full_benchmark.py
-  python3 scripts/run_full_benchmark.py --force
-  python3 scripts/run_full_benchmark.py --list-steps
-  python3 scripts/run_full_benchmark.py -j 4
-  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py  # override default codex_gpt_5_5
+  python3 scripts/run_full_benchmark.py --run-id run_02
+  python3 scripts/run_full_benchmark.py --run-id run_02 --force
+  python3 scripts/run_full_benchmark.py --run-id run_02 --list-steps
+  python3 scripts/run_full_benchmark.py --run-id run_02 -j 4
+  AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py --run-id run_02
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from benchmark.full_pipeline import (  # noqa: E402
     reject_forwarded_model_flag,
     resolve_meta_config,
 )
+from benchmark.result_layout import add_run_id_arg, layout_from_repo  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -56,18 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=REPO_ROOT / "config" / "harnesses.json",
         help="Harness registry for meta-analyst routing.",
     )
-    parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=REPO_ROOT / "results",
-        help="Benchmark output directory.",
-    )
-    parser.add_argument(
-        "--audit-reports-dir",
-        type=Path,
-        default=REPO_ROOT / "audit-reports",
-        help="Audit output root.",
-    )
+    add_run_id_arg(parser, required=True)
     parser.add_argument(
         "--list-steps",
         action="store_true",
@@ -118,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         forward = forward[1:]
     reject_forwarded_model_flag(forward)
 
+    layout = layout_from_repo(args.run_id, REPO_ROOT)
     models_config = args.models_config.resolve()
     if args.list_steps:
         for step in build_matrix(models_config):
@@ -132,9 +125,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_build:
         phase_build(
             models_config,
-            args.results_dir,
+            layout.projects_root,
             forward,
             jobs=args.jobs,
+            run_id=args.run_id,
             dry_run=args.dry_run,
         )
 
@@ -146,25 +140,28 @@ def main(argv: list[str] | None = None) -> int:
         meta_harness_env,
         meta_input_env,
     )
-    assert_no_stale_audit_reports(args.audit_reports_dir, auditor_slug)
+    assert_no_stale_audit_reports(layout.audit_root, auditor_slug)
 
     if not args.skip_audit:
         phase_audit(
             models_config,
-            args.results_dir,
-            args.audit_reports_dir,
+            layout.projects_root,
+            layout.audit_root,
             auditor_slug,
             auditor_harness,
+            run_id=args.run_id,
             dry_run=args.dry_run,
         )
 
     if not args.skip_meta:
         phase_meta_analysis(
             models_config,
-            args.audit_reports_dir,
+            layout.audit_root,
             meta_slug,
             meta_harness,
             meta_input,
+            run_id=args.run_id,
+            meta_output_dir=layout.run_root,
             dry_run=args.dry_run,
         )
 

@@ -20,6 +20,7 @@ from benchmark.publish_campaign import (  # noqa: E402
     load_manifest,
     publish_campaign,
 )
+from benchmark.result_layout import add_run_id_arg, layout_from_repo  # noqa: E402
 from benchmark.util import print_line  # noqa: E402
 
 DEFAULT_AUDIT_ROOT = REPO_ROOT / "audit-reports"
@@ -54,16 +55,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Discover targets from audit-reports/<auditor>/*/report.md.",
     )
+    add_run_id_arg(parser)
     parser.add_argument(
         "--audit-root",
         type=Path,
         default=DEFAULT_AUDIT_ROOT,
-        help="Audit reports root (default: audit-reports/).",
+        help="Audit reports root (legacy layout; ignored with --run-id).",
     )
     parser.add_argument(
         "--results-root",
         default=DEFAULT_RESULTS_ROOT,
-        help="Benchmark results root relative to repo (default: results).",
+        help="Benchmark results root relative to repo (legacy layout; ignored with --run-id).",
     )
     parser.add_argument(
         "--campaign-date",
@@ -83,7 +85,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-symlinks",
         action="store_true",
-        help="Skip updating data/campaigns/latest and audit-reports/latest.",
+        help="Skip updating data/campaigns/latest and results/latest.",
     )
     parser.add_argument(
         "--fail-on-secrets",
@@ -106,7 +108,12 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        targets = discover_targets_from_auditor(args.audit_root, args.auditor)
+        if args.run_id:
+            layout = layout_from_repo(args.run_id, REPO_ROOT)
+            audit_root = layout.audit_root
+        else:
+            audit_root = args.audit_root
+        targets = discover_targets_from_auditor(audit_root, args.auditor)
         manifest = build_manifest(
             campaign_id=args.campaign_id,
             label=label,
@@ -115,6 +122,7 @@ def main() -> int:
             repo_root=REPO_ROOT,
             campaign_date=args.campaign_date,
             benchmark_results_root=args.results_root,
+            run_id=args.run_id,
         )
 
     result = publish_campaign(
@@ -146,7 +154,10 @@ def main() -> int:
 
     print_line("Latest symlinks:")
     print_line(f"  data/campaigns/latest -> {manifest.id}")
-    print_line(f"  audit-reports/latest -> {manifest.auditor_slug}")
+    if manifest.run_id:
+        print_line(f"  results/latest -> {manifest.run_id}")
+    else:
+        print_line(f"  audit-reports/latest -> {manifest.auditor_slug}")
     print_line(f"  meta-analysis: {manifest.meta_analysis}")
     return 0
 

@@ -130,6 +130,7 @@ def build_benchmark_argv(
     results_dir: Path,
     jobs: int,
     extra_args: Sequence[str],
+    run_id: str | None = None,
 ) -> list[str]:
     """Argv for one Phase 1 ``run_benchmark.py`` subprocess."""
     if jobs < 1:
@@ -141,10 +142,12 @@ def build_benchmark_argv(
         batch.harness,
         "--models-config",
         str(models_config),
-        "--results-dir",
-        str(results_dir),
         *timeout_cli_flags(),
     ]
+    if run_id:
+        argv.extend(["--run-id", run_id])
+    else:
+        argv.extend(["--results-dir", str(results_dir)])
     for slug in batch.model_slugs:
         argv.extend(["--model", slug])
     if "-j" not in extra_args and "--jobs" not in extra_args:
@@ -160,7 +163,8 @@ def run_build_batch(
     results_dir: Path,
     jobs: int,
     extra_args: Sequence[str],
-    dry_run: bool,
+    run_id: str | None = None,
+    dry_run: bool = False,
 ) -> None:
     slugs = ", ".join(batch.model_slugs)
     print_line(
@@ -173,6 +177,7 @@ def run_build_batch(
         results_dir=results_dir,
         jobs=jobs,
         extra_args=extra_args,
+        run_id=run_id,
     )
     if dry_run:
         print_line(" ".join(cmd))
@@ -186,6 +191,7 @@ def phase_build(
     extra_args: Sequence[str],
     *,
     jobs: int = 2,
+    run_id: str | None = None,
     dry_run: bool = False,
 ) -> list[BuildStep]:
     steps = build_matrix(models_config)
@@ -201,6 +207,7 @@ def phase_build(
             results_dir=results_dir,
             jobs=jobs,
             extra_args=extra_args,
+            run_id=run_id,
             dry_run=dry_run,
         )
     return steps
@@ -292,6 +299,7 @@ def phase_audit(
     auditor_slug: str,
     auditor_harness: str,
     *,
+    run_id: str | None = None,
     dry_run: bool = False,
 ) -> None:
     print_line("==> Phase 2 — audit (Role 1)")
@@ -302,10 +310,6 @@ def phase_audit(
         str(models_config),
         "--harness",
         auditor_harness,
-        "--benchmark-results-dir",
-        str(results_dir),
-        "--results-dir",
-        str(audit_reports_dir),
         "--model",
         auditor_slug,
         "--target",
@@ -314,6 +318,17 @@ def phase_audit(
         "3",
         *timeout_cli_flags(),
     ]
+    if run_id:
+        cmd.extend(["--run-id", run_id])
+    else:
+        cmd.extend(
+            [
+                "--benchmark-results-dir",
+                str(results_dir),
+                "--results-dir",
+                str(audit_reports_dir),
+            ]
+        )
     if dry_run:
         print_line(" ".join(cmd))
         return
@@ -327,6 +342,8 @@ def phase_meta_analysis(
     meta_harness: str,
     meta_input_dir: str,
     *,
+    run_id: str | None = None,
+    meta_output_dir: Path | None = None,
     dry_run: bool = False,
 ) -> None:
     print_line("==> Phase 3 — meta-analysis (Role 2)")
@@ -336,8 +353,6 @@ def phase_meta_analysis(
         *meta_timeout_cli_flags(),
         "--models-config",
         str(models_config),
-        "--results-dir",
-        str(audit_reports_dir),
         "--harness",
         meta_harness,
         "--model",
@@ -346,6 +361,12 @@ def phase_meta_analysis(
         meta_input_dir,
         "--force",
     ]
+    if run_id:
+        cmd.extend(["--run-id", run_id])
+    else:
+        cmd.extend(["--results-dir", str(audit_reports_dir)])
+    if meta_output_dir is not None:
+        cmd.extend(["--meta-output-dir", str(meta_output_dir)])
     if dry_run:
         print_line(" ".join(cmd))
         return

@@ -10,18 +10,24 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.result_layout import (  # noqa: E402
+    RunLayout,
     audit_generation_metrics_json,
     audit_target_dir,
     audit_report_md,
     audit_result_json,
     audit_stream_ndjson,
     audit_stderr_log,
+    discover_benchmark_target_dirs,
+    discover_project_result_jsons,
+    layout_from_repo,
+    resolve_run_layout,
     split_target_slug,
     target_dir,
     target_followup_prompt,
     target_project_workspace,
     target_prompt,
     target_result_json,
+    validate_run_id,
     BENCHMARK_CONTEST_HARNESSES,
     CURSOR_AGENT_PREFIX,
     HARNESS_PREFIXES,
@@ -30,37 +36,83 @@ from benchmark.result_layout import (  # noqa: E402
 
 class TestTargetPaths(unittest.TestCase):
     def setUp(self) -> None:
-        self.results = Path("/tmp/r")
+        self.projects = Path("/tmp/r/run_02/projects")
 
     def test_target_dir_joins_harness_and_slug(self) -> None:
         self.assertEqual(
-            target_dir(self.results, "claude", "claude_sonnet_4_6"),
-            Path("/tmp/r/claude-claude_sonnet_4_6"),
+            target_dir(self.projects, "claude", "claude_sonnet_4_6"),
+            Path("/tmp/r/run_02/projects/claude-claude_sonnet_4_6"),
         )
 
     def test_project_workspace_is_project_subdir(self) -> None:
         self.assertEqual(
-            target_project_workspace(self.results, "opencode", "demo"),
-            Path("/tmp/r/opencode-demo/project"),
+            target_project_workspace(self.projects, "opencode", "demo"),
+            Path("/tmp/r/run_02/projects/opencode-demo/project"),
         )
 
     def test_result_json_path(self) -> None:
         self.assertEqual(
-            target_result_json(self.results, "cursor", "demo"),
-            Path("/tmp/r/cursor-demo/result.json"),
+            target_result_json(self.projects, "cursor", "demo"),
+            Path("/tmp/r/run_02/projects/cursor-demo/result.json"),
         )
 
     def test_prompt_path(self) -> None:
         self.assertEqual(
-            target_prompt(self.results, "codex", "gpt5"),
-            Path("/tmp/r/codex-gpt5/prompt.txt"),
+            target_prompt(self.projects, "codex", "gpt5"),
+            Path("/tmp/r/run_02/projects/codex-gpt5/prompt.txt"),
         )
 
     def test_followup_prompt_path(self) -> None:
         self.assertEqual(
-            target_followup_prompt(self.results, "claude", "demo"),
-            Path("/tmp/r/claude-demo/followup-prompt.txt"),
+            target_followup_prompt(self.projects, "claude", "demo"),
+            Path("/tmp/r/run_02/projects/claude-demo/followup-prompt.txt"),
         )
+
+
+class TestRunLayout(unittest.TestCase):
+    def test_run_layout_paths(self) -> None:
+        layout = resolve_run_layout("run_02", Path("/tmp/results"))
+        self.assertEqual(layout.run_root, Path("/tmp/results/run_02"))
+        self.assertEqual(layout.projects_root, Path("/tmp/results/run_02/projects"))
+        self.assertEqual(layout.audit_root, Path("/tmp/results/run_02/audit-reports"))
+        self.assertEqual(
+            layout.meta_analysis_md,
+            Path("/tmp/results/run_02/meta-analysis.md"),
+        )
+
+    def test_validate_run_id_rejects_bad_ids(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_run_id("01")
+        with self.assertRaises(ValueError):
+            validate_run_id("run")
+        validate_run_id("run_01")
+
+    def test_layout_from_repo(self) -> None:
+        layout = layout_from_repo("run_03", REPO_ROOT)
+        self.assertEqual(layout.run_id, "run_03")
+        self.assertEqual(layout.results_base, REPO_ROOT / "results")
+
+    def test_discover_benchmark_targets(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "codex-demo" / "project").mkdir(parents=True)
+            (root / "empty-dir").mkdir()
+            found = discover_benchmark_target_dirs(root)
+            self.assertEqual([p.name for p in found], ["codex-demo"])
+
+    def test_discover_project_result_jsons(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "codex-demo"
+            target.mkdir()
+            (target / "result.json").write_text("{}")
+            paths = discover_project_result_jsons(root)
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(paths[0].name, "result.json")
 
 
 class TestAuditPaths(unittest.TestCase):

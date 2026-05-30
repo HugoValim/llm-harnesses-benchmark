@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Role 1: per-project AI audit dispatch.
 
-Reads benchmark outputs under ``results/<harness>-<slug>/project`` and
-dispatches an LLM auditor registry row against each, using the
-rubric template at ``prompts/audit_prompt_template.txt``. Audit outputs land
-in ``audit-reports/<auditor_slug>/<target_slug>/`` (one ``report.md`` per
-(auditor, target) pair).
+Reads benchmark outputs under ``results/<run_id>/projects/<harness>-<slug>/project``
+(or legacy ``results/<harness>-<slug>/project``) and dispatches an LLM auditor
+registry row against each, using the rubric template at
+``prompts/audit_prompt_template.txt``. Audit outputs land in
+``results/<run_id>/audit-reports/<auditor_slug>/<target_slug>/`` (one
+``report.md`` per (auditor, target) pair).
 
 After dispatch, rebuilds ``audit-reports/<auditor_slug>/comparison.md`` per
 auditor from that auditor's ``report.md`` files via
@@ -118,11 +119,14 @@ from benchmark.pricing import (  # noqa: E402
     validate_section_h_cost,
 )
 from benchmark.result_layout import (  # noqa: E402
+    add_run_id_arg,
     audit_generation_metrics_json,
     audit_report_md,
     audit_result_json,
     audit_stream_ndjson,
     audit_target_dir,
+    discover_benchmark_target_dirs,
+    layout_from_repo,
     split_target_slug,
 )
 
@@ -150,14 +154,8 @@ def discover_project_dirs(
     """
     config_targets_by_slug = config_targets_by_slug or {}
     out: list[dict] = []
-    if not benchmark_results_dir.is_dir():
-        return out
-    for entry in sorted(benchmark_results_dir.iterdir()):
-        if not entry.is_dir():
-            continue
+    for entry in discover_benchmark_target_dirs(benchmark_results_dir):
         project_dir = entry / "project"
-        if not project_dir.is_dir():
-            continue
         name = entry.name
         prefix, model_slug = split_target_slug(name)
         harness = prefix or "unknown"
@@ -214,6 +212,7 @@ def parse_args() -> argparse.Namespace:
             f"(default: {DEFAULT_AUDIT_HARNESS})."
         ),
     )
+    add_run_id_arg(parser)
     parser.add_argument(
         "--model",
         default=DEFAULT_AUDITOR_SLUG,
@@ -518,7 +517,14 @@ _AUDIT_PATH_FIELDS = (
 
 def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
     """Resolve relative CLI filesystem paths against the harness checkout."""
-    return normalize_path_fields(args, REPO_ROOT, _AUDIT_PATH_FIELDS)
+    args = normalize_path_fields(args, REPO_ROOT, _AUDIT_PATH_FIELDS)
+    if args.run_id:
+        layout = layout_from_repo(args.run_id, REPO_ROOT)
+        args.benchmark_results_dir = str(layout.projects_root)
+        args.results_dir = str(layout.audit_root)
+        layout.projects_root.mkdir(parents=True, exist_ok=True)
+        layout.audit_root.mkdir(parents=True, exist_ok=True)
+    return args
 
 
 def _maybe_write_generation_metrics(
