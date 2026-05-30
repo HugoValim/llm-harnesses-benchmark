@@ -8,6 +8,7 @@ meta-analyst — not the final analysis.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median, stdev
 
@@ -30,6 +31,132 @@ from benchmark.util import load_json, migrate_to_v2
 LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = ("gpt_5_5", "claude_opus_4_7")
 
 _NORMALIZED_PCT_CAP = 150.0
+
+
+@dataclass(frozen=True)
+class AggregatedRunRankingRow:
+    rank: int
+    harness: str
+    model_slug: str
+    mean_total: float
+    sample_n: int
+    std_dev: float | None
+    tier: str
+
+
+@dataclass(frozen=True)
+class ModelCoverageRow:
+    model_slug: str
+    harnesses: tuple[str, ...]
+    harness_count: int
+    runs: int
+    cursor_runs: int
+    cursor_avg_total: float | None
+    avg_total: float | None
+
+
+@dataclass(frozen=True)
+class HarnessAverage:
+    harness: str
+    avg_total: float
+
+
+@dataclass(frozen=True)
+class TierCount:
+    tier: str
+    count: int
+
+
+@dataclass(frozen=True)
+class DimensionAverage:
+    index: int
+    label: str
+    avg_score: float | None
+
+
+@dataclass(frozen=True)
+class HarnessComparisonRow:
+    harness: str
+    runs: int
+    avg_total: float | None
+    tier_counts: tuple[TierCount, ...]
+    dimension_averages: tuple[DimensionAverage, ...]
+
+
+@dataclass(frozen=True)
+class HarnessComparisonResult:
+    cohort_model_slugs: frozenset[str]
+    rows: tuple[HarnessComparisonRow, ...]
+    best_harnesses: tuple[str, ...]
+    best_avg_total: float | None
+
+
+@dataclass(frozen=True)
+class HarnessRankingRow:
+    rank: int
+    harness: str
+    sample_n: int
+    avg_total: float
+    median_total: float | None
+    std_dev: float | None
+
+
+@dataclass(frozen=True)
+class TopModelExpectation:
+    harness: str
+    model_slug: str
+    total: float
+    note: str
+
+
+@dataclass(frozen=True)
+class BestOllamaExpectation:
+    model_slug: str
+    avg_total: float
+    n_harnesses: int
+    std_dev: float | None
+
+
+@dataclass(frozen=True)
+class CursorRunExpectation:
+    runs: int
+    avg_total: float | None
+
+
+@dataclass(frozen=True)
+class DimensionHarnessAverage:
+    harness: str
+    avg_score: float | None
+
+
+@dataclass(frozen=True)
+class DimensionBlindSpot:
+    index: int
+    label: str
+    max_score: int | None
+    all_avg: float
+    harness_averages: tuple[DimensionHarnessAverage, ...]
+
+
+@dataclass(frozen=True)
+class ExecutiveSummaryExpectations:
+    harness_rankings: tuple[HarnessRankingRow, ...]
+    top_model: TopModelExpectation | None
+    best_ollama: BestOllamaExpectation | None
+    cursor_runs: CursorRunExpectation | None
+    mixed_version_harnesses: tuple[str, ...]
+    blind_spot: DimensionBlindSpot | None
+
+
+@dataclass(frozen=True)
+class OllamaModelRankingRow:
+    rank: int
+    model_slug: str
+    n_harnesses: int
+    avg_total: float
+    std_dev: float | None
+    tier: str
+    harness_averages: tuple[HarnessAverage, ...]
 
 
 def _display_slug(slug: str, display_slug_map: dict[str, str] | None) -> str:
@@ -368,13 +495,75 @@ def _ollama_ranking_rows(
     return rows
 
 
+def calculate_harness_comparison(
+    reports: list[ParsedReport],
+    dim_labels: list[str] | None = None,
+) -> HarnessComparisonResult:
+    """Return harness comparison rows before Markdown rendering.
+
+    Example:
+        result = calculate_harness_comparison(reports)
+        best_harness = result.best_harnesses[0]
+    """
+    labels = dim_labels if dim_labels is not None else _dimension_labels(reports)
+    cohort = _cross_harness_cohort_slugs(reports)
+    rows = tuple(
+        _harness_comparison_row(reports, harness, cohort, labels)
+        for harness in _contest_harnesses_in_data(reports)
+    )
+    best_harnesses, best_avg = _best_harness_comparison(rows)
+    return HarnessComparisonResult(cohort, rows, best_harnesses, best_avg)
+
+
+def _harness_comparison_row(
+    reports: list[ParsedReport],
+    harness: str,
+    cohort: frozenset[str],
+    dim_labels: list[str],
+) -> HarnessComparisonRow:
+    subset = [r for r in reports if r.harness == harness and r.model_slug in cohort]
+    totals = [float(r.total) for r in subset if r.total is not None]
+    return HarnessComparisonRow(
+        harness=harness,
+        runs=len(subset),
+        avg_total=_avg(totals),
+        tier_counts=tuple(TierCount(t, sum(1 for r in subset if r.tier == t)) for t in TIERS),
+        dimension_averages=_harness_dimension_averages(subset, dim_labels),
+    )
+
+
+def _harness_dimension_averages(
+    subset: list[ParsedReport], dim_labels: list[str]
+) -> tuple[DimensionAverage, ...]:
+    rows: list[DimensionAverage] = []
+    for index in range(1, NUM_DIMENSIONS + 1):
+        values = [float(r.dim_score(index)) for r in subset if r.dim_score(index) is not None]
+        label = dim_labels[index - 1] if index - 1 < len(dim_labels) else f"D{index}"
+        rows.append(DimensionAverage(index, label, _avg(values)))
+    return tuple(rows)
+
+
+def _best_harness_comparison(
+    rows: tuple[HarnessComparisonRow, ...]
+) -> tuple[tuple[str, ...], float | None]:
+    best_avg: float | None = None
+    best_names: list[str] = []
+    for row in rows:
+        if row.avg_total is None:
+            continue
+        if best_avg is None or row.avg_total > best_avg:
+            best_avg = row.avg_total
+            best_names = [row.harness]
+        elif row.avg_total == best_avg:
+            best_names.append(row.harness)
+    return tuple(best_names), best_avg
+
+
 def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list[str]:
     """Per-harness rollup for the opencode/codex/claude contest only."""
-    harnesses = _contest_harnesses_in_data(reports)
-    if not harnesses:
+    comparison = calculate_harness_comparison(reports, dim_labels)
+    if not comparison.rows:
         return []
-
-    cohort = _cross_harness_cohort_slugs(reports)
 
     header = ["Harness", "Runs", "Avg Total"]
     header.extend(f"Tier {t}" for t in TIERS)
@@ -394,55 +583,24 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
         "|" + "|".join(["---"] * len(header)) + "|",
     ]
 
-    for harness in harnesses:
-        subset = [
-            r
-            for r in reports
-            if r.harness == harness and r.model_slug in cohort
-        ]
-        totals = [r.total for r in subset if r.total is not None]
-        tier_counts = {t: sum(1 for r in subset if r.tier == t) for t in TIERS}
+    for result_row in comparison.rows:
+        tier_counts = {item.tier: item.count for item in result_row.tier_counts}
         row = [
-            harness,
-            str(len(subset)),
-            _fmt(_avg([float(t) for t in totals])),
+            result_row.harness,
+            str(result_row.runs),
+            _fmt(result_row.avg_total),
         ]
         row.extend(str(tier_counts[t]) for t in TIERS)
-        for i in range(1, NUM_DIMENSIONS + 1):
-            dim_values = [
-                float(r.dim_score(i))
-                for r in subset
-                if r.dim_score(i) is not None
-            ]
-            row.append(_fmt(_avg(dim_values)))
+        row.extend(_fmt(d.avg_score) for d in result_row.dimension_averages)
         lines.append("| " + " | ".join(row) + " |")
 
-    best_avg: float | None = None
-    best_names: list[str] = []
-    for harness in harnesses:
-        totals = [
-            float(r.total)
-            for r in reports
-            if r.harness == harness
-            and r.model_slug in cohort
-            and r.total is not None
-        ]
-        avg = _avg(totals)
-        if avg is None:
-            continue
-        if best_avg is None or avg > best_avg:
-            best_avg = avg
-            best_names = [harness]
-        elif avg == best_avg:
-            best_names.append(harness)
-
-    if best_names and best_avg is not None:
+    if comparison.best_harnesses and comparison.best_avg_total is not None:
         lines.extend(
             [
                 "",
                 f"**Best harness by average total**: "
-                f"{', '.join(f'`{n}`' for n in best_names)} "
-                f"({_fmt(best_avg)}/100).",
+                f"{', '.join(f'`{n}`' for n in comparison.best_harnesses)} "
+                f"({_fmt(comparison.best_avg_total)}/100).",
             ]
         )
 
@@ -559,6 +717,42 @@ def _max_for_dimension(reports: list[ParsedReport], index: int) -> int | None:
     return None
 
 
+def calculate_model_coverage(reports: list[ParsedReport]) -> list[ModelCoverageRow]:
+    """Return per-model coverage rows before Markdown rendering.
+
+    Example:
+        rows = calculate_model_coverage(reports)
+        covered_harnesses = rows[0].harnesses
+    """
+    rows = [_model_coverage_row(slug, subset) for slug, subset in _reports_by_model(reports).items()]
+    rows.sort(key=lambda row: row.avg_total if row.avg_total is not None else -1.0, reverse=True)
+    return rows
+
+
+def _reports_by_model(reports: list[ParsedReport]) -> dict[str, list[ParsedReport]]:
+    by_model: dict[str, list[ParsedReport]] = {}
+    for report in reports:
+        if report.model_slug:
+            by_model.setdefault(report.model_slug, []).append(report)
+    return by_model
+
+
+def _model_coverage_row(slug: str, subset: list[ParsedReport]) -> ModelCoverageRow:
+    harnesses = tuple(sorted({r.harness for r in subset if _is_benchmark_harness(r.harness)}))
+    cursor_subset = [r for r in subset if r.harness == CURSOR_AGENT_PREFIX]
+    cursor_totals = [float(r.total) for r in cursor_subset if r.total is not None]
+    totals = [float(r.total) for r in subset if r.total is not None]
+    return ModelCoverageRow(
+        model_slug=slug,
+        harnesses=harnesses,
+        harness_count=len(harnesses),
+        runs=len(subset),
+        cursor_runs=len(cursor_subset),
+        cursor_avg_total=mean(cursor_totals) if cursor_totals else None,
+        avg_total=mean(totals) if totals else None,
+    )
+
+
 def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, object]]:
     """Per-model harness coverage keyed by model slug.
 
@@ -566,28 +760,15 @@ def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, o
     codex, claude). ``cursor_runs`` and ``cursor_avg_total`` cover Cursor-agent
     runs for the same slug. ``avg_total`` averages all runs with a parseable total.
     """
-    by_model: dict[str, list[ParsedReport]] = {}
-    for r in reports:
-        if r.model_slug:
-            by_model.setdefault(r.model_slug, []).append(r)
-
     out: dict[str, dict[str, object]] = {}
-    for slug, subset in by_model.items():
-        harnesses = sorted(
-            {r.harness for r in subset if _is_benchmark_harness(r.harness)}
-        )
-        cursor_subset = [r for r in subset if r.harness == CURSOR_AGENT_PREFIX]
-        cursor_totals = [
-            float(r.total) for r in cursor_subset if r.total is not None
-        ]
-        totals = [float(r.total) for r in subset if r.total is not None]
-        out[slug] = {
-            "harnesses": harnesses,
-            "runs": len(subset),
-            "harness_count": len(harnesses),
-            "cursor_runs": len(cursor_subset),
-            "cursor_avg_total": mean(cursor_totals) if cursor_totals else None,
-            "avg_total": mean(totals) if totals else None,
+    for row in calculate_model_coverage(reports):
+        out[row.model_slug] = {
+            "harnesses": list(row.harnesses),
+            "runs": row.runs,
+            "harness_count": row.harness_count,
+            "cursor_runs": row.cursor_runs,
+            "cursor_avg_total": row.cursor_avg_total,
+            "avg_total": row.avg_total,
         }
     return out
 
@@ -598,8 +779,8 @@ def build_model_coverage_table(
     display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Markdown table: model slug → harness list → run count → avg total."""
-    coverage = model_harness_coverage(reports)
-    if not coverage:
+    coverage_rows = calculate_model_coverage(reports)
+    if not coverage_rows:
         return "## Model coverage\n\n*(no reports parsed)*\n"
 
     lines = [
@@ -614,23 +795,15 @@ def build_model_coverage_table(
         "| Model slug | Harnesses | Harness count | Runs | Avg total |",
         "|---|---|---:|---:|---:|",
     ]
-    rows: list[tuple[float, list[str]]] = []
-    for slug, info in coverage.items():
-        harnesses = info["harnesses"]
-        harness_list = ", ".join(harnesses) if harnesses else "-"
-        avg = info["avg_total"]
+    for row in coverage_rows:
+        harness_list = ", ".join(row.harnesses) if row.harnesses else "-"
         cells = [
-            _display_slug(slug, display_slug_map),
+            _display_slug(row.model_slug, display_slug_map),
             harness_list,
-            str(info["harness_count"]),
-            str(info["runs"]),
-            _fmt(avg if isinstance(avg, float) else None),
+            str(row.harness_count),
+            str(row.runs),
+            _fmt(row.avg_total),
         ]
-        sort_key = float(avg) if isinstance(avg, float) else -1.0
-        rows.append((sort_key, cells))
-
-    rows.sort(key=lambda t: t[0], reverse=True)
-    for _, cells in rows:
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
@@ -677,6 +850,32 @@ def build_cursor_agent_models_table(
     return "\n".join(lines) + "\n"
 
 
+def calculate_aggregated_runs_ranking(
+    reports: list[ParsedReport],
+) -> list[AggregatedRunRankingRow]:
+    """Return section-2 ranking rows before Markdown rendering.
+
+    Example:
+        rows = calculate_aggregated_runs_ranking(reports)
+        top_total = rows[0].mean_total
+    """
+    rows: list[AggregatedRunRankingRow] = []
+    for rank, item in enumerate(_aggregated_contest_ranking_rows(reports), start=1):
+        harness, slug, avg, sample_n, std = item
+        rows.append(
+            AggregatedRunRankingRow(
+                rank=rank,
+                harness=harness,
+                model_slug=slug,
+                mean_total=avg,
+                sample_n=sample_n,
+                std_dev=std,
+                tier=_tier_from_total(avg),
+            )
+        )
+    return rows
+
+
 def expected_section2_run_rows(
     reports: list[ParsedReport],
     *,
@@ -685,13 +884,11 @@ def expected_section2_run_rows(
     """Return aggregated ``(harness, model_slug, mean_total)`` tuples for section 2."""
     return [
         (
-            harness,
-            _display_slug(slug, display_slug_map),
-            avg,
+            row.harness,
+            _display_slug(row.model_slug, display_slug_map),
+            row.mean_total,
         )
-        for harness, slug, avg, _sample_n, _std in _aggregated_contest_ranking_rows(
-            reports
-        )
+        for row in calculate_aggregated_runs_ranking(reports)
     ]
 
 
@@ -701,7 +898,7 @@ def build_aggregated_runs_ranking_table(
     display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Markdown table: mean total per ``(harness, model)`` across replicate audits."""
-    rows = _aggregated_contest_ranking_rows(reports)
+    rows = calculate_aggregated_runs_ranking(reports)
     if not rows:
         return (
             "## Aggregated runs ranking\n\n"
@@ -718,18 +915,18 @@ def build_aggregated_runs_ranking_table(
         "| Rank | Harness | Model slug | Mean total | N | Std dev | Tier |",
         "|---:|---|---|---:|---:|---:|---|",
     ]
-    for rank, (harness, slug, avg, sample_n, std) in enumerate(rows, start=1):
+    for row in rows:
         lines.append(
             "| "
             + " | ".join(
                 [
-                    str(rank),
-                    harness,
-                    _display_slug(slug, display_slug_map),
-                    _fmt(avg),
-                    str(sample_n),
-                    _fmt(std),
-                    _tier_from_total(avg),
+                    str(row.rank),
+                    row.harness,
+                    _display_slug(row.model_slug, display_slug_map),
+                    _fmt(row.mean_total),
+                    str(row.sample_n),
+                    _fmt(row.std_dev),
+                    row.tier,
                 ]
             )
             + " |"
@@ -783,20 +980,53 @@ def expected_section2a_ollama_rows(
     display_slug_map: dict[str, str] | None = None,
 ) -> list[tuple[str, int, float, float | None, str]]:
     """Return section-2a tuples: ``(slug, n_harnesses, avg, std_dev, tier)``."""
-    out: list[tuple[str, int, float, float | None, str]] = []
-    for row in _ollama_ranking_rows(reports):
-        std = row["std_dev"]
-        slug = str(row["slug"])
-        out.append(
-            (
-                _display_slug(slug, display_slug_map),
-                int(row["n_harnesses"]),  # type: ignore[arg-type]
-                float(row["avg_total"]),  # type: ignore[arg-type]
-                float(std) if isinstance(std, (int, float)) else None,
-                str(row["tier"]),
-            )
+    return [
+        (
+            _display_slug(row.model_slug, display_slug_map),
+            row.n_harnesses,
+            row.avg_total,
+            row.std_dev,
+            row.tier,
         )
-    return out
+        for row in calculate_ollama_model_ranking(reports)
+    ]
+
+
+def calculate_ollama_model_ranking(
+    reports: list[ParsedReport],
+) -> list[OllamaModelRankingRow]:
+    """Return section-2a Ollama ranking rows before Markdown rendering.
+
+    Example:
+        rows = calculate_ollama_model_ranking(reports)
+        best_slug = rows[0].model_slug
+    """
+    rows: list[OllamaModelRankingRow] = []
+    for rank, raw in enumerate(_ollama_ranking_rows(reports), start=1):
+        rows.append(_ollama_ranking_row_from_dict(rank, raw))
+    return rows
+
+
+def _ollama_ranking_row_from_dict(
+    rank: int, raw: dict[str, object]
+) -> OllamaModelRankingRow:
+    cell_avgs = raw["cell_avgs"]
+    assert isinstance(cell_avgs, dict)
+    harness_averages = tuple(
+        HarnessAverage(harness, float(cell_avgs[harness]))
+        for harness in _CONTEST_HARNESS_COLUMN_ORDER
+        if harness in cell_avgs
+    )
+    std = raw["std_dev"]
+    return OllamaModelRankingRow(
+        rank=rank,
+        model_slug=str(raw["slug"]),
+        n_harnesses=int(raw["n_harnesses"]),  # type: ignore[arg-type]
+        avg_total=float(raw["avg_total"]),  # type: ignore[arg-type]
+        std_dev=float(std) if isinstance(std, (int, float)) else None,
+        tier=str(raw["tier"]),
+        harness_averages=harness_averages,
+    )
 
 
 def build_ollama_model_ranking_table(
@@ -805,7 +1035,7 @@ def build_ollama_model_ranking_table(
     display_slug_map: dict[str, str] | None = None,
 ) -> str:
     """Markdown table: Ollama Cloud models ranked by cross-harness mean total."""
-    ranked = _ollama_ranking_rows(reports)
+    ranked = calculate_ollama_model_ranking(reports)
     if not ranked:
         return (
             "## Ollama model ranking\n\n"
@@ -835,16 +1065,15 @@ def build_ollama_model_ranking_table(
         "| " + " | ".join(header) + " |",
         "|" + "|".join(["---"] * len(header)) + "|",
     ]
-    for rank, row in enumerate(ranked, start=1):
-        cell_avgs = row["cell_avgs"]
-        assert isinstance(cell_avgs, dict)
+    for row in ranked:
+        cell_avgs = {cell.harness: cell.avg_total for cell in row.harness_averages}
         cells = [
-            str(rank),
-            _display_slug(str(row["slug"]), display_slug_map),
-            str(row["n_harnesses"]),
-            _fmt(float(row["avg_total"])),  # type: ignore[arg-type]
-            _fmt(float(row["std_dev"])) if row["std_dev"] is not None else "-",
-            str(row["tier"]),
+            str(row.rank),
+            _display_slug(row.model_slug, display_slug_map),
+            str(row.n_harnesses),
+            _fmt(row.avg_total),
+            _fmt(row.std_dev),
+            row.tier,
         ]
         for harness in _CONTEST_HARNESS_COLUMN_ORDER:
             avg = cell_avgs.get(harness)
@@ -852,13 +1081,13 @@ def build_ollama_model_ranking_table(
         lines.append("| " + " | ".join(cells) + " |")
 
     best = ranked[0]
-    best_slug = _display_slug(str(best["slug"]), display_slug_map)
+    best_slug = _display_slug(best.model_slug, display_slug_map)
     lines.extend(
         [
             "",
             f"**Best open-source model**: `{best_slug}` "
-            f"({_fmt(float(best['avg_total']))}/100 across "  # type: ignore[arg-type]
-            f"{best['n_harnesses']} harnesses).",
+            f"({_fmt(best.avg_total)}/100 across "
+            f"{best.n_harnesses} harnesses).",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -1045,6 +1274,34 @@ def _contest_harness_rankings(
     return rows
 
 
+def calculate_harness_rankings(
+    reports: list[ParsedReport],
+) -> tuple[HarnessRankingRow, ...]:
+    """Return executive-summary harness rankings before Markdown rendering.
+
+    Example:
+        rows = calculate_harness_rankings(reports)
+        best_avg = rows[0].avg_total
+    """
+    rows: list[HarnessRankingRow] = []
+    for rank, (harness, stats) in enumerate(_contest_harness_rankings(reports), 1):
+        rows.append(_harness_ranking_row(rank, harness, stats))
+    return tuple(rows)
+
+
+def _harness_ranking_row(
+    rank: int, harness: str, stats: dict[str, float | int | None]
+) -> HarnessRankingRow:
+    return HarnessRankingRow(
+        rank=rank,
+        harness=harness,
+        sample_n=int(stats["n"]),  # type: ignore[arg-type]
+        avg_total=float(stats["avg"]),  # type: ignore[arg-type]
+        median_total=float(stats["median"]) if stats["median"] is not None else None,
+        std_dev=float(stats["std_dev"]) if stats["std_dev"] is not None else None,
+    )
+
+
 def _single_harness_run_note(
     reports: list[ParsedReport], model_slug: str
 ) -> str:
@@ -1067,7 +1324,7 @@ def _single_harness_run_note(
 
 def _lowest_dimension_candidate(
     reports: list[ParsedReport],
-) -> dict[str, object] | None:
+) -> DimensionBlindSpot | None:
     """Dimension with the lowest contest-cohort all-harness average."""
     harnesses = _contest_harnesses_in_data(reports)
     contest = _benchmark_reports(reports)
@@ -1075,7 +1332,7 @@ def _lowest_dimension_candidate(
         return None
 
     dim_labels = _dimension_labels(reports)
-    candidate: dict[str, object] | None = None
+    candidate: DimensionBlindSpot | None = None
     lowest_all_avg = float("inf")
 
     for i in range(1, NUM_DIMENSIONS + 1):
@@ -1097,13 +1354,17 @@ def _lowest_dimension_candidate(
             ]
             per_harness[harness] = _avg(subset_values)
         label = dim_labels[i - 1] if i - 1 < len(dim_labels) else f"D{i}"
-        candidate = {
-            "index": i,
-            "label": label,
-            "max": _max_for_dimension(reports, i),
-            "all_avg": all_avg,
-            "per_harness": per_harness,
-        }
+        harness_averages = tuple(
+            DimensionHarnessAverage(harness, per_harness[harness])
+            for harness in sorted(per_harness)
+        )
+        candidate = DimensionBlindSpot(
+            index=i,
+            label=label,
+            max_score=_max_for_dimension(reports, i),
+            all_avg=all_avg,
+            harness_averages=harness_averages,
+        )
     return candidate
 
 
@@ -1125,6 +1386,73 @@ def _mixed_version_contest_harnesses(
     return sorted(mixed)
 
 
+def calculate_executive_summary_expectations(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> ExecutiveSummaryExpectations:
+    """Return typed verdict data for meta-analysis section 1.
+
+    Example:
+        expected = calculate_executive_summary_expectations(reports)
+        best = expected.top_model.model_slug if expected.top_model else None
+    """
+    return ExecutiveSummaryExpectations(
+        harness_rankings=calculate_harness_rankings(reports),
+        top_model=_top_model_expectation(reports, display_slug_map),
+        best_ollama=_best_ollama_expectation(reports, display_slug_map),
+        cursor_runs=_cursor_run_expectation(reports),
+        mixed_version_harnesses=tuple(
+            _mixed_version_contest_harnesses(reports, source_dirs=source_dirs)
+        ),
+        blind_spot=_lowest_dimension_candidate(reports),
+    )
+
+
+def _top_model_expectation(
+    reports: list[ParsedReport], display_slug_map: dict[str, str] | None
+) -> TopModelExpectation | None:
+    top_run = _top_contest_run(reports)
+    if top_run is None or top_run.total is None:
+        return None
+    model_slug = top_run.model_slug or "-"
+    return TopModelExpectation(
+        harness=top_run.harness,
+        model_slug=_display_slug(model_slug, display_slug_map),
+        total=float(top_run.total),
+        note=_single_harness_run_note(reports, model_slug),
+    )
+
+
+def _best_ollama_expectation(
+    reports: list[ParsedReport], display_slug_map: dict[str, str] | None
+) -> BestOllamaExpectation | None:
+    rows = calculate_ollama_model_ranking(reports)
+    if not rows:
+        return None
+    best = rows[0]
+    return BestOllamaExpectation(
+        model_slug=_display_slug(best.model_slug, display_slug_map),
+        avg_total=best.avg_total,
+        n_harnesses=best.n_harnesses,
+        std_dev=best.std_dev,
+    )
+
+
+def _cursor_run_expectation(
+    reports: list[ParsedReport],
+) -> CursorRunExpectation | None:
+    cursor_reports = _cursor_agent_reports(reports)
+    if not cursor_reports:
+        return None
+    totals = [float(r.total) for r in cursor_reports if r.total is not None]
+    return CursorRunExpectation(
+        runs=len(cursor_reports),
+        avg_total=mean(totals) if totals else None,
+    )
+
+
 def executive_summary_expectations(
     reports: list[ParsedReport],
     *,
@@ -1132,34 +1460,26 @@ def executive_summary_expectations(
     display_slug_map: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Key verdict fields the executive summary must contain."""
+    typed = calculate_executive_summary_expectations(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+    )
     expectations: dict[str, object] = {}
 
-    harness_rows = _contest_harness_rankings(reports)
-    if harness_rows:
-        best_harness, best_stats = harness_rows[0]
-        expectations["best_harness"] = best_harness
-        expectations["best_harness_avg"] = best_stats["avg"]
-
-    top_run = _top_contest_run(reports)
-    if top_run is not None and top_run.total is not None:
-        expectations["top_model_slug"] = _display_slug(
-            top_run.model_slug or "-", display_slug_map
-        )
-        expectations["top_model_total"] = float(top_run.total)
-        expectations["top_model_harness"] = top_run.harness
-
-    ollama_rows = _ollama_ranking_rows(reports)
-    if ollama_rows:
-        best = ollama_rows[0]
-        expectations["best_ollama_slug"] = _display_slug(
-            str(best["slug"]), display_slug_map
-        )
-        expectations["best_ollama_avg"] = best["avg_total"]
-        expectations["best_ollama_n_harnesses"] = best["n_harnesses"]
-
-    expectations["mixed_version_harnesses"] = _mixed_version_contest_harnesses(
-        reports, source_dirs=source_dirs
-    )
+    if typed.harness_rankings:
+        best_harness = typed.harness_rankings[0]
+        expectations["best_harness"] = best_harness.harness
+        expectations["best_harness_avg"] = best_harness.avg_total
+    if typed.top_model is not None:
+        expectations["top_model_slug"] = typed.top_model.model_slug
+        expectations["top_model_total"] = typed.top_model.total
+        expectations["top_model_harness"] = typed.top_model.harness
+    if typed.best_ollama is not None:
+        expectations["best_ollama_slug"] = typed.best_ollama.model_slug
+        expectations["best_ollama_avg"] = typed.best_ollama.avg_total
+        expectations["best_ollama_n_harnesses"] = typed.best_ollama.n_harnesses
+    expectations["mixed_version_harnesses"] = list(typed.mixed_version_harnesses)
     return expectations
 
 
@@ -1268,20 +1588,14 @@ def build_executive_summary_skeleton(
 
     blind_spot = _lowest_dimension_candidate(reports)
     if blind_spot is not None:
-        per_harness = blind_spot["per_harness"]
-        assert isinstance(per_harness, dict)
-        dim_index = int(blind_spot["index"])  # type: ignore[arg-type]
-        dim_label = str(blind_spot["label"])
-        dim_max = blind_spot["max"]
-        all_avg = float(blind_spot["all_avg"])  # type: ignore[arg-type]
         harness_parts = " / ".join(
-            f"{h} {_fmt(v) if v is not None else 'n/a'}"
-            for h, v in sorted(per_harness.items())
+            f"{item.harness} {_fmt(item.avg_score) if item.avg_score is not None else 'n/a'}"
+            for item in blind_spot.harness_averages
         )
-        max_display = dim_max if dim_max is not None else "?"
+        max_display = blind_spot.max_score if blind_spot.max_score is not None else "?"
         lines.append(
-            f"- **Universal blind spot candidate**: D{dim_index} {dim_label} — "
-            f"all avg {_fmt(all_avg)}/{max_display}; {harness_parts}."
+            f"- **Universal blind spot candidate**: D{blind_spot.index} {blind_spot.label} — "
+            f"all avg {_fmt(blind_spot.all_avg)}/{max_display}; {harness_parts}."
         )
 
     return "\n".join(lines) + "\n"
