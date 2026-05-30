@@ -33,7 +33,7 @@ PROJECT_EPHEMERAL_DIR_NAMES: frozenset[str] = frozenset(
     }
 )
 
-PROJECT_EPHEMERAL_FILE_NAMES: frozenset[str] = frozenset({".coverage"})
+PROJECT_EPHEMERAL_FILE_NAMES: frozenset[str] = frozenset({".coverage", ".env"})
 
 AUDIT_EXCLUDE_DIR_NAMES: frozenset[str] = frozenset({"_meta-analysis-runs"})
 
@@ -51,7 +51,10 @@ RESULT_EXCLUDE_FILE_SUFFIXES: tuple[str, ...] = (".ndjson",)
 RESULT_EXCLUDE_FILE_NAMES: frozenset[str] = frozenset(
     {
         "stderr.log",
+        "followup-stderr.log",
+        "followup-opencode-stderr.log",
         "session-export.json",
+        "session-export.stderr.log",
         "opencode-stderr.log",
     }
 )
@@ -255,6 +258,31 @@ def strip_project_ephemeral(project_dir: Path) -> list[str]:
             path.unlink()
             removed.append(str(path.relative_to(project_dir)))
 
+    for path in project_dir.glob("*.log"):
+        if path.is_file():
+            path.unlink()
+            removed.append(str(path.relative_to(project_dir)))
+
+    return removed
+
+
+def strip_result_ephemeral(result_dir: Path) -> list[str]:
+    """Remove ephemeral files from a benchmark result directory."""
+    removed: list[str] = []
+    if not result_dir.is_dir():
+        return removed
+
+    for path in result_dir.iterdir():
+        if not path.is_file():
+            continue
+        if path.suffix in RESULT_EXCLUDE_FILE_SUFFIXES:
+            path.unlink()
+            removed.append(str(path.relative_to(result_dir)))
+            continue
+        if path.name in RESULT_EXCLUDE_FILE_NAMES:
+            path.unlink()
+            removed.append(str(path.relative_to(result_dir)))
+
     return removed
 
 
@@ -263,8 +291,10 @@ def strip_campaign_results(repo_root: Path, manifest: CampaignManifest) -> dict[
     results_root = repo_root / manifest.benchmark_results_root
     stripped: dict[str, list[str]] = {}
     for target in manifest.targets:
-        project_dir = results_root / target / "project"
-        removed = strip_project_ephemeral(project_dir)
+        result_dir = results_root / target
+        removed = strip_result_ephemeral(result_dir)
+        project_dir = result_dir / "project"
+        removed.extend(strip_project_ephemeral(project_dir))
         if removed:
             stripped[target] = removed
     return stripped
@@ -298,8 +328,11 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
                 f"!/{target_root}/",
                 f"/{target_root}/**/*.ndjson",
                 f"/{target_root}/stderr.log",
+                f"/{target_root}/followup-stderr.log",
+                f"/{target_root}/followup-opencode-stderr.log",
                 f"/{target_root}/opencode-stderr.log",
                 f"/{target_root}/session-export.json",
+                f"/{target_root}/session-export.stderr.log",
                 f"/{target_root}/project/.venv/",
                 f"/{target_root}/project/.venv*/",
                 f"/{target_root}/project/venv/",
@@ -315,6 +348,8 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
                 f"/{target_root}/project/__pycache__/",
                 f"/{target_root}/project/.pytest_cache/",
                 f"/{target_root}/project/db.sqlite3",
+                f"/{target_root}/project/.env",
+                f"/{target_root}/project/*.log",
                 "",
             ]
         )
@@ -404,7 +439,9 @@ def _project_file_publishable(path: Path, project_root: Path) -> bool:
             return False
     if rel.name == "db.sqlite3" or rel.suffix == ".pyc":
         return False
-    if rel.name in {"AGENTS.md", "CLAUDE.md"}:
+    if rel.name in {"AGENTS.md", "CLAUDE.md", ".env"}:
+        return False
+    if rel.suffix == ".log":
         return False
     return True
 

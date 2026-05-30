@@ -55,6 +55,23 @@ class TestStripProjectEphemeral(unittest.TestCase):
             self.assertTrue(any(".venv" in item for item in removed))
 
 
+class TestStripResultEphemeral(unittest.TestCase):
+    def test_removes_stderr_and_session_export_logs(self) -> None:
+        from benchmark.publish_campaign import strip_result_ephemeral
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result_dir = Path(tmp)
+            (result_dir / "followup-stderr.log").write_text("warn\n")
+            (result_dir / "session-export.stderr.log").write_text("export\n")
+            (result_dir / "result.json").write_text("{}\n")
+
+            removed = strip_result_ephemeral(result_dir)
+            self.assertFalse((result_dir / "followup-stderr.log").exists())
+            self.assertFalse((result_dir / "session-export.stderr.log").exists())
+            self.assertTrue((result_dir / "result.json").exists())
+            self.assertEqual(len(removed), 2)
+
+
 class TestGitignoreBlock(unittest.TestCase):
     def test_render_contains_campaign_and_targets(self) -> None:
         manifest = CampaignManifest(
@@ -76,6 +93,8 @@ class TestGitignoreBlock(unittest.TestCase):
         self.assertIn(GITIGNORE_END, block)
         self.assertIn("!/audit-reports/codex_gpt_5_5/", block)
         self.assertIn("!/results/codex-demo/", block)
+        self.assertIn("results/codex-demo/followup-stderr.log", block)
+        self.assertIn("results/codex-demo/project/.env", block)
         self.assertIn("results/codex-demo/project/.venv/", block)
 
     def test_update_gitignore_replaces_existing_block(self) -> None:
