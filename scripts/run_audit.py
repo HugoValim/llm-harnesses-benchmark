@@ -27,8 +27,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -40,19 +38,12 @@ from benchmark.audit_report import (  # noqa: E402
     build_statistical_summary,
     load_rubric_result,
 )
-from benchmark.harnesses import (  # noqa: E402
-    canonical_harness_name,
-    check_harness_cli_requirements,
-    get_harness,
-)
-from benchmark.audit_coverage import (  # noqa: E402
-    audit_dispatch_needed,
-    find_audit_coverage_gaps,
-    format_coverage_gaps,
-)
-from benchmark.audit_finalize import (  # noqa: E402
-    ensure_audit_report,
-    mark_audit_result_incomplete,
+from benchmark.harnesses import check_harness_cli_requirements  # noqa: E402
+from benchmark.audit_dispatch import (  # noqa: E402
+    AuditDispatchConfig,
+    build_audit_prompt,
+    coverage_failure_message,
+    run_audit_jobs,
 )
 from benchmark.audit_meta import discover_auditor_subdirs  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
@@ -61,7 +52,6 @@ from benchmark.timeouts import (  # noqa: E402
 )
 from benchmark.config import (  # noqa: E402
     build_display_slug_map,
-    display_slug_for,
     registry_by_slug,
     resolve_audit_harness_config,
 )
@@ -70,11 +60,9 @@ from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from
 
 # Runner imports go through the Harness registry; no direct imports needed.
 from benchmark.util import (  # noqa: E402
-    USAGE_LIMIT_REACHED,
     load_json,
     normalize_path_fields,
     print_line,
-    save_json,
 )
 
 
@@ -96,19 +84,9 @@ DEFAULT_RESULTS_DIR = REPO_ROOT / "audit-reports"
 DEFAULT_BENCHMARK_RESULTS_DIR = REPO_ROOT / "results"
 
 
-from benchmark.pricing import (  # noqa: E402
-    build_generation_metrics,
-    format_generation_metrics_block,
-    pricing_path,
-    validate_section_h_cost,
-)
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
-    audit_generation_metrics_json,
     audit_report_md,
-    audit_result_json,
-    audit_stream_ndjson,
-    audit_target_dir,
     benchmark_target_slug_from_leaf,
     discover_benchmark_target_dirs,
     layout_from_repo,
@@ -463,48 +441,6 @@ def resolve_auditors_and_targets(
     return all_auditors, discovered
 
 
-def build_audit_prompt(
-    template: str,
-    project_dir: Path,
-    model_slug: str,
-    output_path: Path | None = None,
-    *,
-    benchmark_result_path: Path | None = None,
-    generation_metrics_path: Path | None = None,
-    generation_metrics_block: str | None = None,
-    pricing_doc_path: Path | None = None,
-) -> str:
-    """Interpolate placeholders into the audit prompt template.
-
-    ``{generation_metrics_block}`` carries precomputed cost/tokens for section H.
-    """
-    prompt = template.replace("{project_dir}", str(project_dir.resolve()))
-    prompt = prompt.replace("{model_slug}", model_slug)
-    if output_path is not None:
-        prompt = prompt.replace("{output_path}", str(output_path.resolve()))
-    if benchmark_result_path is not None:
-        prompt = prompt.replace(
-            "{benchmark_result_path}", str(benchmark_result_path.resolve())
-        )
-    else:
-        prompt = prompt.replace("{benchmark_result_path}", "n/a")
-    if generation_metrics_path is not None:
-        prompt = prompt.replace(
-            "{generation_metrics_path}", str(generation_metrics_path.resolve())
-        )
-    else:
-        prompt = prompt.replace("{generation_metrics_path}", "n/a")
-    if generation_metrics_block is not None:
-        prompt = prompt.replace("{generation_metrics_block}", generation_metrics_block)
-    else:
-        prompt = prompt.replace("{generation_metrics_block}", "n/a")
-    if pricing_doc_path is not None:
-        prompt = prompt.replace("{pricing_doc_path}", str(pricing_doc_path.resolve()))
-    else:
-        prompt = prompt.replace("{pricing_doc_path}", str(pricing_path().resolve()))
-    return prompt
-
-
 _AUDIT_PATH_FIELDS = (
     "benchmark_config",
     "benchmark_results_dir",
@@ -524,42 +460,6 @@ def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
         layout.projects_root.mkdir(parents=True, exist_ok=True)
         layout.audit_root.mkdir(parents=True, exist_ok=True)
     return args
-
-
-def _maybe_write_generation_metrics(
-    *,
-    target: dict,
-    audit_results_dir: Path,
-    auditor_slug: str,
-    target_slug: str,
-    force: bool,
-    job_slug: str,
-    model_registry: dict[str, dict],
-) -> dict:
-    """Compute and write generation-metrics.json from the benchmark result."""
-    metrics_path = audit_generation_metrics_json(
-        audit_results_dir, auditor_slug, target_slug
-    )
-    if metrics_path.exists() and not force:
-        print_line(f"[{job_slug}] generation metrics cached -> {metrics_path}")
-        return load_json(metrics_path)
-
-    benchmark_result_path = target["project_dir"].parent / "result.json"
-    model_slug = target.get("model_slug", target_slug)
-    metrics = build_generation_metrics(
-        target_slug=target_slug,
-        model_slug=model_slug,
-        harness=target.get("harness", "unknown"),
-        benchmark_result_path=benchmark_result_path,
-        provider=target.get("provider"),
-    )
-    metrics["display_model_slug"] = display_slug_for(model_registry, model_slug)
-    save_json(metrics_path, metrics)
-    print_line(
-        f"[{job_slug}] generation metrics status={metrics.get('status')} "
-        f"cost={metrics.get('estimated_cost_usd')} -> {metrics_path}"
-    )
-    return metrics
 
 
 def _print_calibration_warnings(auditor_dir: Path) -> None:
@@ -690,159 +590,34 @@ def main() -> int:
         no_progress_timeout_seconds = args.no_progress_minutes * 60
         rate_limit_policy = rate_limit_policy_from_args(args)
         runner = audit_config.get("runner") or {}
-        runner_command_prefix = runner.get("command_prefix")
-        isolate_home = bool(runner.get("isolate_home", False))
-
-        def _run(auditor: dict, target: dict) -> tuple[str, str, str | None]:
-            auditor_slug = auditor["slug"]
-            target_slug = target["slug"]
-            job_slug = f"{auditor_slug}__auditing__{target_slug}"
-
-            result_dir = audit_target_dir(results_dir, auditor_slug, target_slug)
-            result_dir.mkdir(parents=True, exist_ok=True)
-
-            report_path = audit_report_md(results_dir, auditor_slug, target_slug)
-            audit_result_path = audit_result_json(
-                results_dir, auditor_slug, target_slug
-            )
-            dispatch_force = audit_dispatch_needed(
-                report_path=report_path,
-                audit_result_path=audit_result_path,
+        dispatch = run_audit_jobs(
+            auditors=auditors,
+            targets=targets,
+            jobs_count=jobs_count,
+            config=AuditDispatchConfig(
+                results_dir=results_dir,
+                prompt_template=prompt_template,
+                timeout_seconds=timeout_seconds,
+                no_progress_timeout_seconds=no_progress_timeout_seconds,
                 force=args.force,
-            )
-            if not dispatch_force:
-                print_line(f"[{job_slug}] complete report cached; skipping dispatch")
-                return job_slug, "cached", None
-
-            project_dir = target["project_dir"]
-            model_slug_for_prompt = display_slug_for(
-                model_registry,
-                target.get("model_slug", target_slug),
-            )
-            gen_metrics = _maybe_write_generation_metrics(
-                target=target,
-                audit_results_dir=results_dir,
-                auditor_slug=auditor_slug,
-                target_slug=target_slug,
-                force=args.force,
-                job_slug=job_slug,
+                runner_command_prefix=runner.get("command_prefix"),
+                isolate_home=bool(runner.get("isolate_home", False)),
+                rate_limit_policy=rate_limit_policy,
                 model_registry=model_registry,
-            )
-            benchmark_result_path = project_dir.parent / "result.json"
-            generation_metrics_path = audit_generation_metrics_json(
-                results_dir, auditor_slug, target_slug
-            )
-
-            audit_prompt = build_audit_prompt(
-                prompt_template,
-                project_dir,
-                model_slug_for_prompt,
-                output_path=audit_report_md(results_dir, auditor_slug, target_slug),
-                benchmark_result_path=benchmark_result_path,
-                generation_metrics_path=generation_metrics_path,
-                generation_metrics_block=format_generation_metrics_block(gen_metrics),
-                pricing_doc_path=pricing_path(),
-            )
-
-            (result_dir / "prompt.txt").write_text(audit_prompt)
-
-            try:
-                runner_type = auditor.get("runner_type", "claude")
-                harness_name = canonical_harness_name(runner_type)
-                harness = get_harness(harness_name)
-                run_kwargs: dict[str, Any] = dict(
-                    variant=auditor,
-                    prompt=audit_prompt,
-                    results_dir=results_dir / auditor_slug,
-                    timeout_seconds=timeout_seconds,
-                    no_progress_timeout_seconds=no_progress_timeout_seconds,
-                    force=True,
-                    harness=runner_type,  # preserve original (incl. "ollama") for callee
-                    explicit_result_dir=result_dir,
-                    rate_limit_policy=rate_limit_policy,
-                )
-                if harness.accepts_runner_command_prefix:
-                    run_kwargs["runner_command_prefix"] = runner_command_prefix
-                if harness.accepts_isolate_home:
-                    run_kwargs["isolate_home"] = isolate_home
-                run_result = harness.run_variant(**run_kwargs)
-
-                if run_result.get("status") == USAGE_LIMIT_REACHED:
-                    return job_slug, USAGE_LIMIT_REACHED, None
-
-                stream_path = audit_stream_ndjson(
-                    results_dir, auditor_slug, target_slug
-                )
-                report_ok, report_reason = ensure_audit_report(
-                    report_path=report_path,
-                    stream_path=stream_path if stream_path.is_file() else None,
-                )
-                if not report_ok:
-                    mark_audit_result_incomplete(audit_result_path)
-                    harness_status = run_result.get("status", "unknown")
-                    return (
-                        job_slug,
-                        "incomplete_report",
-                        (
-                            f"Auditor run finished (harness status={harness_status}) "
-                            f"but {report_reason}. Re-run with --force."
-                        ),
-                    )
-
-                if report_path.exists():
-                    issues = validate_section_h_cost(
-                        report_path.read_text(encoding="utf-8"),
-                        gen_metrics,
-                    )
-                    for issue in issues:
-                        print_line(f"[{job_slug}] WARN section H: {issue}")
-
-                return job_slug, "ok", None
-            except Exception:
-                return job_slug, "error", traceback.format_exc()
-
-        dispatch_failures = 0
-
-        def _log_job_result(job_slug: str, status: str, err: str | None) -> None:
-            nonlocal dispatch_failures
-            if status in ("ok", "cached"):
-                print_line(f"[{job_slug}] {status}")
-                return
-            dispatch_failures += 1
-            if status == "error" and err:
-                print_line(f"[{job_slug}] ERROR:\n{err}")
-            elif err:
-                print(f"[{job_slug}] {status}: {err}", file=sys.stderr, flush=True)
-            else:
-                print(f"[{job_slug}] {status}", file=sys.stderr, flush=True)
-
-        if jobs_count == 1 or len(jobs) <= 1:
-            for auditor, target in jobs:
-                job_slug, status, err = _run(auditor, target)
-                _log_job_result(job_slug, status, err)
-        else:
-            with ThreadPoolExecutor(max_workers=jobs_count) as pool:
-                futures = {
-                    pool.submit(_run, a, t): f"{a['slug']}__auditing__{t['slug']}"
-                    for a, t in jobs
-                }
-                for fut in as_completed(futures):
-                    job_slug = futures[fut]
-                    _, status, err = fut.result()
-                    _log_job_result(job_slug, status, err)
-
-        if dispatch_failures:
+            ),
+        )
+        if dispatch.failures:
             return 1
 
     if enforce_coverage and not args.report_only:
-        gaps = find_audit_coverage_gaps(
+        message = coverage_failure_message(
             benchmark_results_dir=benchmark_results_dir,
             audit_results_dir=results_dir,
             auditor_slugs=[a["slug"] for a in auditors],
             required_targets=all_benchmark_targets,
         )
-        if gaps:
-            print(format_coverage_gaps(gaps), file=sys.stderr)
+        if message:
+            print(message, file=sys.stderr)
             return 1
 
     # Per-auditor comparison + regex rollup (including --report-only). Only
