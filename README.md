@@ -11,9 +11,9 @@ cross-run meta-analysis.
 | Field | Link |
 |-------|------|
 | Campaign | [`2026-05-ollama-cloud-v3.2`](data/campaigns/2026-05-ollama-cloud-v3.2/manifest.json) |
-| Meta-analysis | [`audit-reports/latest/meta-analysis.md`](audit-reports/latest/meta-analysis.md) |
-| Score index | [`audit-reports/codex_gpt_5_5/comparison.md`](audit-reports/codex_gpt_5_5/comparison.md) |
-| Generated code | [`results/`](results/) (28 targets listed in manifest) |
+| Meta-analysis | [`results/latest/meta-analysis.md`](results/latest/meta-analysis.md) |
+| Score index | [`results/run_01/audit-reports/codex_gpt_5_5/comparison.md`](results/run_01/audit-reports/codex_gpt_5_5/comparison.md) |
+| Generated code | [`results/run_01/projects/`](results/run_01/projects/) (28 targets listed in manifest) |
 | Auditor | `codex_gpt_5_5` |
 
 Headline from the latest meta-analysis: **best open-source model**
@@ -22,7 +22,7 @@ Headline from the latest meta-analysis: **best open-source model**
 pairings, dimension breakdown, cost, and calibration checks.
 
 Symlinks [`data/campaigns/latest`](data/campaigns/latest) and
-[`audit-reports/latest`](audit-reports/latest) are retargeted by
+[`results/latest`](results/latest) are retargeted by
 [`scripts/publish_campaign.py`](scripts/publish_campaign.py) on each publish — README
 links stay stable across campaigns.
 
@@ -30,28 +30,28 @@ links stay stable across campaigns.
 
 Every published campaign is documented in a manifest under `data/campaigns/<id>/`.
 The manifest lists target slugs and points at the audit tree; generated code lives
-under `results/` with the **same target slug**.
+under `results/<run_id>/projects/` with the **same target slug**.
 
 ```mermaid
 flowchart TB
   manifest["data/campaigns/latest/manifest.json"]
-  manifest --> meta["audit-reports/latest/meta-analysis.md"]
+  manifest --> meta["results/latest/meta-analysis.md"]
   manifest --> comparison["comparison.md per-target scores"]
   manifest --> targets["target slug: harness-model"]
-  targets --> results["results/harness-model/project/"]
-  targets --> report["audit-reports/auditor/harness-model/report.md"]
+  targets --> results["results/run_XX/projects/harness-model/project/"]
+  targets --> report["results/run_XX/audit-reports/auditor/harness-model/report.md"]
 ```
 
 **Join key:** target slug `<harness>-<model>` (e.g. `codex-deepseek_v4_pro_ollama_cloud`)
-is identical in `results/` and `audit-reports/<auditor>/`.
+is identical under `projects/` and `audit-reports/<auditor>/`.
 
-**Per-target index:** [`comparison.md`](audit-reports/codex_gpt_5_5/comparison.md) lists
+**Per-target index:** [`comparison.md`](results/run_01/audit-reports/codex_gpt_5_5/comparison.md) lists
 all targets with dimension scores — use it to find a run, then open `report.md` (rubric)
-or `results/<target>/project/` (source).
+or `results/run_01/projects/<target>/project/` (source).
 
 **Example:** `codex-deepseek_v4_pro_ollama_cloud` →
-[`report.md`](audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md) ·
-[`project/`](results/codex-deepseek_v4_pro_ollama_cloud/project/)
+[`report.md`](results/run_01/audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md) ·
+[`project/`](results/run_01/projects/codex-deepseek_v4_pro_ollama_cloud/project/)
 
 **Campaign history:** [`data/README.md`](data/README.md)
 
@@ -67,20 +67,20 @@ reports — it does not re-grade the generated code.
 ```mermaid
 flowchart LR
   brief["benchmark_prompt.txt"] --> gen["Phase 1+2 generation"]
-  gen --> results["results/harness-slug"]
+  gen --> results["results/run_XX/projects/harness-slug"]
   results --> audit["Role 1: run_audit.py"]
-  audit --> reports["audit-reports/auditor/target/report.md"]
+  audit --> reports["results/run_XX/audit-reports/auditor/target/report.md"]
   reports --> meta["Role 2: run_meta_analysis.py"]
-  meta --> verdict["meta-analysis.md"]
+  meta --> verdict["results/run_XX/meta-analysis.md"]
   results --> runtime["analyze_results_runtime.py"]
   runtime --> boot["boot / Docker / browser probe"]
 ```
 
 | Phase | Script | Input | Output |
 |-------|--------|-------|--------|
-| Generation | `run_benchmark.py` | [`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt) + optional follow-up | `results/<harness>-<slug>/project/` |
-| Role 1 audit | `run_audit.py` | Generated `project/` + [`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt) | `audit-reports/<auditor>/<target>/report.md` |
-| Role 2 meta-analysis | `run_meta_analysis.py` | All Role 1 reports + [`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt) | `audit-reports/<auditor>/meta-analysis.md` |
+| Generation | `run_benchmark.py` | [`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt) + optional follow-up | `results/<run_id>/projects/<harness>-<slug>/project/` |
+| Role 1 audit | `run_audit.py` | Generated `project/` + [`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt) | `results/<run_id>/audit-reports/<auditor>/<target>/report.md` |
+| Role 2 meta-analysis | `run_meta_analysis.py` | All Role 1 reports + [`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt) | `results/<run_id>/meta-analysis.md` |
 | Runtime verification (optional) | `analyze_results_runtime.py` | Generated `project/` | Boot/Docker/browser pass-fail under `_runtime_verification/` |
 
 ### Fixed task (generation)
@@ -165,7 +165,7 @@ Before audit dispatch, the harness writes `generation-metrics.json` from
 `report.md` copies those values verbatim (tokens, wall time, estimated USD).
 
 Example report:
-[`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md`](audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md).
+[`results/run_01/audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md`](results/run_01/audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md).
 
 ### Role 2 meta-analysis (cross-run verdicts)
 
@@ -173,7 +173,7 @@ Example report:
 ([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
 The meta-analyst reads every `report.md` under one auditor directory and produces
-[`meta-analysis.md`](audit-reports/latest/meta-analysis.md) with:
+[`meta-analysis.md`](results/latest/meta-analysis.md) with:
 
 - **Best harness overall** — opencode / codex / claude contest only (same model grid)
 - **Best model overall** — cross-harness averages on shared Ollama Cloud models
@@ -226,7 +226,7 @@ Extended notes and prompt version history:
 
 ## Safety
 
-Generated projects under `results/<harness>-<slug>/project/` are **untrusted code**.
+Generated projects under `results/<run_id>/projects/<harness>-<slug>/project/` are **untrusted code**.
 Prefer `scripts/analyze_results_runtime.py` over ad hoc execution. Do not run generated
 migrations, shell scripts, or installers against shared services. Secrets must stay in
 environment variables or ignored local files — rotate any credential that appears in logs.

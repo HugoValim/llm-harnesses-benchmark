@@ -8,48 +8,53 @@ This is a benchmark harness that drives autonomous coding sessions against a fix
 
 ## Common commands
 
-Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required). Runs write under `results/<harness>-<slug>/`.
+Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required) and a run directory with **`--run-id run_XX`**. Runs write under `results/<run_id>/projects/<harness>-<slug>/`.
+
+Run the full pipeline (build + audit + meta-analysis):
+```bash
+python scripts/run_full_benchmark.py --run-id run_02
+```
 
 Run the full opencode benchmark (default models from `config/models.json`):
 ```bash
-python scripts/run_benchmark.py --harness opencode
+python scripts/run_benchmark.py --run-id run_02 --harness opencode
 ```
 
 Run the full codex benchmark:
 ```bash
-python scripts/run_benchmark.py --harness codex
+python scripts/run_benchmark.py --run-id run_02 --harness codex
 ```
 
 Run a single model:
 ```bash
-python scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
+python scripts/run_benchmark.py --run-id run_02 --harness opencode --model claude_sonnet_4_6
 ```
 
 Run the Claude Code CLI benchmark:
 ```bash
-python scripts/run_benchmark.py --harness claude
+python scripts/run_benchmark.py --run-id run_02 --harness claude
 ```
 
 Run a specific Claude Code model:
 ```bash
-python scripts/run_benchmark.py --harness claude --model claude_sonnet_4_6
+python scripts/run_benchmark.py --run-id run_02 --harness claude --model claude_sonnet_4_6
 ```
 
 After a benchmark batch, the harness prunes Docker build cache and unused images by default (`docker builder prune -a` then `docker system prune -a`). Use `--no-docker-prune` to skip.
 
-Run the per-target audits over the shared Ollama Cloud results set (skips meta-analysis):
+Run the per-target audits over a run (skips meta-analysis):
 ```bash
-./scripts/run_ollama_cloud_audit.sh
+python scripts/run_audit.py --run-id run_02 --target all
 ```
 
 Run only the cross-auditor meta-analysis (assumes audits already ran):
 ```bash
-./scripts/run_ollama_cloud_meta_analysis.sh
+python scripts/run_meta_analysis.py --run-id run_02
 ```
 
-Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair). By default audits **all** discovered `results/` targets and exits non-zero if any lack a scored `report.md` (use `--no-enforce-coverage` to opt out):
+Run the per-project automated code audit (Role 1 — dispatches an LLM auditor against every `results/<run_id>/projects/<harness>-<slug>/project` and writes one rubric `report.md` per (auditor, target) pair). By default audits **all** discovered targets and exits non-zero if any lack a scored `report.md` (use `--no-enforce-coverage` to opt out):
 ```bash
-python scripts/run_audit.py
+python scripts/run_audit.py --run-id run_02
 ```
 
 Validate pricing table coverage and refresh OpenRouter drift checks:
@@ -58,28 +63,28 @@ python scripts/validate_pricing.py
 python scripts/fetch_openrouter_pricing.py --check
 ```
 
-Generation cost is computed at audit time from `docs/PRICING.md` into `audit-reports/<auditor>/<target>/generation-metrics.json` (not in benchmark `result.json`).
+Generation cost is computed at audit time from `docs/PRICING.md` into `results/<run_id>/audit-reports/<auditor>/<target>/generation-metrics.json` (not in benchmark `result.json`).
 
-Run the cross-auditor AI meta-analysis (Role 2 — reads every `audit-reports/<auditor>/<target>/report.md` and writes `audit-reports/meta-analysis.md` with best-harness / best-model / cost / dimension verdicts):
+Run the cross-auditor AI meta-analysis (Role 2 — reads every audit `report.md` and writes `results/<run_id>/meta-analysis.md` with best-harness / best-model / cost / dimension verdicts):
 ```bash
-python scripts/run_meta_analysis.py
+python scripts/run_meta_analysis.py --run-id run_02
 ```
 
 The legacy `scripts/run_audit_benchmark.py` is a deprecation shim that points at the two new entry points above.
 
 Rebuild audit comparison reports without re-running auditors:
 ```bash
-python scripts/run_audit.py --report-only
+python scripts/run_audit.py --run-id run_02 --report-only
 ```
 
 Validate generated apps boot correctly (venv, migrate, runserver, browser probe, Docker):
 ```bash
-python scripts/analyze_results_runtime.py
+python scripts/analyze_results_runtime.py --run-id run_02
 ```
 
-Validate one run only (`--only` matches the **result directory name**, e.g. `opencode-claude_sonnet_4_6`):
+Validate one run only (`--only` matches the **target directory name**, e.g. `opencode-claude_sonnet_4_6`):
 ```bash
-python scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
+python scripts/analyze_results_runtime.py --run-id run_02 --only opencode-claude_sonnet_4_6
 ```
 
 ## High-level architecture
@@ -124,9 +129,17 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 
 ### Output directories
 
-- `results/<harness>-<slug>/` — unified layout (`harness` is `opencode`, `codex`, or `claude`). Opencode/codex runs include `opencode-output.ndjson`, `opencode-stderr.log`, followup files, and `session-export.json` where applicable. Claude runs include `stream.ndjson`, `stderr.log`, `prompt.txt`.
-- `audit-reports/<auditor>/<target>/` — Audit output. Contains `report.md`, `result.json`, `stream.ndjson`, `stderr.log`.
-- `audit-reports/<auditor>/comparison.md` — Side-by-side audit score comparison.
+Run-scoped layout (see `scripts/benchmark/result_layout.py`):
+
+```text
+results/<run_id>/
+├── meta-analysis.md
+├── audit-reports/<auditor>/<target>/   # report.md, generation-metrics.json, …
+│   └── comparison.md
+└── projects/<harness>-<slug>/         # project/, result.json, stream logs
+```
+
+Legacy flat layout remains available when `--run-id` is omitted.
 
 ### Runtime verification (`scripts/analyze_results_runtime.py`)
 

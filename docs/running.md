@@ -17,17 +17,19 @@ Do not commit API keys, generated home config, or benchmark credentials.
 
 ## Quickstart
 
+Pick a run directory first (`--run-id run_02`). All phases share the same id.
+
 Run one benchmark model:
 
 ```bash
-python3 scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
+python3 scripts/run_benchmark.py --run-id run_02 --harness opencode --model claude_sonnet_4_6
 ```
 
 Validate a finished run (harness status + project scaffold):
 
 ```bash
-python3 scripts/validate_results.py --only opencode-claude_sonnet_4_6
-python3 scripts/validate_results.py --remove-on-fail
+python3 scripts/validate_results.py --run-id run_02 --only opencode-claude_sonnet_4_6
+python3 scripts/validate_results.py --run-id run_02 --remove-on-fail
 ```
 
 `run_benchmark.py` runs the same checks after each model and retries from scratch up to three times on failure (see `--max-validation-retries` / `--no-result-validation`).
@@ -35,13 +37,14 @@ python3 scripts/validate_results.py --remove-on-fail
 Validate generated projects boot locally and in Docker:
 
 ```bash
-python3 scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
+python3 scripts/analyze_results_runtime.py --run-id run_02 --only opencode-claude_sonnet_4_6
 ```
 
 Run one audit pass:
 
 ```bash
 python3 scripts/run_audit.py \
+  --run-id run_02 \
   --harness claude \
   --model claude_opus_4_7 \
   --target opencode-claude_sonnet_4_6
@@ -57,25 +60,26 @@ pytest scripts/tests
 
 ```bash
 # Full harness matrix (models from config/models.json)
-python3 scripts/run_benchmark.py --harness opencode
-python3 scripts/run_benchmark.py --harness codex
-python3 scripts/run_benchmark.py --harness claude
-python3 scripts/run_benchmark.py --harness cursor
+python3 scripts/run_benchmark.py --run-id run_02 --harness opencode
+python3 scripts/run_benchmark.py --run-id run_02 --harness codex
+python3 scripts/run_benchmark.py --run-id run_02 --harness claude
+python3 scripts/run_benchmark.py --run-id run_02 --harness cursor
 
 # Single model
-python3 scripts/run_benchmark.py --harness codex --model codex_gpt_5_5
+python3 scripts/run_benchmark.py --run-id run_02 --harness codex --model codex_gpt_5_5
 
 # Non-default registry
-python3 scripts/run_benchmark.py --harness codex --models-config config/models.json
+python3 scripts/run_benchmark.py --run-id run_02 --harness codex --models-config config/models.json
 
 # Force rerun
-python3 scripts/run_benchmark.py --harness opencode --model kimi_k2_6_ollama_cloud --force
+python3 scripts/run_benchmark.py --run-id run_02 --harness opencode --model kimi_k2_6_ollama_cloud --force
 ```
 
 Useful flags:
 
+- `--run-id run_XX` — run directory under `results/` (required for full pipeline)
 - `--model <slug>` — repeat for multiple models
-- `--results-dir <path>` — change output root
+- `--results-dir <path>` — legacy flat layout only (omit `--run-id`)
 - `--force` — rerun even when `result.json` has a terminal status
 - `--jobs N` — concurrent model runs (default 2; local GPU models share one lock)
 - `--max-validation-retries N` — wipe and retry on validation failure (default 3)
@@ -84,9 +88,9 @@ Useful flags:
 ## Result validation
 
 ```bash
-python3 scripts/validate_results.py
-python3 scripts/validate_results.py --only opencode-qwen3_5_ollama_cloud
-python3 scripts/validate_results.py --remove-on-fail
+python3 scripts/validate_results.py --run-id run_02
+python3 scripts/validate_results.py --run-id run_02 --only opencode-qwen3_5_ollama_cloud
+python3 scripts/validate_results.py --run-id run_02 --remove-on-fail
 ```
 
 ## Full pipeline
@@ -94,8 +98,8 @@ python3 scripts/validate_results.py --remove-on-fail
 Build matrix, audit, and meta-analysis in one flow:
 
 ```bash
-python3 scripts/run_full_benchmark.py --list-steps
-python3 scripts/run_full_benchmark.py -- --force
+python3 scripts/run_full_benchmark.py --run-id run_02 --list-steps
+python3 scripts/run_full_benchmark.py --run-id run_02 -- --force
 ```
 
 Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`
@@ -111,32 +115,33 @@ Environment variables:
 
 ```bash
 # Defaults: --harness codex --model codex_gpt_5_5
-python3 scripts/run_audit.py --target opencode-claude_sonnet_4_6
+python3 scripts/run_audit.py --run-id run_02 --target opencode-claude_sonnet_4_6
 
 python3 scripts/run_audit.py \
+  --run-id run_02 \
   --harness claude \
   --model claude_opus_4_7 \
   --target opencode-claude_sonnet_4_6
 ```
 
-Flags: `--target` (repeatable), `--benchmark-results-dir`, `--results-dir`, `--report-only`, `--jobs N`
+Flags: `--run-id`, `--target` (repeatable), `--benchmark-results-dir`, `--results-dir`, `--report-only`, `--jobs N`
 
 ## Meta-analysis (Role 2)
 
 ```bash
-python3 scripts/run_meta_analysis.py --meta-input-dir codex_gpt_5_5
+python3 scripts/run_meta_analysis.py --run-id run_02 --meta-input-dir codex_gpt_5_5
 
-python3 scripts/run_meta_analysis.py --harness claude --model claude_opus_4_7
+python3 scripts/run_meta_analysis.py --run-id run_02 --harness claude --model claude_opus_4_7
 ```
 
-Flags: `--meta-input-dir`, `--meta-output-dir`, `--force`, `--strict-meta-validation`
+Flags: `--run-id`, `--meta-input-dir`, `--meta-output-dir`, `--force`, `--strict-meta-validation`
 
 ## Runtime verification
 
 ```bash
-python3 scripts/analyze_results_runtime.py
-python3 scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
-python3 scripts/analyze_results_runtime.py --max-projects 1
+python3 scripts/analyze_results_runtime.py --run-id run_02
+python3 scripts/analyze_results_runtime.py --run-id run_02 --only opencode-claude_sonnet_4_6
+python3 scripts/analyze_results_runtime.py --run-id run_02 --max-projects 1
 ```
 
 ## Publish a campaign to git
@@ -145,6 +150,7 @@ After benchmark, audit, and meta-analysis complete:
 
 ```bash
 python3 scripts/publish_campaign.py \
+  --run-id run_02 \
   --campaign-id 2026-05-ollama-cloud-v3.2 \
   --label "Ollama Cloud grid — benchmark v3.2" \
   --auditor codex_gpt_5_5 \

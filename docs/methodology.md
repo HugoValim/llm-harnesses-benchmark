@@ -20,15 +20,16 @@ Prompt versions for older campaigns are recorded in each
 
 ## Published data layout
 
-Benchmark and audit outputs are written to `results/` and `audit-reports/` during
-runs. After a campaign completes, [`scripts/publish_campaign.py`](../scripts/publish_campaign.py)
-strips ephemeral artifacts and updates git allowlists. Full artifact rules and manifest
-schema: [`published-data.md`](published-data.md).
+Benchmark and audit outputs are written to `results/<run_id>/` during runs
+(`--run-id` on every pipeline command). After a campaign completes,
+[`scripts/publish_campaign.py`](../scripts/publish_campaign.py) strips ephemeral
+artifacts and updates git allowlists. Full artifact rules and manifest schema:
+[`published-data.md`](published-data.md).
 
 ## Latest published results
 
 See [README.md → Latest results](../README.md#latest-results) and
 [README.md → Artifact map](../README.md#artifact-map) for campaign links and how
-`results/` connects to `audit-reports/` via target slugs.
+`projects/` connects to `audit-reports/` via target slugs within each run directory.
 
 Campaign index: [`data/README.md`](../data/README.md)

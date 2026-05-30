@@ -4,7 +4,7 @@
 
 This repository is a Python benchmark harness for generating and auditing Django + Channels chat app implementations. Core harness code lives in `scripts/benchmark/`, with executable entrypoints in `scripts/` such as `scripts/run_benchmark.py`, `scripts/run_audit.py`, and `scripts/analyze_results_runtime.py`. Tests live in `scripts/tests/`.
 
-Configuration files are in `config/`; prompts used by benchmark and audit runs are in `prompts/`; maintainer docs live in `docs/`. Runtime outputs are written under `results/` and `audit-reports/` and should not be treated as source files.
+Configuration files are in `config/`; prompts used by benchmark and audit runs are in `prompts/`; maintainer docs live in `docs/`. Runtime outputs are written under `results/<run_id>/` and should not be treated as source files.
 
 ## Build, Test, and Development Commands
 
@@ -32,4 +32,4 @@ Pull requests should describe changed harness behavior, list verification comman
 
 ## Security & Configuration Tips
 
-Never commit API keys, generated home configs, or benchmark credentials. Treat `config/opencode.benchmark.json` as generated. Be careful with `results/<harness>-<slug>/project` contents: they are model-generated projects and may contain unsafe commands or dependency choices.
+Never commit API keys, generated home configs, or benchmark credentials. Treat `config/opencode.benchmark.json` as generated. Be careful with `results/<run_id>/projects/<harness>-<slug>/project` contents: they are model-generated projects and may contain unsafe commands or dependency choices.

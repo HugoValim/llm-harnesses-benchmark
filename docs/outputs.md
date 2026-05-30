@@ -3,12 +3,39 @@
 Runtime paths used during benchmark runs. For git-published campaign artifacts see
 [`published-data.md`](published-data.md).
 
-## Benchmark results
+## Run-scoped layout (current)
+
+Every campaign uses an explicit run directory (`--run-id run_XX`):
+
+```text
+results/
+└── run_XX/
+    ├── meta-analysis.md
+    ├── runtime_verification_summary.json
+    ├── ollama_warmup.json
+    ├── audit-reports/
+    │   └── <auditor_slug>/
+    │       ├── comparison.md
+    │       ├── _meta-analysis-runs/
+    │       └── <harness>-<slug>/
+    │           ├── report.md
+    │           ├── generation-metrics.json
+    │           └── result.json
+    └── projects/
+        └── <harness>-<slug>/
+            ├── project/
+            ├── result.json
+            └── stream logs
+```
+
+Stable README links use [`results/latest`](../../results/latest) (symlink retargeted on publish).
+
+## Benchmark results (`projects/`)
 
 Each benchmark run writes to:
 
 ```text
-results/<harness>-<slug>/
+results/<run_id>/projects/<harness>-<slug>/
 ```
 
 Common files:
@@ -28,13 +55,13 @@ Generated projects may contain unsafe commands. Prefer harness scripts for verif
 Per-project artifacts:
 
 ```text
-results/<harness>-<slug>/project/_runtime_verification/
+results/<run_id>/projects/<harness>-<slug>/project/_runtime_verification/
 ```
 
 Aggregate summary:
 
 ```text
-results/runtime_verification_summary.json
+results/<run_id>/runtime_verification_summary.json
 ```
 
 ## Audit reports
@@ -42,7 +69,7 @@ results/runtime_verification_summary.json
 Each `(auditor, target)` pair writes to:
 
 ```text
-audit-reports/<auditor_slug>/<target_slug>/
+results/<run_id>/audit-reports/<auditor_slug>/<target_slug>/
 ```
 
 Common files:
@@ -55,12 +82,21 @@ Common files:
 Auditor-level outputs:
 
 ```text
-audit-reports/<auditor_slug>/comparison.md
-audit-reports/<auditor_slug>/meta-analysis.md
-audit-reports/latest/meta-analysis.md   # symlink → current auditor dir
+results/<run_id>/audit-reports/<auditor_slug>/comparison.md
+results/<run_id>/meta-analysis.md
+results/latest/meta-analysis.md   # symlink → current run dir
 ```
 
 Comparison and meta-analysis files are generated — do not hand-edit.
+
+## Legacy flat layout
+
+Omitting `--run-id` keeps the older flat trees for one-off dev:
+
+- `results/<harness>-<slug>/`
+- `audit-reports/<auditor>/<target>/`
+
+New full-pipeline runs require `--run-id`.
 
 ## Published campaigns
 
@@ -69,5 +105,5 @@ After `publish_campaign.py`, git tracks a curated subset documented in
 
 ## Cleanup
 
-Unpublished `results/` and `audit-reports/` trees can be large (venv, stream logs).
+Unpublished `results/` trees can be large (venv, stream logs).
 Review before sharing outside the machine. Do not commit secrets or generated auth files.

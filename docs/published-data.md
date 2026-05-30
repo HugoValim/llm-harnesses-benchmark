@@ -1,10 +1,10 @@
 # Published campaign data
 
-Benchmark and audit outputs are written to `results/` and `audit-reports/` during
-runs. By default those trees are **gitignored**. After a campaign completes, run
-[`scripts/publish_campaign.py`](../scripts/publish_campaign.py) to strip ephemeral
-artifacts, write a campaign manifest, and update `.gitignore` allowlists so curated
-data can be committed.
+Benchmark and audit outputs are written to `results/<run_id>/` during runs.
+By default those trees are **gitignored**. After a campaign completes, run
+[`scripts/publish_campaign.py`](../scripts/publish_campaign.py) with `--run-id`
+to strip ephemeral artifacts, write a campaign manifest, and update `.gitignore`
+allowlists so curated data can be committed.
 
 ## Layout
 
@@ -16,36 +16,43 @@ data/
     │   └── manifest.json                  # metadata + target list
     └── latest -> 2026-05-ollama-cloud-v3.2
 
-audit-reports/
-├── latest -> codex_gpt_5_5                # stable README link target
-└── codex_gpt_5_5/
-    ├── meta-analysis.md
-    ├── comparison.md
-    └── <harness>-<model>/
-        ├── report.md
-        ├── generation-metrics.json
-        └── result.json
-
 results/
-└── <harness>-<model>/
-    ├── result.json
-    ├── prompt.txt
-    └── project/                           # trimmed source only
+├── latest -> run_01                       # stable README link target
+└── run_01/
+    ├── meta-analysis.md
+    ├── audit-reports/
+    │   └── codex_gpt_5_5/
+    │       ├── comparison.md
+    │       └── <harness>-<model>/
+    │           ├── report.md
+    │           ├── generation-metrics.json
+    │           └── result.json
+    └── projects/
+        └── <harness>-<model>/
+            ├── result.json
+            ├── prompt.txt
+            └── project/                   # trimmed source only
 ```
 
-Harness scripts keep writing to `results/` and `audit-reports/` — no path changes
-required. Campaign manifests document which paths are published.
+Harness scripts require `--run-id run_XX` for new full-pipeline runs. Campaign
+manifests document which paths are published.
 
 ## What is committed
 
-### Audit tree (`audit-reports/<auditor>/`)
+### Audit tree (`results/<run_id>/audit-reports/<auditor>/`)
 
 | Included | Excluded |
 |----------|----------|
-| `meta-analysis.md`, `comparison.md` | `_meta-analysis-runs/` |
+| `comparison.md` | `_meta-analysis-runs/` |
 | Per target: `report.md`, `generation-metrics.json`, `result.json` | `stream.ndjson`, `stderr.log`, `prompt.txt`, `AGENTS.md`, `CLAUDE.md` |
 
-### Benchmark tree (`results/<target>/`)
+### Run root
+
+| Included | Excluded |
+|----------|----------|
+| `meta-analysis.md` | — |
+
+### Benchmark tree (`results/<run_id>/projects/<target>/`)
 
 | Included | Excluded |
 |----------|----------|
@@ -63,6 +70,7 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
   "id": "2026-05-ollama-cloud-v3.2",
   "label": "Ollama Cloud grid — benchmark v3.2",
   "date": "2026-05-29",
+  "run_id": "run_01",
   "prompt_versions": {
     "benchmark": "benchmark-v3.2",
     "benchmark_followup": "benchmark-followup-v3.2",
@@ -70,9 +78,9 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
     "meta": "meta-v3.11"
   },
   "auditor_slug": "codex_gpt_5_5",
-  "meta_analysis": "audit-reports/codex_gpt_5_5/meta-analysis.md",
-  "audit_root": "audit-reports/codex_gpt_5_5",
-  "benchmark_results_root": "results",
+  "meta_analysis": "results/run_01/meta-analysis.md",
+  "audit_root": "results/run_01/audit-reports/codex_gpt_5_5",
+  "benchmark_results_root": "results/run_01/projects",
   "targets": ["codex-deepseek_v4_pro_ollama_cloud", "..."],
   "harnesses": ["claude", "codex", "cursor", "opencode"],
   "models_config_sha256": "...",
@@ -84,6 +92,7 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
 
 ```bash
 python3 scripts/publish_campaign.py \
+  --run-id run_02 \
   --campaign-id <YYYY-MM-short-label> \
   --label "<human-readable label>" \
   --auditor <auditor_slug> \
@@ -93,21 +102,21 @@ python3 scripts/publish_campaign.py \
 
 The script:
 
-1. Discovers targets from `audit-reports/<auditor>/*/report.md`
-2. Strips ephemeral directories from each `results/<target>/project/`
+1. Discovers targets from `results/<run_id>/audit-reports/<auditor>/*/report.md`
+2. Strips ephemeral directories from each `results/<run_id>/projects/<target>/project/`
 3. Writes `data/campaigns/<id>/manifest.json`
 4. Regenerates the `# BEGIN published-campaigns` block in `.gitignore`
-5. Updates symlinks `data/campaigns/latest` and `audit-reports/latest`
+5. Updates symlinks `data/campaigns/latest` and `results/latest`
 6. Scans publishable text files for obvious secret patterns (warnings only unless `--fail-on-secrets`)
 
 Then commit the manifest, symlinks, `.gitignore` block, audit tree, and listed result dirs.
 
 ## Multiple campaigns
 
-Older campaigns remain in git under their auditor directories. Update
+Older campaigns remain in git under their run directories. Update
 [`data/README.md`](../data/README.md) when adding a new row to the campaign table.
 Running `publish_campaign.py` retargets `latest` symlinks; the README link
-[`audit-reports/latest/meta-analysis.md`](../audit-reports/latest/meta-analysis.md)
+[`results/latest/meta-analysis.md`](../results/latest/meta-analysis.md)
 stays stable across campaigns.
 
 ## Safety
