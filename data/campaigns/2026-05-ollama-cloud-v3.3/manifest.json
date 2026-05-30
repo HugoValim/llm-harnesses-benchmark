@@ -1,0 +1,26 @@
+{
+  "id": "2026-05-ollama-cloud-v3.3",
+  "label": "Ollama Cloud grid — benchmark v3.3 (D9 hardening)",
+  "date": "2026-05-30",
+  "prompt_versions": {
+    "benchmark": "benchmark-v3.3",
+    "benchmark_followup": "benchmark-followup-v3.3",
+    "audit": "audit-v3.9",
+    "meta": "meta-v3.13"
+  },
+  "auditor_slug": "codex_gpt_5_5",
+  "meta_analysis": null,
+  "audit_root": null,
+  "benchmark_results_root": null,
+  "targets": [],
+  "harnesses": [
+    "opencode",
+    "codex",
+    "claude",
+    "cursor"
+  ],
+  "models_config_sha256": null,
+  "harnesses_config_sha256": null,
+  "run_id": null,
+  "notes": "Use for new runs after D9 prompt/rubric bump. v3.2 cohort remains under 2026-05-ollama-cloud-v3.2."
+}
