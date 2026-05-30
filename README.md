@@ -169,23 +169,23 @@ Example report:
 
 ### Role 2 meta-analysis (cross-run verdicts)
 
-**Prompt version:** `meta-v3.11`
+**Prompt version:** `meta-v3.12`
 ([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
 The meta-analyst reads every `report.md` under one auditor directory and produces
 [`meta-analysis.md`](results/latest/meta-analysis.md) with:
 
 - **Best harness overall** — opencode / codex / claude contest only (same model grid)
-- **Best model overall** — cross-harness averages on shared Ollama Cloud models
-- **Open-source model ranking** — Ollama Cloud slugs averaged across contest harnesses
+- **Best model overall** — peak Phase-1 score (rank-1 contest-harness run from **All runs ranking**)
+- **Best open-source model overall** — Ollama Cloud slugs averaged across contest harnesses
 - **Cross-harness pairings** — same model, different harness (dimension deltas)
 - **Critical-failure inventory** — universal vs harness-attributable patterns
 - **Calibration check** — rubric sanity (e.g. D9 production hardening floor)
 
-Numeric tables in sections 2, 2a, 3, and 4 are **precomputed** by
+Section 1 verdict bullets and numeric tables in sections 2, 2a, 3, and 4 are **precomputed** by
 [`scripts/benchmark/audit_rollup.py`](scripts/benchmark/audit_rollup.py) before LLM
-dispatch. The meta-analyst must copy rollup values exactly; it reads individual reports
-only for citations and narrative.
+dispatch. The meta-analyst copies rollup values exactly (including the **Executive summary skeleton**); it reads individual reports
+only for citations and narrative in later sections.
 
 **Excluded from harness contest:**
 

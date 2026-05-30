@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.11
+Prompt-Version: meta-v3.12
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -20,14 +20,14 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 ## Precomputed rollup (authoritative for numeric tables)
 
-The harness computed this rollup from every `report.md` under the input directories. **Section 2, 2a, 3, 4, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive run totals, harness averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
+The harness computed this rollup from every `report.md` under the input directories. **Section 1 verdict bullets, section 2, 2a, 3, 4, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive run totals, harness averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and section 6 cost/performance fields.
 
 {precomputed_rollup}
 
 Path prefixes identify how each target was generated:
 
 - **Harness contest** (sections 1, 3, 4, 5 per-harness averages, 7 “two of three”): `opencode`, `codex`, `claude` only. Strip the prefix to get the underlying target model slug. Same model slug under different contest harnesses = paired comparison (same model, different agent harness).
-- **Cursor agent runs** (model-only, not a harness entrant): `cursor-<model_slug>` is a Cursor Agent CLI run of that model. Copy numeric rows from the rollup **Cursor agent models** table into the appendix. Never rank `cursor` in section 3 or crown it as best harness. Cursor runs appear in section 2 **All runs ranking** but do not qualify for the best-model verdict.
+- **Cursor agent runs** (model-only, not a harness entrant): `cursor-<model_slug>` is a Cursor Agent CLI run of that model. Copy numeric rows from the rollup **Cursor agent models** table into the appendix. Never rank `cursor` in section 3 or crown it as best harness. Cursor runs appear in section 2 **All runs ranking**; cite them in section 1 only when the skeleton includes a **Cursor agent runs** bullet.
 
 When more than one auditor directory is listed, the same `(harness, model_slug)` cell may have multiple `report.md` files (one per auditor). Treat each as an independent sample for that cell. When ranking models or contest harnesses, AVERAGE the totals across auditors for that cell and report the cross-auditor std-dev so auditor disagreement is visible. Keep `auditor` as an extra column wherever per-cell data is shown.
 
@@ -42,7 +42,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 ## Workflow
 
-1. Read the **Precomputed rollup** above. Copy its all-runs ranking, harness CLI versions table, and statistical-summary averages into your output — do not invent alternate totals.
+1. Read the **Precomputed rollup** above. Copy the **Executive summary skeleton** verdict bullets into section 1, then the all-runs ranking, harness CLI versions table, and statistical-summary averages — do not invent alternate totals.
 2. For citations and narrative only, glob `*/report.md` under each input directory. Read files selectively when you need report:line evidence; do not re-glob the same path twice.
 3. For each report you read, extract when needed:
    - Per-dimension scores from section B (`D1..D10`, each `score/max`)
@@ -66,16 +66,47 @@ Write a single markdown file to: **{output_path}**
 
 Use the Write tool with that exact absolute path. The file MUST contain these sections, in order. Prose stays tight; tables are unlimited and preferred for numeric data. No document-level word cap.
 
-### 1. Executive summary (4-6 sentences)
+### 1. Executive summary (bullet list)
 
-State the verdict explicitly:
-- **Best harness overall** (opencode/codex/claude contest only): `<name>` with avg total X.X/100 (N runs, std dev S.S). One-sentence why. If rollup **Cursor agent models** has rows, one clause that those runs are model benchmarks excluded from this verdict.
-- **Best model overall**: `<model_slug>` with avg total X.X/100 across N contest harnesses (from **Cross-harness model comparison**). One-sentence why. Do not crown the top single run if it lacks cross-harness coverage.
-- **Best open-source model**: `<model_slug>` with cross-harness avg X.X/100 across N contest harnesses (from section 2a **Ollama model ranking**). One-sentence why.
-- Single most important harness-attributable pattern (cite a report:line).
-- Single most important universal blind spot (cite a dimension + the dimension's per-harness averages).
-- **Harness CLI versions**: when the rollup **Harness CLI versions** table shows `mixed-version` for any harness, state in one clause that the cohort spans multiple `<harness>` CLI builds and cross-harness rankings for that harness are caveated (see appendix).
-- Calibration verdict in one clause (PASS / WARN / FAIL — defined in section 8).
+Use a **markdown bullet list** (`- **Label**: …`), **not** a single paragraph. Target 6–9 bullets total.
+
+**Verdict bullets — copy from rollup **Executive summary skeleton** verbatim** (numbers and slugs):
+
+- **Best harness overall** — contest harness winner with avg, N, std dev; runners-up and tie note when present.
+- **Best model overall** — rank-1 **contest-harness** run from **All runs ranking** (peak Phase-1 score). Never substitute a cross-harness Ollama average here.
+- **Best open-source model overall** — rank-1 from **Ollama model ranking** (shared Ollama Cloud grid). Always a separate bullet from best model overall.
+- **Cursor agent runs** — only when the skeleton includes this bullet.
+- **Harness CLI versions** — only when the skeleton includes this bullet (rollup shows `mixed-version` for a contest harness).
+- **Universal blind spot candidate** — copy from skeleton when present.
+
+**Narrative bullets (you write; no citations in section 1):**
+
+- Exactly one harness-attributable pattern (defer evidence to section 5 or 7).
+- Exactly one universal blind spot expansion if needed beyond the skeleton line (dimension + per-harness avgs from **Dimension breakdown**).
+- Exactly one calibration clause: PASS / WARN / FAIL (section 8) plus one reason.
+
+**DO NOT in section 1:**
+
+- No `report.md:line` citations.
+- No exclusion-methodology prose (single-harness leaders, suppression rules — sections 2–3).
+- No harness CLI bullet when the skeleton omits it (all `unknown`, no `mixed-version`).
+- Do not crown a cross-harness Ollama average as best model overall when a higher single run exists in **All runs ranking**.
+
+**Bad example** (one paragraph — never do this):
+
+> **Best harness overall** … **Best model overall**: `deepseek_v4_pro_ollama_cloud` with avg 74.0 … after suppressing single-harness leaders … (`report.md:10`).
+
+**Good example** (copy skeleton, add three narrative bullets):
+
+```markdown
+- **Best harness overall**: `codex` — 61.1/100 avg (N=8, std dev 17.7). Runners-up: opencode 60.0, claude 59.0. *Statistical tie* (margin ≤3 on N≤8).
+- **Best model overall**: `codex_gpt_5_5` — 86.0/100 under `codex` (top contest-harness run; single-harness anchor — not on the shared Ollama grid).
+- **Best open-source model overall**: `deepseek_v4_pro_ollama_cloud` — 74.0/100 cross-harness avg across 3 contest harnesses (std dev 2.6; best on the shared Ollama Cloud grid).
+- **Cursor agent runs**: N=2, avg 81.5 — model-only benchmarks; excluded from harness contest.
+- **Universal blind spot candidate**: D9 Production hardening — all avg 0.4/10; claude 1.2 / codex 0.0 / opencode 0.1.
+- **Harness-attributable pattern**: opencode leads on D8 secrets/config vs claude/codex (see section 5).
+- **Calibration**: **FAIL** — D9 floors out; median D10 saturated at 8.0 (section 8).
+```
 
 ### 2. Best model overall
 
@@ -86,9 +117,10 @@ Rules:
 - Copy rows from the precomputed **All runs ranking** table exactly — same rank order, harness, model slug, total, and tier.
 - Do **not** aggregate by model slug. Do not add avg/std/best/worst/verdict columns.
 - Includes contest harness runs (opencode, codex, claude) and cursor-agent runs.
-- **Best-model verdict** (executive summary + one sentence below the table): crown a **model slug** with valid totals under >=2 contest harnesses (cross-harness average from **Cross-harness model comparison**), not the top single run. Single-harness leaders and cursor-only runs may top the table but must not win the verdict.
-- If the top two eligible models differ by <=3 points and N<=5 for either contender, call it a tie instead of a winner.
-- Below the table, one sentence naming the winner and citing the report:line that best illustrates its strength.
+- Below the table, **two sentences** (no citations required):
+  1. **Best model overall** = rank-1 contest-harness row from this table (peak Phase-1 score), even when it is a single-harness anchor such as `codex_gpt_5_5`.
+  2. **Best open-source model overall** = rank-1 from section 2a **Ollama model ranking** (cross-harness avg on the shared Ollama Cloud grid) — a different question from peak single-run score.
+- Cross-harness comparability for shared-grid models belongs in sections 2a and 4, not as a substitute for the peak-scorer verdict.
 
 ### 2a. Open-source (Ollama) model ranking
 
@@ -253,9 +285,10 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
-  - Best-model claim requires the chosen model to have valid totals under >=2 **contest** harnesses. Cursor-only and single-harness-only models never qualify. If no model qualifies, state "no model has cross-harness coverage — verdict suppressed" and stop ranking models.
-  - Best-harness claim is among opencode/codex/claude only; `cursor` is never eligible. Requires the chosen harness to have >=2 model slugs with valid totals. If no harness qualifies, state "insufficient cross-model coverage — harness verdict suppressed".
-  - When two contenders sit within 3 points of each other on a small sample (N<=5), call it a tie and explain.
+  - **Best model overall** (section 1 + section 2) = rank-1 contest-harness run from **All runs ranking**, including single-harness anchors. Do not replace it with a cross-harness Ollama average.
+  - **Best open-source model overall** (section 1 + section 2a) = rank-1 from **Ollama model ranking** (`*_ollama_cloud`, >=2 contest harnesses). Always distinct from best model overall.
+  - Best-harness claim is among opencode/codex/claude only; `cursor` is never eligible. Requires the chosen harness to have >=2 model slugs with valid totals in the cross-harness cohort. If no harness qualifies, state "insufficient cross-model coverage — harness verdict suppressed".
+  - When two harness contenders sit within 3 points of each other on a small sample (N<=8), call it a tie and explain.
 - **Calibration check is non-blocking**: record the verdict, recommend rubric changes, and continue. Do NOT refuse to publish on FAIL.
 - **Prose tight, tables unlimited**: keep prose between tables to <=2 sentences each. No document-level word cap; the appendix in particular should be comprehensive.
 - **Write the output file with the Write tool to the exact path above**. Do not echo the contents into your final message — only write them to disk. End your turn after the Write succeeds with a single line of acknowledgement.
