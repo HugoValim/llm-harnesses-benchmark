@@ -309,14 +309,15 @@ def strip_campaign_results(repo_root: Path, manifest: CampaignManifest) -> dict[
 
 def render_gitignore_block(manifest: CampaignManifest) -> str:
     """Render the generated .gitignore section for one published campaign."""
+    results_root = manifest.benchmark_results_root
     lines = [
         GITIGNORE_BEGIN,
         f"# Campaign: {manifest.id} ({manifest.label})",
         "",
         "# Default: ignore all runtime outputs",
-        f"/{manifest.benchmark_results_root}/*/",
+        f"/{results_root}/*/",
         "/results-claude-code/*/",
-        f"/{manifest.benchmark_results_root}/runtime_verification_summary.json",
+        f"/{results_root}/runtime_verification_summary.json",
         "/audit-reports/*/",
         "",
         f"# Published audit tree: {manifest.audit_root}",
@@ -326,41 +327,47 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
     for name in sorted(AUDIT_EXCLUDE_FILE_NAMES):
         lines.append(f"/{manifest.audit_root}/**/{name}")
 
-    lines.append("")
-    lines.append("# Published benchmark targets")
+    lines.extend(
+        [
+            "",
+            "# Published benchmark targets (allowlist)",
+        ]
+    )
     for target in manifest.targets:
-        target_root = f"{manifest.benchmark_results_root}/{target}"
-        lines.extend(
-            [
-                f"!/{target_root}/",
-                f"/{target_root}/**/*.ndjson",
-                f"/{target_root}/stderr.log",
-                f"/{target_root}/followup-stderr.log",
-                f"/{target_root}/followup-opencode-stderr.log",
-                f"/{target_root}/opencode-stderr.log",
-                f"/{target_root}/session-export.json",
-                f"/{target_root}/session-export.stderr.log",
-                f"/{target_root}/project/.venv/",
-                f"/{target_root}/project/.venv*/",
-                f"/{target_root}/project/venv/",
-                f"/{target_root}/project/node_modules/",
-                f"/{target_root}/project/twcli/",
-                f"/{target_root}/project/tailwindcss/",
-                f"/{target_root}/project/tailwindcss-*",
-                f"/{target_root}/project/staticfiles/",
-                f"/{target_root}/project/.git/",
-                f"/{target_root}/project/.mypy_cache/",
-                f"/{target_root}/project/.ruff_cache/",
-                f"/{target_root}/project/.coverage",
-                f"/{target_root}/project/_runtime_verification/",
-                f"/{target_root}/project/__pycache__/",
-                f"/{target_root}/project/.pytest_cache/",
-                f"/{target_root}/project/db.sqlite3",
-                f"/{target_root}/project/.env",
-                f"/{target_root}/project/*.log",
-                "",
-            ]
-        )
+        lines.append(f"!/{results_root}/{target}/")
+
+    lines.extend(
+        [
+            "",
+            "# Shared exclusions for published benchmark targets",
+            f"/{results_root}/**/*.ndjson",
+            f"/{results_root}/**/stderr.log",
+            f"/{results_root}/**/followup-stderr.log",
+            f"/{results_root}/**/followup-opencode-stderr.log",
+            f"/{results_root}/**/opencode-stderr.log",
+            f"/{results_root}/**/session-export.json",
+            f"/{results_root}/**/session-export.stderr.log",
+            f"/{results_root}/**/project/.venv/",
+            f"/{results_root}/**/project/.venv*/",
+            f"/{results_root}/**/project/venv/",
+            f"/{results_root}/**/project/node_modules/",
+            f"/{results_root}/**/project/twcli/",
+            f"/{results_root}/**/project/tailwindcss/",
+            f"/{results_root}/**/project/{TAILWINDCSS_BINARY_PREFIX}*",
+            f"/{results_root}/**/project/staticfiles/",
+            f"/{results_root}/**/project/.git/",
+            f"/{results_root}/**/project/.mypy_cache/",
+            f"/{results_root}/**/project/.ruff_cache/",
+            f"/{results_root}/**/project/.coverage",
+            f"/{results_root}/**/project/_runtime_verification/",
+            f"/{results_root}/**/project/__pycache__/",
+            f"/{results_root}/**/project/.pytest_cache/",
+            f"/{results_root}/**/project/db.sqlite3",
+            f"/{results_root}/**/project/.env",
+            f"/{results_root}/**/project/**/*.log",
+            "",
+        ]
+    )
 
     lines.append(GITIGNORE_END)
     return "\n".join(lines) + "\n"

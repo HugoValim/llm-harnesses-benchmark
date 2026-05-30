@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.publish_campaign import (  # noqa: E402
     GITIGNORE_BEGIN,
     GITIGNORE_END,
+    TAILWINDCSS_BINARY_PREFIX,
     CampaignManifest,
     build_manifest,
     discover_targets_from_auditor,
@@ -107,10 +108,11 @@ class TestGitignoreBlock(unittest.TestCase):
         self.assertIn(GITIGNORE_END, block)
         self.assertIn("!/audit-reports/codex_gpt_5_5/", block)
         self.assertIn("!/results/codex-demo/", block)
-        self.assertIn("results/codex-demo/followup-stderr.log", block)
-        self.assertIn("results/codex-demo/project/.env", block)
-        self.assertIn("results/codex-demo/project/tailwindcss-*", block)
-        self.assertIn("results/codex-demo/project/.venv/", block)
+        self.assertIn("/results/**/followup-stderr.log", block)
+        self.assertIn("/results/**/project/.env", block)
+        self.assertIn(f"/results/**/project/{TAILWINDCSS_BINARY_PREFIX}*", block)
+        self.assertIn("/results/**/project/.venv/", block)
+        self.assertNotIn("results/codex-demo/followup-stderr.log", block)
 
     def test_update_gitignore_replaces_existing_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
