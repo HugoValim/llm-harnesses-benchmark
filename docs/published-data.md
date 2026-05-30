@@ -72,9 +72,9 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
   "date": "2026-05-29",
   "run_id": "run_01",
   "prompt_versions": {
-    "benchmark": "benchmark-v3.2",
-    "benchmark_followup": "benchmark-followup-v3.2",
-    "audit": "audit-v3.8",
+    "benchmark": "benchmark-v3.3",
+    "benchmark_followup": "benchmark-followup-v3.3",
+    "audit": "audit-v3.9",
     "meta": "meta-v3.11"
   },
   "auditor_slug": "codex_gpt_5_5",

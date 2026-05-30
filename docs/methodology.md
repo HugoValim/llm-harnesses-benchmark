@@ -10,10 +10,10 @@ See [`CONTEXT.md`](../CONTEXT.md) for vocabulary (`harness`, `target`, `auditor`
 
 | Phase | Version | Prompt file |
 |-------|---------|-------------|
-| Generation | `benchmark-v3.2` | [`prompts/benchmark_prompt.txt`](../prompts/benchmark_prompt.txt) |
-| Generation follow-up | `benchmark-followup-v3.2` | [`prompts/benchmark_followup_prompt.txt`](../prompts/benchmark_followup_prompt.txt) |
-| Role 1 audit | `audit-v3.8` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
-| Role 2 meta-analysis | `meta-v3.11` | [`prompts/audit_meta_analysis_prompt.txt`](../prompts/audit_meta_analysis_prompt.txt) |
+| Generation | `benchmark-v3.3` | [`prompts/benchmark_prompt.txt`](../prompts/benchmark_prompt.txt) |
+| Generation follow-up | `benchmark-followup-v3.3` | [`prompts/benchmark_followup_prompt.txt`](../prompts/benchmark_followup_prompt.txt) |
+| Role 1 audit | `audit-v3.9` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
+| Role 2 meta-analysis | `meta-v3.13` | [`prompts/audit_meta_analysis_prompt.txt`](../prompts/audit_meta_analysis_prompt.txt) |
 
 Prompt versions for older campaigns are recorded in each
 [`data/campaigns/<id>/manifest.json`](../data/campaigns/2026-05-ollama-cloud-v3.2/manifest.json).
