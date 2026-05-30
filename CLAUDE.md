@@ -6,6 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a benchmark harness that drives autonomous coding sessions against a fixed Python (Django + Channels chat SPA against a local Ollama server) brief and compares the resulting projects across cloud LLMs. It is the sibling project to the Rails-targeting `llm-coding-benchmark` — same harness architecture, different application target.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub repo `HugoValim/llm-harnesses-benchmark`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The canonical triage state labels are `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo with root `CONTEXT.md`; no ADR directory exists currently. See `docs/agents/domain.md`.
+
 ## Common commands
 
 Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required) and a run directory with **`--run-id run_XX`**. Runs write under `results/<run_id>/projects/<harness>-<slug>/run_XX/` (one folder per replicate; count from `num_runs` in `config/models.json`).
