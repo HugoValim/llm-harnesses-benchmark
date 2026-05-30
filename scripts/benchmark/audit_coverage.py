@@ -9,18 +9,7 @@ from pathlib import Path
 from benchmark.audit_report import audit_report_is_complete
 from benchmark.result_layout import audit_report_md, audit_result_json
 from benchmark.audit_finalize import INCOMPLETE_REPORT_STATUS
-from benchmark.util import USAGE_LIMIT_REACHED
-
-_RETRYABLE_AUDIT_STATUSES = frozenset(
-    {
-        USAGE_LIMIT_REACHED,
-        INCOMPLETE_REPORT_STATUS,
-        "timeout",
-        "failed",
-        "error",
-        "stalled",
-    }
-)
+from benchmark.run_status import audit_status_retryable
 
 
 @dataclass(frozen=True)
@@ -50,7 +39,7 @@ def audit_dispatch_needed(
     except (json.JSONDecodeError, OSError):
         return True
     status = payload.get("status")
-    if status in _RETRYABLE_AUDIT_STATUSES:
+    if audit_status_retryable(status, incomplete_status=INCOMPLETE_REPORT_STATUS):
         return True
     return False
 

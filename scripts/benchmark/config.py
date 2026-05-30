@@ -9,8 +9,8 @@ from typing import Any
 
 from benchmark.backends import LocalModelBackend
 from benchmark.rate_limit import RateLimitWaitPolicy
+from benchmark.run_status import TERMINAL_STATUSES
 from benchmark.util import (
-    USAGE_LIMIT_REACHED,
     clone_json,
     count_files,
     count_files_matching,
@@ -42,14 +42,6 @@ OPENCODE_YOLO_PERMISSION = {
     "todowrite": {"*": "allow"},
     "webfetch": {"*": "allow"},
     "websearch": {"*": "allow"},
-}
-
-TERMINAL_STATUSES = {
-    "completed",
-    "completed_with_errors",
-    "failed",
-    "timeout",
-    USAGE_LIMIT_REACHED,
 }
 
 _OLLAMA_CLOUD_EXPAND_HARNESSES = frozenset({"claude", "codex", "opencode", "ollama"})
@@ -566,5 +558,4 @@ def mark_model_skip_by_default(config_path: Path, model_slug: str, note: str) ->
         return False
     save_json_preserve_order(config_path, payload)
     return True
-
 

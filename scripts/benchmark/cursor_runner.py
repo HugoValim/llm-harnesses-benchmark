@@ -25,6 +25,7 @@ from benchmark.timeouts import (
 )
 from benchmark.config import _resolve_model_num_runs
 from benchmark.replicates import resolve_result_dir
+from benchmark.run_status import derive_cli_stream_status
 from benchmark.target_lifecycle import (
     PhaseRunRequest,
     TargetRunLifecycle,
@@ -258,25 +259,21 @@ def _phase_status(
     stream_result: CursorStreamResult,
     final: dict[str, Any],
 ) -> str:
-    if stream_result.usage_limit_reached or (
+    usage_limited = stream_result.usage_limit_reached or (
         bool(final.get("is_error"))
         and (
             contains_usage_limit(json.dumps(final))
             or text_looks_rate_limited(json.dumps(final))
         )
-    ):
-        return USAGE_LIMIT_REACHED
-    if stream_result.timed_out:
-        return "timeout"
-    if stream_result.stalled:
-        return "failed"
-    if final.get("is_error"):
-        return "failed"
-    if _result_indicates_success(final):
-        return "completed"
-    if final:
-        return "completed_with_errors"
-    return "failed"
+    )
+    return derive_cli_stream_status(
+        usage_limited=usage_limited,
+        timed_out=stream_result.timed_out,
+        stalled=stream_result.stalled,
+        final_is_error=bool(final.get("is_error")),
+        final_indicates_success=_result_indicates_success(final),
+        has_final_event=bool(final),
+    )
 
 
 def _run_cursor_phase(

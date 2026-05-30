@@ -24,6 +24,7 @@ from benchmark.timeouts import (
 )
 from benchmark.config import _resolve_model_num_runs
 from benchmark.replicates import resolve_result_dir
+from benchmark.run_status import derive_cli_stream_status
 from benchmark.target_lifecycle import (
     PhaseRunRequest,
     TargetRunLifecycle,
@@ -294,17 +295,24 @@ def _phase_status_from_stream(
         )
     )
     if usage_limited:
-        return USAGE_LIMIT_REACHED
-    if result.timed_out:
-        return "timeout"
-    if result.stalled:
-        return "failed"
-    if final.get("is_error"):
-        return "failed"
+        return derive_cli_stream_status(
+            usage_limited=True,
+            timed_out=result.timed_out,
+            stalled=result.stalled,
+            final_is_error=bool(final.get("is_error")),
+            final_indicates_success=False,
+            has_final_event=bool(final),
+        )
     stop_reason = final.get("stop_reason")
-    if stop_reason in ("end_turn", "stop_sequence", None) and final:
-        return "completed"
-    return "completed_with_errors"
+    success = stop_reason in ("end_turn", "stop_sequence", None) and bool(final)
+    return derive_cli_stream_status(
+        usage_limited=False,
+        timed_out=result.timed_out,
+        stalled=result.stalled,
+        final_is_error=bool(final.get("is_error")),
+        final_indicates_success=success,
+        has_final_event=bool(final),
+    )
 
 
 def _run_claude_phase(

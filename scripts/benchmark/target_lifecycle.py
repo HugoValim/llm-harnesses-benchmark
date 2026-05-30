@@ -10,9 +10,9 @@ from typing import Any
 from benchmark.config import existing_terminal_result
 from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.replicates import attach_replicate_fields
+from benchmark.run_status import payload_hit_usage_limit
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
-    USAGE_LIMIT_REACHED,
     init_project_git,
     prompt_sha256,
     save_json,
@@ -123,7 +123,7 @@ def _should_run_followup(
 ) -> bool:
     if followup_prompt is None:
         return False
-    if phase.get("status") == USAGE_LIMIT_REACHED:
+    if payload_hit_usage_limit(phase):
         return False
     if phase.get("timed_out"):
         return False

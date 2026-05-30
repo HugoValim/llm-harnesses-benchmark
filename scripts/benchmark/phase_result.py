@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchmark.util import USAGE_LIMIT_REACHED, prompt_sha256
+from benchmark.run_status import derive_run_status
+from benchmark.util import prompt_sha256
 
 
 def derive_phase_status(
@@ -24,17 +25,14 @@ def derive_phase_status(
     ...     finish_reason="stop", exit_code=0, works_as_intended="yes")
     'completed'
     """
-    if stalled and stall_reason == USAGE_LIMIT_REACHED:
-        return USAGE_LIMIT_REACHED
-    if timed_out:
-        return "timeout"
-    if stalled:
-        return "failed"
-    if finish_reason == "stop":
-        return "completed" if works_as_intended == "yes" else "completed_with_errors"
-    if exit_code == 0:
-        return "completed" if works_as_intended == "yes" else "completed_with_errors"
-    return "failed"
+    return derive_run_status(
+        timed_out=timed_out,
+        stalled=stalled,
+        stall_reason=stall_reason,
+        finish_reason=finish_reason,
+        exit_code=exit_code,
+        works_as_intended=works_as_intended,
+    )
 
 
 def build_phase_payload(

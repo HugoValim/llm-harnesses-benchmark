@@ -11,7 +11,12 @@ from typing import Any
 from benchmark.config import summarize_project
 from benchmark.d9_preflight import write_d9_preflight
 from benchmark.result_layout import REPLICATE_DIR_PATTERN, split_target_slug, target_dir
-from benchmark.util import USAGE_LIMIT_REACHED, load_json, migrate_to_v2
+from benchmark.run_status import (
+    USAGE_LIMIT_REACHED,
+    derive_run_status,
+    validation_retryable_status,
+)
+from benchmark.util import load_json, migrate_to_v2
 
 
 def rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str:
@@ -20,24 +25,14 @@ def rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str
     Mirrors :func:`benchmark.runner.run_codex_phase` / ``run_opencode_phase`` so
     validation reflects updated scaffold detection without re-running agents.
     """
-    if row.get("stalled") and row.get("stall_reason") == USAGE_LIMIT_REACHED:
-        return USAGE_LIMIT_REACHED
-    if row.get("timed_out"):
-        return "timeout"
-    if row.get("stalled"):
-        return "failed"
-    works = project_summary.get("works_as_intended") == "yes"
-    terminal_stop = row.get("finish_reason") == "stop"
-    if terminal_stop and works:
-        return "completed"
-    if terminal_stop:
-        return "completed_with_errors"
-    exit_code = row.get("exit_code")
-    if exit_code == 0 and works:
-        return "completed"
-    if exit_code == 0:
-        return "completed_with_errors"
-    return "failed"
+    return derive_run_status(
+        timed_out=bool(row.get("timed_out")),
+        stalled=bool(row.get("stalled")),
+        stall_reason=row.get("stall_reason"),
+        finish_reason=row.get("finish_reason"),
+        exit_code=row.get("exit_code"),
+        works_as_intended=project_summary.get("works_as_intended", "no"),
+    )
 
 MAX_VALIDATION_RETRIES = 3
 
@@ -84,16 +79,7 @@ def wipe_result_dir(result_dir: Path, *, recreate: bool = True) -> None:
 
 def validation_retryable(payload: dict[str, Any] | None) -> bool:
     """False for quota / throttle failures where an immediate rerun will not help."""
-    if not payload:
-        return True
-    if payload.get("status") == USAGE_LIMIT_REACHED:
-        return False
-    phases = payload.get("phases")
-    if isinstance(phases, list):
-        for phase in phases:
-            if isinstance(phase, dict) and phase.get("status") == USAGE_LIMIT_REACHED:
-                return False
-    return True
+    return validation_retryable_status(payload)
 
 
 def _load_result_row(result_dir: Path) -> tuple[dict[str, Any] | None, list[ValidationIssue]]:

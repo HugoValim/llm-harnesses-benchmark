@@ -21,7 +21,8 @@ from benchmark.result_validation import (
 )
 from benchmark.result_layout import replicate_result_dir
 from benchmark.runner import _kill_stale_opencode_processes, run_model
-from benchmark.util import USAGE_LIMIT_REACHED, print_line
+from benchmark.run_status import payload_hit_usage_limit, payload_was_stalled
+from benchmark.util import print_line
 
 STALL_RETRY_COOLDOWN_SECONDS = 60
 
@@ -142,11 +143,7 @@ def phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
     Example:
         ``phase_hit_usage_limit({"status": "usage_limit_reached"})`` is ``True``.
     """
-    if not payload:
-        return False
-    if payload.get("status") == USAGE_LIMIT_REACHED:
-        return True
-    return any(_phase_status_hit_usage_limit(phase) for phase in _payload_phases(payload))
+    return payload_hit_usage_limit(payload)
 
 
 def run_model_job_batch(
@@ -264,11 +261,7 @@ def previous_attempt_stalled(payload: dict[str, Any] | None) -> bool:
     Example:
         ``previous_attempt_stalled({"stalled": True})`` returns ``True``.
     """
-    if not payload:
-        return False
-    if payload.get("stalled"):
-        return True
-    return any(bool(phase.get("stalled")) for phase in _payload_phases(payload))
+    return payload_was_stalled(payload)
 
 
 def _local_gpu_lock_for(
@@ -499,13 +492,6 @@ def _variant_validation_model_row(
     }
 
 
-def _payload_phases(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    phases = payload.get("phases")
-    if not isinstance(phases, list):
-        return []
-    return [phase for phase in phases if isinstance(phase, dict)]
-
-
 def _prepare_validation_retry(
     slug: str,
     result_dir: Path,
@@ -554,10 +540,6 @@ def _print_validation_failure(slug: str, summary: str, issues: list[Any]) -> Non
     print_line(f"[{slug}] validation failed: {summary}")
     for issue in issues:
         print_line(f"  - {issue.code}: {issue.message}")
-
-
-def _phase_status_hit_usage_limit(phase: dict[str, Any]) -> bool:
-    return phase.get("status") == USAGE_LIMIT_REACHED
 
 
 def _run_parallel_model_jobs(

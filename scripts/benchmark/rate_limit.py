@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from benchmark.run_status import payload_hit_usage_limit
 from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit, print_line
 
 DEFAULT_RATE_LIMIT_WAIT_CAP_HOURS = 6
@@ -141,30 +142,6 @@ def stream_event_looks_rate_limited(event: dict[str, Any]) -> bool:
     if isinstance(rate_info, dict) and _rate_limit_info_rejected(rate_info):
         return True
     return text_looks_rate_limited(json.dumps(event))
-
-
-def payload_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
-    """Return True when a harness result payload indicates throttling."""
-    if not payload:
-        return False
-    if payload.get("status") == USAGE_LIMIT_REACHED:
-        return True
-    if payload.get("stall_reason") == USAGE_LIMIT_REACHED:
-        return True
-    phases = payload.get("phases")
-    if isinstance(phases, list):
-        for phase in phases:
-            if not isinstance(phase, dict):
-                continue
-            if phase.get("status") == USAGE_LIMIT_REACHED:
-                return True
-            if phase.get("stall_reason") == USAGE_LIMIT_REACHED:
-                return True
-    for key in ("stderr_excerpt", "assistant_output_excerpt", "result"):
-        value = payload.get(key)
-        if isinstance(value, str) and text_looks_rate_limited(value):
-            return True
-    return False
 
 
 def _coerce_reset_timestamp(value: Any) -> int | None:

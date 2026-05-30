@@ -45,8 +45,8 @@ from benchmark.result_layout import (  # noqa: E402
 )
 from benchmark.replicates import run_replicate_attempts  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
+from benchmark.run_status import payload_hit_usage_limit, payload_was_stalled  # noqa: E402
 from benchmark.util import (  # noqa: E402
-    USAGE_LIMIT_REACHED,
     load_json,
     model_matches_harness,
     normalize_path_fields,
@@ -202,16 +202,7 @@ def _run_model_job_batch(
 
 def _phase_hit_usage_limit(payload: dict[str, Any] | None) -> bool:
     """True when a benchmark result indicates provider quota / throttle exhaustion."""
-    if not payload:
-        return False
-    if payload.get("status") == USAGE_LIMIT_REACHED:
-        return True
-    phases = payload.get("phases")
-    if isinstance(phases, list):
-        for ph in phases:
-            if isinstance(ph, dict) and ph.get("status") == USAGE_LIMIT_REACHED:
-                return True
-    return False
+    return payload_hit_usage_limit(payload)
 
 
 STALL_RETRY_COOLDOWN_SECONDS = 60
@@ -224,16 +215,7 @@ def _previous_attempt_stalled(payload: dict[str, Any] | None) -> bool:
     against an upstream that just dropped a stream usually hit the same stuck
     path; a 60s breather lets the connection recover.
     """
-    if not payload:
-        return False
-    if payload.get("stalled"):
-        return True
-    phases = payload.get("phases")
-    if isinstance(phases, list):
-        for ph in phases:
-            if isinstance(ph, dict) and ph.get("stalled"):
-                return True
-    return False
+    return payload_was_stalled(payload)
 
 
 def _cleanup_backends(
