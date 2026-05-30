@@ -10,6 +10,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from benchmark.replicate_expectations import (  # noqa: E402
+    filter_expected_leaves,
+    find_replicate_coverage_gaps,
+    format_replicate_gaps,
+    expected_benchmark_leaves,
+)
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
     benchmark_target_slug_from_leaf,
@@ -54,6 +60,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete the result directory when validation fails (same wipe as benchmark retries).",
     )
+    parser.add_argument(
+        "--enforce-replicates",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Require every configured replicate leaf from models.json num_runs "
+            "(default: on when --run-id is set)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -96,6 +111,24 @@ def main() -> int:
         )
         return 1
 
+    enforce_replicates = (
+        args.enforce_replicates
+        if args.enforce_replicates is not None
+        else bool(args.run_id)
+    )
+
+    replicate_failures = 0
+    if enforce_replicates:
+        expected = filter_expected_leaves(
+            expected_benchmark_leaves(args.models_config.resolve()),
+            only,
+        )
+        gaps = find_replicate_coverage_gaps(results_dir, expected)
+        gap_message = format_replicate_gaps(gaps)
+        if gap_message:
+            print(gap_message, file=sys.stderr)
+            replicate_failures = len(gaps)
+
     if args.run_id:
         result_paths = discover_project_result_jsons(results_dir)
     else:
@@ -106,10 +139,13 @@ def main() -> int:
         ]
 
     if not result_paths:
+        if replicate_failures:
+            print_line(f"replicate_gaps={replicate_failures} checked=0 failed=0")
+            return 1
         print_line("No result.json files matched.")
         return 1
 
-    failures = 0
+    failures = replicate_failures
     for result_path in result_paths:
         result_dir = result_path.parent
         _harness, slug = resolve_result_target_identity(result_dir)
@@ -129,6 +165,8 @@ def main() -> int:
                 wipe_result_dir(result_dir, recreate=False)
                 print_line(f"  removed {result_dir}")
 
+    if replicate_failures:
+        print_line(f"replicate_gaps={replicate_failures}")
     print_line(f"checked={len(result_paths)} failed={failures}")
     if args.remove_on_fail and failures:
         print_line(f"removed={failures}")

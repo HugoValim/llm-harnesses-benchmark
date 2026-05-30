@@ -41,6 +41,7 @@ from benchmark.full_pipeline import (  # noqa: E402
     reject_forwarded_model_flag,
     resolve_meta_config,
 )
+from benchmark.replicate_expectations import assert_replicate_coverage  # noqa: E402
 from benchmark.result_layout import add_run_id_arg, layout_from_repo  # noqa: E402
 
 
@@ -140,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
         meta_input_env,
     )
     assert_no_stale_audit_reports(layout.audit_root, auditor_slug)
+
+    if not args.skip_build and not args.dry_run:
+        assert_replicate_coverage(
+            projects_root=layout.projects_root,
+            models_config_path=models_config,
+        )
 
     if not args.skip_audit:
         phase_audit(
