@@ -131,7 +131,7 @@ def test_validate_meta_analysis_coverage_detects_undercount(
     meta.write_text(
         "\n".join(
             [
-                "### 2. Best model overall",
+                "## 2. Best model overall",
                 "",
                 "| Rank | Model slug | Harnesses seen | Avg total |",
                 "|---:|---|---:|---:|",
@@ -144,3 +144,83 @@ def test_validate_meta_analysis_coverage_detects_undercount(
     assert "glm_5_1_ollama_cloud" in errors[0]
     assert "2 harnesses" in errors[0]
     assert "3" in errors[0]
+
+
+def _reports_with_cursor() -> list[ParsedReport]:
+    def row(harness: str, slug: str, total: int) -> ParsedReport:
+        return ParsedReport(
+            auditor="auditor_a",
+            target=f"{harness}-{slug}",
+            harness=harness,
+            model_slug=slug,
+            total=total,
+            dimensions=[
+                DimensionScore(i, f"D{i}", 5, 10) for i in range(1, 11)
+            ],
+        )
+
+    return [
+        row("claude", "glm_5_1_ollama_cloud", 82),
+        row("codex", "glm_5_1_ollama_cloud", 84),
+        row("opencode", "glm_5_1_ollama_cloud", 88),
+        row("cursor", "composer_2_5", 83),
+    ]
+
+
+def test_cursor_excluded_from_harness_contest_rollups() -> None:
+    reports = _reports_with_cursor()
+    coverage = model_harness_coverage(reports)
+    assert coverage["glm_5_1_ollama_cloud"]["harness_count"] == 3
+    assert coverage["composer_2_5"]["harness_count"] == 0
+    assert coverage["composer_2_5"]["cursor_runs"] == 1
+
+    from benchmark.audit_rollup import (
+        _dimension_labels,
+        _harness_section,
+        build_cursor_agent_models_table,
+    )
+
+    cursor_table = build_cursor_agent_models_table(reports)
+    assert "composer_2_5" in cursor_table
+    assert "Cursor agent models" in cursor_table
+
+    dim_labels = _dimension_labels(reports)
+    harness_block = "\n".join(_harness_section(reports, dim_labels))
+    assert "cursor" not in harness_block.split("Harness comparison")[1].split("##")[0]
+    assert "codex" in harness_block
+    assert "claude" in harness_block
+    assert "opencode" in harness_block
+
+
+def test_precomputed_rollup_includes_cursor_table(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for harness, total in [
+        ("claude", 82),
+        ("codex", 84),
+        ("opencode", 88),
+        ("cursor", 83),
+    ]:
+        slug = (
+            "glm_5_1_ollama_cloud"
+            if harness != "cursor"
+            else "composer_2_5"
+        )
+        target = input_dir / f"{harness}-{slug}"
+        target.mkdir()
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{total} / 100**",
+                ]
+            )
+        )
+
+    rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "Cursor agent models" in rollup
+    assert "composer_2_5" in rollup
+    assert "| cursor |" not in rollup.split("## Harness comparison")[1].split(
+        "## Cursor agent models"
+    )[0]

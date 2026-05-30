@@ -22,6 +22,8 @@ from benchmark.result_layout import (  # noqa: E402
     target_project_workspace,
     target_prompt,
     target_result_json,
+    BENCHMARK_CONTEST_HARNESSES,
+    CURSOR_AGENT_PREFIX,
     HARNESS_PREFIXES,
 )
 
@@ -131,6 +133,13 @@ class TestSplitTargetSlug(unittest.TestCase):
             set(HARNESS_PREFIXES),
             {"opencode", "codex", "claude", "cursor"},
         )
+
+    def test_benchmark_contest_harnesses_exclude_cursor(self) -> None:
+        self.assertEqual(
+            BENCHMARK_CONTEST_HARNESSES,
+            frozenset({"opencode", "codex", "claude"}),
+        )
+        self.assertNotIn(CURSOR_AGENT_PREFIX, BENCHMARK_CONTEST_HARNESSES)
 
     def test_unrecognized_prefix_treated_as_model_name(self) -> None:
         # Only canonical harness prefixes split; everything else is one slug.

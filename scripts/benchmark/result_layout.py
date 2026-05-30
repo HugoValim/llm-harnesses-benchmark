@@ -18,6 +18,12 @@ from pathlib import Path
 # Canonical harness identifiers (matches CONTEXT.md).
 HARNESS_PREFIXES: tuple[str, ...] = ("opencode", "codex", "claude", "cursor")
 
+# Agent harnesses compared in meta-analysis harness rankings (not cursor).
+BENCHMARK_CONTEST_HARNESSES: frozenset[str] = frozenset(
+    {"opencode", "codex", "claude"}
+)
+CURSOR_AGENT_PREFIX: str = "cursor"
+
 
 def target_dir(results_root: Path, harness: str, slug: str) -> Path:
     """Directory holding one ``(harness, model)`` benchmark run."""

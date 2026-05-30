@@ -19,6 +19,10 @@ from benchmark.audit_report import (
     _dimension_labels,
     _fmt,
 )
+from benchmark.result_layout import (
+    BENCHMARK_CONTEST_HARNESSES,
+    CURSOR_AGENT_PREFIX,
+)
 from benchmark.util import load_json, migrate_to_v2
 
 # Model slug substrings that identify benchmark leader runs (substring match,
@@ -97,14 +101,14 @@ def _normalized_scores_section(
         subset = [r for r in reports if r.model_slug == slug]
         totals_l = [float(r.total) for r in subset if r.total is not None]
         avg_l = mean(totals_l) if totals_l else None
-        harnesses = ", ".join(sorted({r.harness for r in subset}))
+        harnesses = _contest_harnesses_label(subset)
         lines.append(
             "| "
             + " | ".join(
                 [
                     slug,
                     str(len(subset)),
-                    harnesses or "-",
+                    harnesses,
                     _fmt(avg_l),
                 ]
             )
@@ -131,7 +135,7 @@ def _normalized_scores_section(
         if not totals_m:
             continue
         raw_avg = mean(totals_m)
-        harnesses = ", ".join(sorted({r.harness for r in subset}))
+        harnesses = _contest_harnesses_label(subset)
         pct_total = _pct_of_ceiling(raw_avg, ceiling["total"])
         dim_pcts: list[str] = []
         for i in range(1, NUM_DIMENSIONS + 1):
@@ -180,13 +184,37 @@ def _normalized_scores_section(
 # ── harness / model / dimension rollups ──────────────────────────────────────
 
 
+def _is_benchmark_harness(harness: str) -> bool:
+    return harness in BENCHMARK_CONTEST_HARNESSES
+
+
+def _benchmark_reports(reports: list[ParsedReport]) -> list[ParsedReport]:
+    return [r for r in reports if _is_benchmark_harness(r.harness)]
+
+
+def _cursor_agent_reports(reports: list[ParsedReport]) -> list[ParsedReport]:
+    return [r for r in reports if r.harness == CURSOR_AGENT_PREFIX]
+
+
+def _contest_harnesses_label(reports: list[ParsedReport]) -> str:
+    harnesses = sorted(
+        {r.harness for r in reports if _is_benchmark_harness(r.harness)}
+    )
+    return ", ".join(harnesses) if harnesses else "-"
+
+
+def _contest_harnesses_in_data(reports: list[ParsedReport]) -> list[str]:
+    present = {r.harness for r in reports if _is_benchmark_harness(r.harness)}
+    return sorted(present)
+
+
 def _avg(values: list[float]) -> float | None:
     return mean(values) if values else None
 
 
 def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list[str]:
-    """Per-harness rollup table — the primary signal this skill cares about."""
-    harnesses = sorted({r.harness for r in reports if r.harness != "unknown"})
+    """Per-harness rollup for the opencode/codex/claude contest only."""
+    harnesses = _contest_harnesses_in_data(reports)
     if not harnesses:
         return []
 
@@ -197,9 +225,10 @@ def _harness_section(reports: list[ParsedReport], dim_labels: list[str]) -> list
     lines = [
         "## Harness comparison",
         "",
-        "One row per harness. Averages are taken across every audited target",
-        "under that harness (i.e. across all model slugs). `Tier X` columns",
-        "count how many runs landed in that tier.",
+        "One row per **contest** harness (opencode, codex, claude). Cursor-agent",
+        "runs are excluded — see **Cursor agent models**. Averages are taken",
+        "across every audited target under that harness. `Tier X` columns count",
+        "how many runs landed in that tier.",
         "",
         "| " + " | ".join(header) + " |",
         "|" + "|".join(["---"] * len(header)) + "|",
@@ -268,15 +297,20 @@ def _cross_harness_model_section(
     for r in reports:
         if r.model_slug:
             by_model.setdefault(r.model_slug, []).append(r)
-    shared = {slug: rs for slug, rs in by_model.items() if len({r.harness for r in rs}) >= 2}
+    shared = {
+        slug: rs
+        for slug, rs in by_model.items()
+        if len({r.harness for r in rs if _is_benchmark_harness(r.harness)}) >= 2
+    }
     if not shared:
         return []
 
     lines = [
         "## Cross-harness model comparison",
         "",
-        "Same model slug, different harness. Shows where harness choice",
-        "moves the score for an otherwise identical target model.",
+        "Same model slug, different contest harness (opencode/codex/claude).",
+        "Shows where harness choice moves the score for an otherwise identical",
+        "target model. Cursor-agent runs are excluded.",
         "",
     ]
 
@@ -286,7 +320,10 @@ def _cross_harness_model_section(
     lines.append("|" + "|".join(["---"] * len(header)) + "|")
 
     for slug in sorted(shared):
-        slug_reports = sorted(shared[slug], key=lambda r: r.harness)
+        slug_reports = sorted(
+            (r for r in shared[slug] if _is_benchmark_harness(r.harness)),
+            key=lambda r: r.harness,
+        )
         for r in slug_reports:
             row = [slug, r.harness, _fmt(r.total), r.tier or "-"]
             for i in range(1, NUM_DIMENSIONS + 1):
@@ -300,18 +337,17 @@ def _dimension_breakdown_section(
     reports: list[ParsedReport],
     dim_labels: list[str],
 ) -> list[str]:
-    """Per-dimension average by harness — surfaces universal vs harness-specific weaknesses."""
-    harnesses = sorted({r.harness for r in reports if r.harness != "unknown"})
+    """Per-dimension average by contest harness (cursor excluded)."""
+    harnesses = _contest_harnesses_in_data(reports)
+    contest = _benchmark_reports(reports)
     if not harnesses:
         return []
 
     lines = [
         "## Dimension breakdown",
         "",
-        "Average score per dimension, overall and per harness. A dimension",
-        "where every harness scores low is a universal blind spot (likely a",
-        "prompt or model-family issue). A dimension where only one harness",
-        "scores low is harness-attributable.",
+        "Average score per dimension, overall and per contest harness. Cursor-agent",
+        "runs are excluded from **All avg** and per-harness columns.",
         "",
     ]
 
@@ -324,13 +360,15 @@ def _dimension_breakdown_section(
         label = dim_labels[i - 1] if i - 1 < len(dim_labels) else f"D{i}"
         max_score = _max_for_dimension(reports, i)
         all_values = [
-            float(r.dim_score(i)) for r in reports if r.dim_score(i) is not None
+            float(r.dim_score(i))
+            for r in contest
+            if r.dim_score(i) is not None
         ]
         row = [f"D{i}. {label}", _fmt(max_score), _fmt(_avg(all_values))]
         for harness in harnesses:
             subset_values = [
                 float(r.dim_score(i))
-                for r in reports
+                for r in contest
                 if r.harness == harness and r.dim_score(i) is not None
             ]
             row.append(_fmt(_avg(subset_values)))
@@ -351,8 +389,9 @@ def _max_for_dimension(reports: list[ParsedReport], index: int) -> int | None:
 def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, object]]:
     """Per-model harness coverage keyed by model slug.
 
-    Values: ``harnesses`` (sorted list), ``runs`` (int), ``avg_total`` (float|None).
-    Only reports with a parseable total contribute to ``avg_total``.
+    ``harnesses`` / ``harness_count`` count contest harnesses only (opencode,
+    codex, claude). ``cursor_runs`` and ``cursor_avg_total`` cover Cursor-agent
+    runs for the same slug. ``avg_total`` averages all runs with a parseable total.
     """
     by_model: dict[str, list[ParsedReport]] = {}
     for r in reports:
@@ -361,12 +400,20 @@ def model_harness_coverage(reports: list[ParsedReport]) -> dict[str, dict[str, o
 
     out: dict[str, dict[str, object]] = {}
     for slug, subset in by_model.items():
-        harnesses = sorted({r.harness for r in subset if r.harness != "unknown"})
+        harnesses = sorted(
+            {r.harness for r in subset if _is_benchmark_harness(r.harness)}
+        )
+        cursor_subset = [r for r in subset if r.harness == CURSOR_AGENT_PREFIX]
+        cursor_totals = [
+            float(r.total) for r in cursor_subset if r.total is not None
+        ]
         totals = [float(r.total) for r in subset if r.total is not None]
         out[slug] = {
             "harnesses": harnesses,
             "runs": len(subset),
             "harness_count": len(harnesses),
+            "cursor_runs": len(cursor_subset),
+            "cursor_avg_total": mean(cursor_totals) if cursor_totals else None,
             "avg_total": mean(totals) if totals else None,
         }
     return out
@@ -382,8 +429,9 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
         "## Model coverage",
         "",
         "Authoritative harness counts for section 2 **Harnesses seen**. "
-        "``harness_count`` is the number of distinct harness prefixes with "
-        "a parseable total for that model slug.",
+        "``harness_count`` is the number of distinct **contest** harnesses "
+        "(opencode, codex, claude) with a parseable total for that model slug. "
+        "Cursor-only slugs have harness count `0` — see **Cursor agent models**.",
         "",
         "| Model slug | Harnesses | Harness count | Runs | Avg total |",
         "|---|---|---:|---:|---:|",
@@ -403,6 +451,40 @@ def build_model_coverage_table(reports: list[ParsedReport]) -> str:
         sort_key = float(avg) if isinstance(avg, float) else -1.0
         rows.append((sort_key, cells))
 
+    rows.sort(key=lambda t: t[0], reverse=True)
+    for _, cells in rows:
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_cursor_agent_models_table(reports: list[ParsedReport]) -> str:
+    """Markdown table of Cursor-agent model runs (excluded from harness contest)."""
+    cursor_reports = _cursor_agent_reports(reports)
+    if not cursor_reports:
+        return "## Cursor agent models\n\n*(no cursor-agent reports parsed)*\n"
+
+    by_slug: dict[str, list[ParsedReport]] = {}
+    for r in cursor_reports:
+        if r.model_slug:
+            by_slug.setdefault(r.model_slug, []).append(r)
+
+    lines = [
+        "## Cursor agent models",
+        "",
+        "Runs under the ``cursor-`` path prefix (Cursor Agent CLI). **Excluded**",
+        "from harness comparison, cross-harness pairings, and section 2 harness",
+        "counts. Copy into meta-analysis appendix; do not rank as a harness.",
+        "",
+        "| Model slug | Runs | Avg total |",
+        "|---|---:|---:|",
+    ]
+    rows: list[tuple[float, list[str]]] = []
+    for slug, subset in by_slug.items():
+        totals = [float(r.total) for r in subset if r.total is not None]
+        avg = mean(totals) if totals else None
+        cells = [slug, str(len(subset)), _fmt(avg)]
+        sort_key = float(avg) if avg is not None else -1.0
+        rows.append((sort_key, cells))
     rows.sort(key=lambda t: t[0], reverse=True)
     for _, cells in rows:
         lines.append("| " + " | ".join(cells) + " |")
@@ -520,7 +602,9 @@ def build_harness_versions_table(
             targets.extend(version_map[v])
         version_cell = "; ".join(versions)
         notes = ""
-        if len(versions) > 1:
+        if harness == CURSOR_AGENT_PREFIX:
+            notes = "cursor-agent (excluded from harness contest)"
+        elif len(versions) > 1:
             notes = "mixed-version"
         lines.append(
             "| "
@@ -563,6 +647,8 @@ def build_precomputed_rollup(
         "",
         build_model_coverage_table(reports).rstrip(),
         "",
+        build_cursor_agent_models_table(reports).rstrip(),
+        "",
         build_harness_versions_table(reports, source_dirs=source_dirs).rstrip(),
         "",
         build_statistical_summary(reports_dir, source_dirs=source_dirs).rstrip(),
@@ -586,7 +672,7 @@ def validate_meta_analysis_coverage(
 
     text = meta_path.read_text(encoding="utf-8")
     section_match = re.search(
-        r"###\s*2\.\s*Best model overall(.*?)(?=\n###\s|\Z)",
+        r"#{2,3}\s*2\.\s*Best model overall(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
         text,
         re.DOTALL | re.IGNORECASE,
     )
