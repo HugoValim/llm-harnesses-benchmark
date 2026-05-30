@@ -36,8 +36,9 @@ from benchmark.result_validation import (  # noqa: E402
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
     layout_from_repo,
-    target_dir as layout_target_dir,
+    replicate_result_dir,
 )
+from benchmark.replicates import run_replicate_attempts  # noqa: E402
 from benchmark.runner import _kill_stale_opencode_processes, run_model  # noqa: E402
 from benchmark.util import (  # noqa: E402
     USAGE_LIMIT_REACHED,
@@ -591,40 +592,65 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
     ) -> dict[str, Any] | None:
         if not validate_runs:
-            return run_model(
+            return run_replicate_attempts(
                 model,
-                bench,
-                index,
-                total_models,
-                skip_stale_kill=skip_stale_kill,
-            )
-        result_dir = layout_target_dir(
-            bench.results_dir, bench.harness, model["slug"]
-        )
-        attempt = {"n": 0}
-
-        def _run_once() -> dict[str, Any] | None:
-            active_bench = (
-                replace(bench, force=True) if attempt["n"] > 0 else bench
-            )
-            attempt["n"] += 1
-            return run_model(
-                model,
-                active_bench,
-                index,
-                total_models,
-                skip_stale_kill=skip_stale_kill,
+                lambda replicate_index, num_runs: run_model(
+                    model,
+                    bench,
+                    index,
+                    total_models,
+                    skip_stale_kill=skip_stale_kill,
+                    replicate_index=replicate_index,
+                    num_runs=num_runs,
+                ),
             )
 
-        expect_followup = followup_expected(followup_prompt=bench.followup_prompt)
-        return _run_with_result_validation(
-            model["slug"],
-            result_dir,
-            model,
-            expect_followup=expect_followup,
-            max_retries=max_validation_retries,
-            run_once=_run_once,
-        )
+        def _run_all_replicates() -> dict[str, Any] | None:
+            last_payload: dict[str, Any] | None = None
+
+            def _run_one_replicate(
+                replicate_index: int, num_runs: int
+            ) -> dict[str, Any] | None:
+                nonlocal last_payload
+                result_dir = replicate_result_dir(
+                    bench.results_dir,
+                    bench.harness,
+                    model["slug"],
+                    replicate_index,
+                )
+                attempt = {"n": 0}
+
+                def _run_once() -> dict[str, Any] | None:
+                    active_bench = (
+                        replace(bench, force=True) if attempt["n"] > 0 else bench
+                    )
+                    attempt["n"] += 1
+                    return run_model(
+                        model,
+                        active_bench,
+                        index,
+                        total_models,
+                        skip_stale_kill=skip_stale_kill,
+                        replicate_index=replicate_index,
+                        num_runs=num_runs,
+                    )
+
+                expect_followup = followup_expected(
+                    followup_prompt=bench.followup_prompt
+                )
+                last_payload = _run_with_result_validation(
+                    model["slug"],
+                    result_dir,
+                    model,
+                    expect_followup=expect_followup,
+                    max_retries=max_validation_retries,
+                    run_once=_run_once,
+                )
+                return last_payload
+
+            return run_replicate_attempts(model, _run_one_replicate)
+
+        return _run_all_replicates()
 
     if not abort_flag.is_set():
         _run_model_job_batch(
@@ -731,44 +757,56 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             print_line(f"[{v['slug']}] skipped — usage limit active")
             return v["slug"], None, None
         try:
-            result_dir = layout_target_dir(results_dir, harness_name, v["slug"])
             followup_for_variant = followup_text
-            attempt = {"n": 0}
 
-            def _run_once() -> dict[str, Any] | None:
-                run_kwargs: dict[str, Any] = dict(
-                    variant=v,
-                    prompt=prompt,
-                    results_dir=results_dir,
-                    timeout_seconds=timeout_seconds,
-                    no_progress_timeout_seconds=no_progress_timeout_seconds,
-                    force=args.force or attempt["n"] > 0,
-                    runner_command_prefix=runner_command_prefix,
-                    harness=harness_name,
-                    followup_prompt=followup_for_variant,
-                    rate_limit_policy=rate_limit_policy,
+            def _run_one_replicate(
+                replicate_index: int, num_runs: int
+            ) -> dict[str, Any] | None:
+                result_dir = replicate_result_dir(
+                    results_dir, harness_name, v["slug"], replicate_index
                 )
-                if harness.accepts_isolate_home:
-                    run_kwargs["isolate_home"] = isolate_home
-                attempt["n"] += 1
-                return harness.run_variant(**run_kwargs)
+                attempt = {"n": 0}
 
-            if validate_runs:
-                model_row = {
-                    "slug": v["slug"],
-                    "provider": v.get("provider", ""),
-                }
-                expect_followup = followup_expected(followup_prompt=followup_text)
-                payload = _run_with_result_validation(
-                    v["slug"],
-                    result_dir,
-                    model_row,
-                    expect_followup=expect_followup,
-                    max_retries=max_validation_retries,
-                    run_once=_run_once,
-                )
-            else:
-                payload = _run_once()
+                def _run_once() -> dict[str, Any] | None:
+                    run_kwargs: dict[str, Any] = dict(
+                        variant=v,
+                        prompt=prompt,
+                        results_dir=results_dir,
+                        timeout_seconds=timeout_seconds,
+                        no_progress_timeout_seconds=no_progress_timeout_seconds,
+                        force=args.force or attempt["n"] > 0,
+                        runner_command_prefix=runner_command_prefix,
+                        harness=harness_name,
+                        followup_prompt=followup_for_variant,
+                        rate_limit_policy=rate_limit_policy,
+                        replicate_index=replicate_index,
+                        num_runs=num_runs,
+                    )
+                    if harness.accepts_isolate_home:
+                        run_kwargs["isolate_home"] = isolate_home
+                    attempt["n"] += 1
+                    return harness.run_variant(**run_kwargs)
+
+                if validate_runs:
+                    model_row = {
+                        "slug": v["slug"],
+                        "provider": v.get("provider", ""),
+                        "num_runs": num_runs,
+                    }
+                    expect_followup = followup_expected(
+                        followup_prompt=followup_text
+                    )
+                    return _run_with_result_validation(
+                        v["slug"],
+                        result_dir,
+                        model_row,
+                        expect_followup=expect_followup,
+                        max_retries=max_validation_retries,
+                        run_once=_run_once,
+                    )
+                return _run_once()
+
+            payload = run_replicate_attempts(v, _run_one_replicate)
 
             if payload and _phase_hit_usage_limit(payload):
                 abort_flag.set()

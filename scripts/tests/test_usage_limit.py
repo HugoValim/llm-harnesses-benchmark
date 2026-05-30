@@ -123,6 +123,9 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
             ), patch("benchmark.claude_code_runner.write_project_context"), patch(
                 "benchmark.claude_code_runner.write_project_agent"
             ), patch(
+                "benchmark.claude_code_runner.resolve_harness_cli_versions",
+                return_value={},
+            ), patch(
                 "benchmark.claude_code_runner.subprocess.Popen",
                 return_value=mock_proc,
             ), patch(
@@ -163,6 +166,9 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
                 "benchmark.claude_code_runner.validate_benchmark_workspace"
             ), patch("benchmark.claude_code_runner.write_project_context"), patch(
                 "benchmark.claude_code_runner.write_project_agent"
+            ), patch(
+                "benchmark.claude_code_runner.resolve_harness_cli_versions",
+                return_value={},
             ), patch(
                 "benchmark.claude_code_runner.subprocess.Popen",
                 return_value=mock_proc,

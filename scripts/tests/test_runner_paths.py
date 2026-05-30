@@ -77,7 +77,7 @@ class TestRunnerPaths(unittest.TestCase):
 
                 payload = run_model(model, bench, 1, 1)
 
-                expected_root = Path(tmp) / "results" / "opencode-fake_model"
+                expected_root = Path(tmp) / "results" / "opencode-fake_model" / "run_01"
                 self.assertEqual(
                     Path(payload["paths"]["project_dir"]),
                     expected_root / "project",
@@ -134,12 +134,13 @@ class TestRunnerPaths(unittest.TestCase):
                         Path(tmp)
                         / "results"
                         / "opencode-fake_model"
+                        / "run_01"
                         / "session-export.json"
                     ),
                 ):
                     payload = run_model(model, bench, 1, 1, skip_stale_kill=True)
 
-                expected_root = Path(tmp) / "results" / "opencode-fake_model"
+                expected_root = Path(tmp) / "results" / "opencode-fake_model" / "run_01"
                 self.assertEqual(
                     Path(payload["paths"]["followup_prompt"]),
                     expected_root / "followup-prompt.txt",

@@ -23,6 +23,7 @@ from benchmark.util import ollama_launch_command_prefix
 from benchmark.config import (
     OPENCODE_YOLO_PERMISSION,
     BenchmarkConfig,
+    _resolve_model_num_runs,
     existing_terminal_result,
     mark_model_skip_by_default,
     summarize_project,
@@ -37,7 +38,7 @@ from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
 )
-from benchmark.result_layout import target_dir as layout_target_dir
+from benchmark.replicates import attach_replicate_fields, resolve_result_dir
 from benchmark.session_export import export_opencode_session
 from benchmark.stream_state import ActionKind, EventStreamState
 
@@ -976,6 +977,8 @@ def run_model(
     total: int,
     *,
     skip_stale_kill: bool = False,
+    replicate_index: int = 1,
+    num_runs: int | None = None,
 ) -> dict[str, Any]:
     """Execute one harness run for ``model``.
 
@@ -986,8 +989,16 @@ def run_model(
         total: Batch size used in progress logs.
         skip_stale_kill: When True, do not invoke :func:`_kill_stale_opencode_processes`;
             use once per concurrent opencode batch (see ``run_benchmark``).
+        replicate_index: 1-based replicate folder index (``run_01``, …).
+        num_runs: Total configured replicates; defaults to ``model['num_runs']``.
     """
-    result_dir = layout_target_dir(bench.results_dir, bench.harness, model['slug']).resolve()
+    effective_num_runs = num_runs if num_runs is not None else _resolve_model_num_runs(model)
+    result_dir = resolve_result_dir(
+        results_dir=bench.results_dir,
+        harness=bench.harness,
+        slug=model["slug"],
+        replicate_index=replicate_index,
+    )
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "opencode-output.ndjson"
@@ -1080,7 +1091,14 @@ def run_model(
                 "phases": [],
                 **cli_version_fields,
             }
-            save_json(result_path, payload)
+            save_json(
+                result_path,
+                attach_replicate_fields(
+                    payload,
+                    replicate_index=replicate_index,
+                    num_runs=effective_num_runs,
+                ),
+            )
             print_line(
                 f"[{index}/{total}] finished {model['slug']} status=failed preflight_error={preflight_message}"
             )
@@ -1243,7 +1261,14 @@ def run_model(
         before_markers=snapshot_root_generated_markers(root_dir, bench.results_dir),
         session_export_path=exported_session,
     )
-    save_json(result_path, payload)
+    save_json(
+        result_path,
+        attach_replicate_fields(
+            payload,
+            replicate_index=replicate_index,
+            num_runs=effective_num_runs,
+        ),
+    )
     print_line(
         f"[{index}/{total}] finished {model['slug']} status={payload['status']} "
         f"elapsed={total_elapsed:.2f}s files={payload['project_summary']['file_count']} "

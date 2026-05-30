@@ -23,7 +23,8 @@ from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
 )
-from benchmark.result_layout import target_dir as layout_target_dir
+from benchmark.config import _resolve_model_num_runs
+from benchmark.replicates import attach_replicate_fields, resolve_result_dir
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
@@ -405,6 +406,8 @@ def run_variant(
     explicit_result_dir: Path | None = None,
     followup_prompt: str | None = None,
     rate_limit_policy: RateLimitWaitPolicy | None = None,
+    replicate_index: int = 1,
+    num_runs: int | None = None,
 ) -> dict[str, Any]:
     """Run a single benchmark variant.
 
@@ -423,10 +426,15 @@ def run_variant(
     """
     slug = variant["slug"]
     log_tag = stream_log_prefix(harness, slug)
-    result_dir = (
-        explicit_result_dir.resolve()
-        if explicit_result_dir is not None
-        else layout_target_dir(results_dir, harness, slug).resolve()
+    effective_num_runs = (
+        num_runs if num_runs is not None else _resolve_model_num_runs(variant)
+    )
+    result_dir = resolve_result_dir(
+        results_dir=results_dir,
+        harness=harness,
+        slug=slug,
+        replicate_index=replicate_index,
+        explicit_result_dir=explicit_result_dir,
     )
     project_dir = result_dir / "project"
     prompt_path = result_dir / "prompt.txt"
@@ -730,7 +738,14 @@ def run_variant(
         num_turns = num_turns + p2_num_turns
         model_usage = merged_model_usage
 
-    save_json(result_path, payload)
+    save_json(
+        result_path,
+        attach_replicate_fields(
+            payload,
+            replicate_index=replicate_index,
+            num_runs=effective_num_runs,
+        ),
+    )
 
     print_line("")
     print_line(
