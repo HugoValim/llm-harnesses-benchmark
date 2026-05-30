@@ -28,6 +28,7 @@ def _audit_row(
         "label": f"{slug} label",
         "provider": "anthropic",
         "runner_type": harness,
+        "num_runs": 3,
         "selection_reason": "test row",
     }
 
@@ -54,6 +55,37 @@ def test_old_audit_selector_flags_are_removed(
 
     with pytest.raises(SystemExit):
         run_audit.parse_args()
+
+
+def test_discover_project_dirs_nested_replicates(tmp_path: Path) -> None:
+    benchmark_results_dir = tmp_path / "results"
+    (benchmark_results_dir / "codex-demo" / "run_01" / "project").mkdir(
+        parents=True
+    )
+    (benchmark_results_dir / "codex-demo" / "run_02" / "project").mkdir(
+        parents=True
+    )
+
+    discovered = run_audit.discover_project_dirs(benchmark_results_dir)
+    assert [t["slug"] for t in discovered] == [
+        "codex-demo/run_01",
+        "codex-demo/run_02",
+    ]
+    assert discovered[0]["target_group"] == "codex-demo"
+    assert discovered[0]["replicate_id"] == "run_01"
+
+
+def test_filter_discovered_matches_target_group(tmp_path: Path) -> None:
+    benchmark_results_dir = tmp_path / "results"
+    (benchmark_results_dir / "codex-demo" / "run_01" / "project").mkdir(
+        parents=True
+    )
+    (benchmark_results_dir / "codex-demo" / "run_02" / "project").mkdir(
+        parents=True
+    )
+    discovered = run_audit.discover_project_dirs(benchmark_results_dir)
+    filtered = run_audit._filter_discovered(discovered, {"codex-demo"})
+    assert len(filtered) == 2
 
 
 def test_resolve_audit_model_from_shared_registry(tmp_path: Path) -> None:

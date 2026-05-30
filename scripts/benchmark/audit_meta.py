@@ -153,7 +153,7 @@ def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
             continue
         if any(name.startswith(f"{p}-") for p in HARNESS_PREFIXES):
             continue
-        if not any(child.glob("*/report.md")):
+        if not any(child.glob("**/report.md")):
             continue
         found.append(child)
     return found

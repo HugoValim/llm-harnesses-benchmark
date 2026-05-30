@@ -13,8 +13,8 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware.
 
 {audit_input_dirs}
 
-  - Glob `*/report.md` under EACH directory above; do not look outside these directories for input.
-  - Each report path is shaped `<auditor_dir>/<harness>-<model_slug>/report.md`. The directory name immediately above `report.md`'s parent IS the auditor identity.
+  - Glob `**/report.md` under EACH directory above; do not look outside these directories for input.
+  - Each report path is shaped `<auditor_dir>/<harness>-<model_slug>/report.md` (legacy) or `<auditor_dir>/<harness>-<model_slug>/run_XX/report.md` when benchmark replicates exist. The directory name immediately above `report.md`'s parent IS the auditor identity for legacy paths; for nested replicate paths the auditor is two levels above `run_XX/`.
   - Inside, the rubric layout is sections A-I (see prompts/audit_prompt_template.txt for the schema).
 - Rubric schema reference: prompts/audit_prompt_template.txt (for dimension max points, tier thresholds, auto-critical-failure types).
 
@@ -30,6 +30,8 @@ Path prefixes identify how each target was generated:
 - **Cursor agent runs** (model-only, not a harness entrant): `cursor-<model_slug>` is a Cursor Agent CLI run of that model. Copy numeric rows from the rollup **Cursor agent models** table into the appendix. Never rank `cursor` in section 3 or crown it as best harness. Cursor runs appear in section 2 **All runs ranking**; cite them in section 1 only when the skeleton includes a **Cursor agent runs** bullet.
 
 When more than one auditor directory is listed, the same `(harness, model_slug)` cell may have multiple `report.md` files (one per auditor). Treat each as an independent sample for that cell. When ranking models or contest harnesses, AVERAGE the totals across auditors for that cell and report the cross-auditor std-dev so auditor disagreement is visible. Keep `auditor` as an extra column wherever per-cell data is shown.
+
+When a target has multiple benchmark replicates, audit reports live under `<auditor>/<harness>-<model>/run_XX/report.md`. The precomputed rollup **Aggregated runs ranking** table averages replicate totals per `(harness, model_slug)` cell (N = number of parseable replicate audits). Section 2 primary verdict bullets MUST use those mean totals and std dev values. **All runs ranking (detail)** lists every individual replicate audit — use it for citations and variance notes, not for primary ranking math.
 
 Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5(xhigh)` and `claude_opus_4_7`) are **excluded from harness comparison averages** (section 3) because they were not run under every contest harness. They remain in section 2 and the appendix.
 

@@ -480,7 +480,8 @@ def build_generation_metrics(
     """Build the generation-metrics dict written before audit dispatch."""
     doc = pricing_doc or DEFAULT_PRICING_PATH
     last_updated = parse_last_updated(doc.read_text(encoding="utf-8")) or "unknown"
-    prefix, _ = split_target_slug(target_slug)
+    target_group = target_slug.split("/", 1)[0]
+    prefix, _ = split_target_slug(target_group)
     effective_harness = harness if harness != "unknown" else (prefix or harness)
 
     result_row: dict[str, Any] | None = None

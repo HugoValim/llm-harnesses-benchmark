@@ -249,6 +249,47 @@ def _avg(values: list[float]) -> float | None:
     return mean(values) if values else None
 
 
+def _aggregated_cell_stats(
+    reports: list[ParsedReport],
+    harness: str,
+    slug: str,
+) -> tuple[float | None, int, float | None]:
+    """Mean total, sample count, and std dev for one ``(harness, model_slug)`` cell."""
+    totals = [
+        float(r.total)
+        for r in reports
+        if r.harness == harness and r.model_slug == slug and r.total is not None
+    ]
+    if not totals:
+        return None, 0, None
+    avg = mean(totals)
+    std = stdev(totals) if len(totals) >= 2 else None
+    return avg, len(totals), std
+
+
+def _aggregated_contest_ranking_rows(
+    reports: list[ParsedReport],
+) -> list[tuple[str, str, float, int, float | None]]:
+    """One row per ``(harness, model_slug)`` with mean total across replicates."""
+    cells: set[tuple[str, str]] = set()
+    for report in reports:
+        if report.total is None or not report.model_slug:
+            continue
+        if not (
+            _is_benchmark_harness(report.harness)
+            or report.harness == CURSOR_AGENT_PREFIX
+        ):
+            continue
+        cells.add((report.harness, report.model_slug))
+    rows: list[tuple[str, str, float, int, float | None]] = []
+    for harness, slug in cells:
+        avg, sample_n, std = _aggregated_cell_stats(reports, harness, slug)
+        if avg is not None:
+            rows.append((harness, slug, avg, sample_n, std))
+    rows.sort(key=lambda item: item[2], reverse=True)
+    return rows
+
+
 _OLLAMA_CLOUD_SLUG_SUFFIX = "_ollama_cloud"
 _CONTEST_HARNESS_COLUMN_ORDER: tuple[str, ...] = ("claude", "codex", "opencode")
 
@@ -641,15 +682,59 @@ def expected_section2_run_rows(
     *,
     display_slug_map: dict[str, str] | None = None,
 ) -> list[tuple[str, str, float]]:
-    """Return ``(harness, model_slug, total)`` tuples for section 2 validation."""
+    """Return aggregated ``(harness, model_slug, mean_total)`` tuples for section 2."""
     return [
         (
-            r.harness,
-            _display_slug(r.model_slug or "-", display_slug_map),
-            float(r.total),
+            harness,
+            _display_slug(slug, display_slug_map),
+            avg,
         )
-        for r in _ranked_run_reports(reports)
+        for harness, slug, avg, _sample_n, _std in _aggregated_contest_ranking_rows(
+            reports
+        )
     ]
+
+
+def build_aggregated_runs_ranking_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Markdown table: mean total per ``(harness, model)`` across replicate audits."""
+    rows = _aggregated_contest_ranking_rows(reports)
+    if not rows:
+        return (
+            "## Aggregated runs ranking\n\n"
+            "*(no contest or cursor runs with parseable totals)*\n"
+        )
+
+    lines = [
+        "## Aggregated runs ranking",
+        "",
+        "Primary ranking table for section 2 verdicts. One row per "
+        "``(harness, model_slug)`` with mean total across replicate audits "
+        "(N includes every parseable replicate report for that cell).",
+        "",
+        "| Rank | Harness | Model slug | Mean total | N | Std dev | Tier |",
+        "|---:|---|---|---:|---:|---:|---|",
+    ]
+    for rank, (harness, slug, avg, sample_n, std) in enumerate(rows, start=1):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(rank),
+                    harness,
+                    _display_slug(slug, display_slug_map),
+                    _fmt(avg),
+                    str(sample_n),
+                    _fmt(std),
+                    _tier_from_total(avg),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def build_all_runs_ranking_table(
@@ -666,13 +751,13 @@ def build_all_runs_ranking_table(
         )
 
     lines = [
-        "## All runs ranking",
+        "## All runs ranking (detail)",
         "",
-        "Authoritative rows for section 2. One row per contest or cursor-agent",
-        "run with a parseable total, sorted by total descending.",
+        "Individual replicate audits. Section 2 primary verdicts use "
+        "**Aggregated runs ranking** (mean across replicates).",
         "",
-        "| Rank | Harness | Model slug | Total | Tier |",
-        "|---:|---|---|---:|---|",
+        "| Rank | Harness | Model slug | Replicate | Total | Tier |",
+        "|---:|---|---|---|---:|---|",
     ]
     for rank, report in enumerate(ranked, start=1):
         lines.append(
@@ -682,6 +767,7 @@ def build_all_runs_ranking_table(
                     str(rank),
                     report.harness,
                     _display_slug(report.model_slug or "-", display_slug_map),
+                    report.replicate_id or "-",
                     _fmt(float(report.total)),
                     report.tier or "-",
                 ]
@@ -1231,6 +1317,10 @@ def build_precomputed_rollup(
         ).rstrip(),
         "",
         build_model_coverage_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
+        "",
+        build_aggregated_runs_ranking_table(
             reports, display_slug_map=display_slug_map
         ).rstrip(),
         "",

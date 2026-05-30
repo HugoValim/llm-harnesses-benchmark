@@ -130,9 +130,10 @@ from benchmark.result_layout import (  # noqa: E402
     audit_result_json,
     audit_stream_ndjson,
     audit_target_dir,
+    benchmark_target_slug_from_leaf,
     discover_benchmark_target_dirs,
     layout_from_repo,
-    split_target_slug,
+    parse_benchmark_target_path,
 )
 
 
@@ -161,16 +162,18 @@ def discover_project_dirs(
     out: list[dict] = []
     for entry in discover_benchmark_target_dirs(benchmark_results_dir):
         project_dir = entry / "project"
-        name = entry.name
-        prefix, model_slug = split_target_slug(name)
-        harness = prefix or "unknown"
+        slug = benchmark_target_slug_from_leaf(entry, benchmark_results_dir)
+        parsed = parse_benchmark_target_path(slug)
+        harness = parsed.harness or "unknown"
         target: dict = {
-            "slug": name,
-            "model_slug": model_slug,
+            "slug": slug,
+            "target_group": parsed.target_group,
+            "replicate_id": parsed.replicate_id,
+            "model_slug": parsed.model_slug,
             "harness": harness,
             "project_dir": project_dir,
         }
-        extra = config_targets_by_slug.get(model_slug)
+        extra = config_targets_by_slug.get(parsed.model_slug)
         if extra:
             for k in ("label", "main_model", "selection_reason", "provider"):
                 if k in extra:
@@ -191,7 +194,11 @@ def _filter_discovered(discovered: list[dict], wanted: set[str]) -> list[dict]:
         return list(discovered)
     out: list[dict] = []
     for t in discovered:
-        if t["slug"] in wanted or t["model_slug"] in wanted:
+        if (
+            t["slug"] in wanted
+            or t.get("target_group") in wanted
+            or t["model_slug"] in wanted
+        ):
             out.append(t)
     return out
 
@@ -580,7 +587,7 @@ def _print_calibration_warnings(auditor_dir: Path) -> None:
     """Warn when parsed cohort scores suggest rubric saturation."""
     reports = [
         load_rubric_result(p)
-        for p in sorted(auditor_dir.glob("*/report.md"))
+        for p in sorted(auditor_dir.glob("**/report.md"))
         if p.is_file()
     ]
     totals = [r.total for r in reports if r.total is not None]

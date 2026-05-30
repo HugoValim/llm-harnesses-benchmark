@@ -11,11 +11,13 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.audit_meta import build_meta_prompt  # noqa: E402
 from benchmark.audit_report import DimensionScore, ParsedReport  # noqa: E402
 from benchmark.audit_rollup import (  # noqa: E402
+    build_aggregated_runs_ranking_table,
     build_all_runs_ranking_table,
     build_executive_summary_skeleton,
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
+    expected_section2_run_rows,
     executive_summary_expectations,
     model_harness_coverage,
     validate_meta_analysis_coverage,
@@ -91,8 +93,9 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
     )
     assert "Model coverage" in prompt
     assert "Executive summary skeleton" in rollup
-    assert "All runs ranking" in rollup
-    assert "All runs ranking" in prompt
+    assert "Aggregated runs ranking" in rollup
+    assert "All runs ranking (detail)" in rollup
+    assert "All runs ranking (detail)" in prompt
     assert "Harness CLI versions" in rollup
     assert "Harness CLI versions" in prompt
     assert "glm_5_1_ollama_cloud" in prompt
@@ -183,12 +186,38 @@ def test_build_all_runs_ranking_table_lists_every_run() -> None:
         row("codex", "glm_5_1_ollama_cloud", 84),
     ]
     table = build_all_runs_ranking_table(reports)
-    assert "All runs ranking" in table
-    assert "| 1 | opencode | glm_5_1_ollama_cloud | 88.0 | A |" in table
-    assert "| 2 | codex | codex_gpt_5_5 | 86.0 | A |" in table
-    assert "| 3 | codex | glm_5_1_ollama_cloud | 84.0 | A |" in table
-    assert "| 4 | cursor | composer_2_5 | 83.0 | A |" in table
-    assert "| 5 | claude | claude_opus_4_7 | 82.0 | A |" in table
+    assert "All runs ranking (detail)" in table
+    assert "| 1 | opencode | glm_5_1_ollama_cloud | - | 88.0 | A |" in table
+    assert "| 2 | codex | codex_gpt_5_5 | - | 86.0 | A |" in table
+    assert "| 3 | codex | glm_5_1_ollama_cloud | - | 84.0 | A |" in table
+    assert "| 4 | cursor | composer_2_5 | - | 83.0 | A |" in table
+    assert "| 5 | claude | claude_opus_4_7 | - | 82.0 | A |" in table
+
+
+def test_aggregated_runs_ranking_averages_replicates() -> None:
+    reports = [
+        ParsedReport(
+            auditor="auditor",
+            target="codex-demo/run_01",
+            harness="codex",
+            model_slug="demo",
+            replicate_id="run_01",
+            total=70,
+        ),
+        ParsedReport(
+            auditor="auditor",
+            target="codex-demo/run_02",
+            harness="codex",
+            model_slug="demo",
+            replicate_id="run_02",
+            total=80,
+        ),
+    ]
+    table = build_aggregated_runs_ranking_table(reports)
+    assert "Aggregated runs ranking" in table
+    assert "| 1 | codex | demo | 75.0 | 2 | 7.1 | B |" in table
+    rows = expected_section2_run_rows(reports)
+    assert rows == [("codex", "demo", 75.0)]
 
 
 def test_harness_section_excludes_single_harness_models() -> None:

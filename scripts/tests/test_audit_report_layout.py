@@ -42,6 +42,17 @@ def test_iter_reports_root_tree(tmp_path: Path) -> None:
     assert {r.auditor for r in reports} == {"auditor_a", "auditor_b"}
 
 
+def test_iter_reports_nested_replicate_tree(tmp_path: Path) -> None:
+    auditor_dir = tmp_path / "codex_gpt_5_5"
+    _write_report(auditor_dir / "codex-foo" / "run_01", 80)
+    _write_report(auditor_dir / "codex-foo" / "run_02", 90)
+
+    reports = list(_iter_reports(auditor_dir))
+    assert len(reports) == 2
+    assert {r.target for r in reports} == {"codex-foo/run_01", "codex-foo/run_02"}
+    assert {r.replicate_id for r in reports} == {"run_01", "run_02"}
+
+
 def test_build_comparison_from_source_dirs(tmp_path: Path) -> None:
     dir_a = tmp_path / "auditor_a"
     dir_b = tmp_path / "auditor_b"

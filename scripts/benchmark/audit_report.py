@@ -18,7 +18,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from benchmark.result_layout import split_target_slug
+from benchmark.result_layout import (
+    REPLICATE_DIR_PATTERN,
+    parse_benchmark_target_path,
+    split_target_slug,
+)
 
 NUM_DIMENSIONS = 10
 TIERS: tuple[str, ...] = ("A", "B", "C", "D")
@@ -53,6 +57,7 @@ class ParsedReport:
     target: str
     harness: str
     model_slug: str
+    replicate_id: str | None = None
     total: int | None = None
     tier: str | None = None
     dimensions: list[DimensionScore] = field(default_factory=list)
@@ -80,12 +85,23 @@ def audit_report_is_complete(report_path: Path) -> bool:
     return parse_report_scores(text).total is not None
 
 
+def _audit_report_identity(report_md_path: Path) -> tuple[str, str]:
+    """Return ``(auditor, target_slug)`` for one ``report.md`` path."""
+    leaf_dir = report_md_path.parent
+    if REPLICATE_DIR_PATTERN.match(leaf_dir.name):
+        target_group = leaf_dir.parent.name
+        auditor = leaf_dir.parent.parent.name
+        return auditor, f"{target_group}/{leaf_dir.name}"
+    return leaf_dir.parent.name, leaf_dir.name
+
+
 def load_rubric_result(report_md_path: Path) -> RubricResult:
     """Parse a single ``report.md`` and return a typed :class:`RubricResult`."""
+    auditor, target = _audit_report_identity(report_md_path)
     return parse_report_scores(
         report_md_path.read_text(),
-        auditor=report_md_path.parent.parent.name,
-        target=report_md_path.parent.name,
+        auditor=auditor,
+        target=target,
     )
 
 
@@ -157,12 +173,13 @@ def parse_report_scores(
     with ``None`` fields when patterns don't match — callers should treat
     missing fields as "unscored", not as zeros.
     """
-    harness, model_slug = _split_harness(target)
+    harness, model_slug, replicate_id = _split_harness(target)
     report = ParsedReport(
         auditor=auditor,
         target=target,
         harness=harness,
         model_slug=model_slug,
+        replicate_id=replicate_id,
     )
 
     total_match = _extract_total(report_text)
@@ -215,31 +232,62 @@ def _extract_total(report_text: str) -> int | None:
     return None
 
 
-def _split_harness(target: str) -> tuple[str, str]:
-    """Split ``claude-foo_bar`` into ``("claude", "foo_bar")``."""
+def _split_harness(target: str) -> tuple[str, str, str | None]:
+    """Split a target slug into harness, model slug, and optional replicate id."""
+    if "/" in target:
+        parsed = parse_benchmark_target_path(target)
+        return parsed.harness or "unknown", parsed.model_slug, parsed.replicate_id
     harness, slug = split_target_slug(target)
-    return harness or "unknown", slug
+    return harness or "unknown", slug, None
 
 
 def _iter_target_reports(
     auditor_dir: Path, *, auditor_name: str
 ) -> Iterable[ParsedReport]:
-    """Yield reports under ``<auditor_dir>/<target>/report.md``."""
+    """Yield reports under legacy and nested replicate audit layouts."""
     if not auditor_dir.is_dir():
         return
     for target_dir in sorted(auditor_dir.iterdir()):
         if not target_dir.is_dir():
             continue
-        report_path = target_dir / "report.md"
-        if not report_path.exists():
+        direct_report = target_dir / "report.md"
+        if direct_report.exists():
+            try:
+                text = direct_report.read_text()
+            except OSError:
+                continue
+            yield parse_report_scores(
+                text, auditor=auditor_name, target=target_dir.name
+            )
             continue
-        try:
-            text = report_path.read_text()
-        except OSError:
-            continue
-        yield parse_report_scores(
-            text, auditor=auditor_name, target=target_dir.name
-        )
+        for replicate_dir in sorted(target_dir.iterdir()):
+            if not replicate_dir.is_dir():
+                continue
+            if not REPLICATE_DIR_PATTERN.match(replicate_dir.name):
+                continue
+            report_path = replicate_dir / "report.md"
+            if not report_path.exists():
+                continue
+            try:
+                text = report_path.read_text()
+            except OSError:
+                continue
+            yield parse_report_scores(
+                text,
+                auditor=auditor_name,
+                target=f"{target_dir.name}/{replicate_dir.name}",
+            )
+
+
+def _target_group_has_reports(target_dir: Path) -> bool:
+    if (target_dir / "report.md").is_file():
+        return True
+    return any(
+        REPLICATE_DIR_PATTERN.match(child.name)
+        and (child / "report.md").is_file()
+        for child in target_dir.iterdir()
+        if child.is_dir()
+    )
 
 
 def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
@@ -247,8 +295,9 @@ def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
 
     Supports two layouts:
 
-    - **Auditor-scoped** (``audit-reports/<auditor>/<target>/report.md``):
-      direct children of ``reports_dir`` are targets.
+    - **Auditor-scoped** (``audit-reports/<auditor>/<target>/report.md`` or
+      nested ``<target>/run_XX/report.md``): direct children of
+      ``reports_dir`` are targets.
     - **Root** (``audit-reports/<auditor>/<target>/report.md`` with an extra
       auditor level): each direct child of ``reports_dir`` is an auditor dir.
     """
@@ -257,7 +306,7 @@ def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
     child_dirs = [c for c in sorted(reports_dir.iterdir()) if c.is_dir()]
     if not child_dirs:
         return
-    if any((c / "report.md").exists() for c in child_dirs):
+    if any(_target_group_has_reports(c) for c in child_dirs):
         yield from _iter_target_reports(reports_dir, auditor_name=reports_dir.name)
         return
     for auditor_dir in child_dirs:
