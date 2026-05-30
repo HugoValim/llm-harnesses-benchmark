@@ -16,6 +16,7 @@ from benchmark.pricing import (  # noqa: E402
     assert_registry_coverage,
     build_generation_metrics,
     compute_estimated_cost,
+    enrich_cursor_result_row,
     extract_token_totals,
     format_generation_metrics_block,
     load_pricing_table,
@@ -71,6 +72,48 @@ def test_compute_cost_composer_cursor_list() -> None:
     )
     cost = compute_estimated_cost(row, tokens)
     assert cost == pytest.approx(7.5 + 7.5)
+
+
+def test_extract_token_totals_cursor_model_usage() -> None:
+    tokens = extract_token_totals(
+        {
+            "model_usage": {
+                "composer-2.5": {
+                    "inputTokens": 10_000,
+                    "outputTokens": 2_000,
+                    "cacheReadInputTokens": 100_000,
+                }
+            }
+        },
+        harness="cursor",
+    )
+    assert tokens.input_tokens == 10_000
+    assert tokens.output_tokens == 2_000
+    assert tokens.cache_read_tokens == 100_000
+
+
+def test_enrich_cursor_result_row_from_streams() -> None:
+    repo_result = REPO_ROOT / "results" / "cursor-composer_2_5" / "result.json"
+    if not repo_result.is_file():
+        pytest.skip("cursor-composer_2_5 benchmark result not present")
+    row = load_json(repo_result)
+    assert "model_usage" not in row or not row.get("model_usage")
+    enriched = enrich_cursor_result_row(
+        row, benchmark_result_path=repo_result
+    )
+    usage = enriched["model_usage"]["composer-2.5"]
+    assert usage["inputTokens"] == 72_370
+    assert usage["outputTokens"] == 21_772
+    metrics = build_generation_metrics(
+        target_slug="cursor-composer_2_5",
+        model_slug="composer_2_5",
+        harness="cursor",
+        benchmark_result_path=repo_result,
+    )
+    assert metrics["cost_source"] == "computed"
+    assert metrics["input_tokens"] == 72_370
+    assert metrics["estimated_cost_usd"] is not None
+    assert metrics["estimated_cost_usd"] > 0
 
 
 def test_build_generation_metrics_includes_harness_cli_version(tmp_path: Path) -> None:

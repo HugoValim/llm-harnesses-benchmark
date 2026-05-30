@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
+from benchmark.pricing import merge_cursor_model_usage, model_usage_from_cursor_final
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
     RateLimitWaitPolicy,
@@ -456,6 +457,11 @@ def run_variant(
         ),
     )
     final = result.final_result_event or {}
+    usage = final.get("usage", {})
+    if not isinstance(usage, dict):
+        usage = {}
+    main_model = variant["main_model"]
+    model_usage = model_usage_from_cursor_final(main_model, final)
     num_turns = result.assistant_turns
     file_count = count_files(project_dir)
 
@@ -480,6 +486,8 @@ def run_variant(
         "assistant_turns": result.assistant_turns,
         "result_subtype": final.get("subtype"),
         "duration_ms": final.get("duration_ms"),
+        "usage_total": usage,
+        "model_usage": model_usage,
         "tool_use_counts": dict(result.tool_use_counts),
         "prompt_sha256": prompt_sha256(prompt),
         "command": command[:-1] + ["<prompt>"],
@@ -528,12 +536,18 @@ def run_variant(
             ),
         )
         p2_final = p2_result.final_result_event or {}
+        p2_usage = p2_final.get("usage", {})
+        if not isinstance(p2_usage, dict):
+            p2_usage = {}
+        p2_model_usage = model_usage_from_cursor_final(main_model, p2_final)
+        merged_model_usage = merge_cursor_model_usage(model_usage, p2_model_usage)
         phase1_core = {
             "phase": "phase1",
             "status": payload["status"],
             "elapsed_seconds": payload["elapsed_seconds"],
             "num_turns": payload["num_turns"],
             "file_count": payload["file_count"],
+            "model_usage": model_usage,
         }
         phase2_core = {
             "phase": "phase2",
@@ -541,6 +555,7 @@ def run_variant(
             "elapsed_seconds": p2_elapsed,
             "num_turns": p2_result.assistant_turns,
             "file_count": count_files(project_dir),
+            "model_usage": p2_model_usage,
         }
         combined_tools = dict(result.tool_use_counts)
         for k, v in p2_result.tool_use_counts.items():
@@ -558,6 +573,8 @@ def run_variant(
             "assistant_turns": result.assistant_turns + p2_result.assistant_turns,
             "result_subtype": p2_final.get("subtype"),
             "duration_ms": p2_final.get("duration_ms"),
+            "usage_total": p2_usage,
+            "model_usage": merged_model_usage,
             "tool_use_counts": combined_tools,
             "followup_prompt_sha256": prompt_sha256(followup_prompt),
             "phases": [phase1_core, phase2_core],
@@ -572,10 +589,18 @@ def run_variant(
         elapsed = payload["elapsed_seconds"]
         file_count = payload["file_count"]
         num_turns = payload["num_turns"]
+        model_usage = merged_model_usage
 
     save_json(result_path, payload)
     print_line(
         f"Finished {slug} status={status} elapsed={elapsed:.2f}s "
         f"files={file_count} turns={num_turns}"
     )
+    if model_usage:
+        print_line(f"[{log_tag}] model_usage:")
+        for model, u in model_usage.items():
+            in_tok = u.get("inputTokens", 0)
+            out_tok = u.get("outputTokens", 0)
+            cache_read = u.get("cacheReadInputTokens", 0)
+            print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
     return payload

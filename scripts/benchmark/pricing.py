@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,6 +197,153 @@ def assert_registry_coverage(
         )
 
 
+def cursor_usage_to_model_entry(usage: dict[str, Any]) -> dict[str, int]:
+    """Normalize Cursor Agent CLI usage keys to Claude-style model_usage entry."""
+    return {
+        "inputTokens": int(usage.get("inputTokens") or 0),
+        "outputTokens": int(usage.get("outputTokens") or 0),
+        "cacheReadInputTokens": int(
+            usage.get("cacheReadInputTokens")
+            or usage.get("cacheReadTokens")
+            or 0
+        ),
+        "cacheCreationInputTokens": int(
+            usage.get("cacheCreationInputTokens")
+            or usage.get("cacheWriteTokens")
+            or 0
+        ),
+    }
+
+
+def model_usage_from_cursor_final(
+    main_model: str,
+    final: dict[str, Any],
+) -> dict[str, Any]:
+    """Build model_usage from a Cursor stream-json final result event."""
+    usage = final.get("usage")
+    if not isinstance(usage, dict) or not usage:
+        return {}
+    return {main_model: cursor_usage_to_model_entry(usage)}
+
+
+def merge_cursor_model_usage(
+    base: dict[str, Any],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    """Sum token fields across two model_usage maps (e.g. phase 1 + phase 2)."""
+    merged: dict[str, Any] = {k: dict(v) for k, v in base.items()}
+    for model_id, p2_u in extra.items():
+        if not isinstance(p2_u, dict):
+            continue
+        if model_id in merged:
+            m = merged[model_id]
+            for tok_key in (
+                "inputTokens",
+                "outputTokens",
+                "cacheReadInputTokens",
+                "cacheCreationInputTokens",
+            ):
+                m[tok_key] = int(m.get(tok_key) or 0) + int(p2_u.get(tok_key) or 0)
+        else:
+            merged[model_id] = dict(p2_u)
+    return merged
+
+
+def _read_cursor_usage_from_ndjson(path: Path) -> dict[str, Any] | None:
+    """Return usage from the last result event in a Cursor stream.ndjson file."""
+    if not path.is_file():
+        return None
+    last_usage: dict[str, Any] | None = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "result" and isinstance(event.get("usage"), dict):
+            last_usage = event["usage"]
+    return last_usage
+
+
+def enrich_cursor_result_row(
+    result_row: dict[str, Any],
+    *,
+    benchmark_result_path: Path | None = None,
+) -> dict[str, Any]:
+    """Backfill model_usage for cursor runs that predate usage persistence."""
+    if result_row.get("harness") != "cursor":
+        return result_row
+    existing = result_row.get("model_usage")
+    if isinstance(existing, dict) and existing:
+        return result_row
+
+    main_model = str(result_row.get("main_model") or "unknown")
+    paths = result_row.get("paths")
+    if not isinstance(paths, dict):
+        paths = {}
+
+    usages: list[dict[str, Any]] = []
+    for key in ("stream_ndjson", "followup_stream_ndjson"):
+        raw = paths.get(key)
+        if not raw:
+            continue
+        usage = _read_cursor_usage_from_ndjson(Path(raw))
+        if usage:
+            usages.append(usage)
+
+    if not usages and benchmark_result_path is not None:
+        result_dir = benchmark_result_path.parent
+        for name in ("stream.ndjson", "followup-stream.ndjson"):
+            usage = _read_cursor_usage_from_ndjson(result_dir / name)
+            if usage:
+                usages.append(usage)
+
+    if not usages:
+        usage_total = result_row.get("usage_total") or result_row.get("usage")
+        if isinstance(usage_total, dict) and usage_total:
+            usages.append(usage_total)
+
+    if not usages:
+        return result_row
+
+    merged_entry = {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+    }
+    for usage in usages:
+        entry = cursor_usage_to_model_entry(usage)
+        for tok_key in merged_entry:
+            merged_entry[tok_key] += entry[tok_key]
+
+    return {
+        **result_row,
+        "model_usage": {main_model: merged_entry},
+        "usage_total": usages[-1],
+    }
+
+
+def _token_totals_from_cursor_usage(
+    usage: dict[str, Any],
+    harness_cost: float | None,
+) -> TokenTotals:
+    entry = cursor_usage_to_model_entry(usage)
+    in_tok = entry["inputTokens"]
+    out_tok = entry["outputTokens"]
+    total = in_tok + out_tok if (in_tok or out_tok) else None
+    return TokenTotals(
+        input_tokens=in_tok or None,
+        output_tokens=out_tok or None,
+        total_tokens=total,
+        cache_read_tokens=entry["cacheReadInputTokens"],
+        cache_write_tokens=entry["cacheCreationInputTokens"],
+        harness_reported_cost_usd=harness_cost,
+    )
+
+
 def _sum_model_usage(model_usage: dict[str, Any]) -> TokenTotals:
     in_tok = out_tok = cache_read = cache_write = 0
     reported_cost = 0.0
@@ -271,6 +419,10 @@ def extract_token_totals(
             harness_reported_cost_usd=harness_cost,
         )
 
+    usage = result_row.get("usage_total") or result_row.get("usage")
+    if isinstance(usage, dict) and usage:
+        return _token_totals_from_cursor_usage(usage, harness_cost)
+
     return TokenTotals(None, None, None, 0, 0, harness_cost)
 
 
@@ -335,6 +487,9 @@ def build_generation_metrics(
     if benchmark_result_path and benchmark_result_path.is_file():
         try:
             result_row = migrate_to_v2(load_json(benchmark_result_path))
+            result_row = enrich_cursor_result_row(
+                result_row, benchmark_result_path=benchmark_result_path
+            )
         except Exception:
             result_row = None
 
