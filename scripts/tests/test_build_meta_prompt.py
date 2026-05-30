@@ -17,6 +17,11 @@ from benchmark.audit_rollup import (  # noqa: E402
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
+    calculate_aggregated_runs_ranking,
+    calculate_executive_summary_expectations,
+    calculate_harness_comparison,
+    calculate_model_coverage,
+    calculate_ollama_model_ranking,
     expected_section2_run_rows,
     executive_summary_expectations,
     model_harness_coverage,
@@ -65,6 +70,22 @@ def test_build_model_coverage_table_lists_glm_harnesses() -> None:
     assert "glm_5_1_ollama_cloud" in table
     assert "claude, codex, opencode" in table
     assert "| 3 |" in table
+
+
+def test_calculate_model_coverage_returns_typed_rows() -> None:
+    rows = calculate_model_coverage(_reports_with_cursor())
+
+    assert rows[0].model_slug == "glm_5_1_ollama_cloud"
+    assert rows[0].harnesses == ("claude", "codex", "opencode")
+    assert rows[0].harness_count == 3
+    assert rows[0].runs == 3
+    assert rows[0].avg_total == 84.66666666666667
+
+    cursor = rows[1]
+    assert cursor.model_slug == "composer_2_5"
+    assert cursor.harnesses == ()
+    assert cursor.cursor_runs == 1
+    assert cursor.cursor_avg_total == 83.0
 
 
 def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
@@ -220,6 +241,39 @@ def test_aggregated_runs_ranking_averages_replicates() -> None:
     assert rows == [("codex", "demo", 75.0)]
 
 
+def test_calculate_aggregated_runs_ranking_returns_typed_rows() -> None:
+    reports = [
+        ParsedReport(
+            auditor="auditor",
+            target="codex-demo/run_01",
+            harness="codex",
+            model_slug="demo",
+            replicate_id="run_01",
+            total=70,
+        ),
+        ParsedReport(
+            auditor="auditor",
+            target="codex-demo/run_02",
+            harness="codex",
+            model_slug="demo",
+            replicate_id="run_02",
+            total=80,
+        ),
+    ]
+
+    rows = calculate_aggregated_runs_ranking(reports)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.rank == 1
+    assert row.harness == "codex"
+    assert row.model_slug == "demo"
+    assert row.mean_total == 75.0
+    assert row.sample_n == 2
+    assert row.std_dev == 7.0710678118654755
+    assert row.tier == "B"
+
+
 def test_harness_section_excludes_single_harness_models() -> None:
     def row(harness: str, slug: str, total: int) -> ParsedReport:
         return ParsedReport(
@@ -248,6 +302,36 @@ def test_harness_section_excludes_single_harness_models() -> None:
     assert "| codex | 1 |" in harness_block
     assert "| claude | 1 |" in harness_block
     assert "| opencode | 1 |" in harness_block
+
+
+def test_calculate_harness_comparison_returns_typed_cohort_rows() -> None:
+    reports = [
+        _ollama_row("codex", "codex_gpt_5_5", 86),
+        _ollama_row("claude", "claude_opus_4_7", 82),
+        _ollama_row("codex", "glm_5_1_ollama_cloud", 84),
+        _ollama_row("claude", "glm_5_1_ollama_cloud", 82),
+        _ollama_row("opencode", "glm_5_1_ollama_cloud", 88),
+    ]
+
+    comparison = calculate_harness_comparison(reports)
+
+    assert comparison.cohort_model_slugs == frozenset({"glm_5_1_ollama_cloud"})
+    assert comparison.best_harnesses == ("opencode",)
+    assert comparison.best_avg_total == 88.0
+    assert [(row.harness, row.runs, row.avg_total) for row in comparison.rows] == [
+        ("claude", 1, 82.0),
+        ("codex", 1, 84.0),
+        ("opencode", 1, 88.0),
+    ]
+    opencode = comparison.rows[2]
+    assert [(item.tier, item.count) for item in opencode.tier_counts] == [
+        ("A", 1),
+        ("B", 0),
+        ("C", 0),
+        ("D", 0),
+    ]
+    assert opencode.dimension_averages[0].index == 1
+    assert opencode.dimension_averages[0].avg_score == 5.0
 
 
 def _reports_with_cursor() -> list[ParsedReport]:
@@ -356,6 +440,29 @@ def test_build_ollama_model_ranking_table_orders_by_cross_harness_mean() -> None
     assert "| 1 | deepseek_v4_pro_ollama_cloud | 3 | 74.0 |" in table
     assert "| 2 | glm_5_1_ollama_cloud | 3 | 70.7 |" in table
     assert "deepseek_v4_pro_ollama_cloud" in table.split("Best open-source model")[1]
+
+
+def test_calculate_ollama_model_ranking_returns_typed_rows() -> None:
+    reports = [
+        _ollama_row("claude", "deepseek_v4_pro_ollama_cloud", 71),
+        _ollama_row("codex", "deepseek_v4_pro_ollama_cloud", 76),
+        _ollama_row("opencode", "deepseek_v4_pro_ollama_cloud", 75),
+    ]
+
+    rows = calculate_ollama_model_ranking(reports)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.rank == 1
+    assert row.model_slug == "deepseek_v4_pro_ollama_cloud"
+    assert row.n_harnesses == 3
+    assert row.avg_total == 74.0
+    assert row.tier == "B"
+    assert [(cell.harness, cell.avg_total) for cell in row.harness_averages] == [
+        ("claude", 71.0),
+        ("codex", 76.0),
+        ("opencode", 75.0),
+    ]
 
 
 def test_build_ollama_model_ranking_excludes_single_harness_ollama() -> None:
@@ -502,6 +609,23 @@ def test_executive_summary_expectations_track_distinct_verdicts() -> None:
     assert expectations["top_model_total"] == 86.0
     assert expectations["best_ollama_slug"] == "deepseek_v4_pro_ollama_cloud"
     assert expectations["best_ollama_avg"] == 74.0
+
+
+def test_calculate_executive_summary_expectations_returns_typed_result() -> None:
+    expectations = calculate_executive_summary_expectations(
+        _exec_summary_fixture_reports()
+    )
+
+    assert expectations.harness_rankings[0].harness == "opencode"
+    assert expectations.harness_rankings[0].avg_total == 75.5
+    assert expectations.top_model is not None
+    assert expectations.top_model.model_slug == "codex_gpt_5_5"
+    assert expectations.top_model.total == 86.0
+    assert expectations.best_ollama is not None
+    assert expectations.best_ollama.model_slug == "deepseek_v4_pro_ollama_cloud"
+    assert expectations.best_ollama.avg_total == 74.0
+    assert expectations.blind_spot is not None
+    assert expectations.blind_spot.index == 1
 
 
 def test_build_precomputed_rollup_includes_executive_skeleton(
