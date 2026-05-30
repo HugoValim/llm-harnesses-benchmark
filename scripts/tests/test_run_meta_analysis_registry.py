@@ -111,6 +111,7 @@ def test_cli_preserves_meta_output_path(
             "sonnet_auditor",
             "--meta-prompt",
             str(prompt_path),
+            "--no-strict-meta-validation",
         ],
     )
 

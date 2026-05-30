@@ -12,11 +12,14 @@ from benchmark.audit_meta import build_meta_prompt  # noqa: E402
 from benchmark.audit_report import DimensionScore, ParsedReport  # noqa: E402
 from benchmark.audit_rollup import (  # noqa: E402
     build_all_runs_ranking_table,
+    build_executive_summary_skeleton,
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
+    executive_summary_expectations,
     model_harness_coverage,
     validate_meta_analysis_coverage,
+    validate_meta_analysis_executive_summary,
     validate_meta_analysis_ollama_ranking,
     _cross_harness_cohort_slugs,
     _dimension_labels,
@@ -87,6 +90,7 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
         precomputed_rollup=rollup,
     )
     assert "Model coverage" in prompt
+    assert "Executive summary skeleton" in rollup
     assert "All runs ranking" in rollup
     assert "All runs ranking" in prompt
     assert "Harness CLI versions" in rollup
@@ -396,3 +400,181 @@ def test_validate_meta_analysis_ollama_ranking_detects_mismatch(
     assert len(errors) == 1
     assert "section 2a row 1" in errors[0]
     assert "avg=74.0" in errors[0]
+
+
+def _exec_summary_fixture_reports() -> list[ParsedReport]:
+    reports = [
+        _ollama_row("claude", "deepseek_v4_pro_ollama_cloud", 71),
+        _ollama_row("codex", "deepseek_v4_pro_ollama_cloud", 76),
+        _ollama_row("opencode", "deepseek_v4_pro_ollama_cloud", 75),
+        _ollama_row("claude", "glm_5_1_ollama_cloud", 63),
+        _ollama_row("codex", "glm_5_1_ollama_cloud", 73),
+        _ollama_row("opencode", "glm_5_1_ollama_cloud", 76),
+        ParsedReport(
+            auditor="auditor_a",
+            target="codex-codex_gpt_5_5",
+            harness="codex",
+            model_slug="codex_gpt_5_5",
+            total=86,
+            tier="A",
+            dimensions=[DimensionScore(i, f"D{i}", 5, 10) for i in range(1, 11)],
+        ),
+    ]
+    return reports
+
+
+def test_build_executive_summary_skeleton_splits_peak_and_open_source() -> None:
+    reports = _exec_summary_fixture_reports()
+    skeleton = build_executive_summary_skeleton(reports)
+
+    assert "**Best model overall**: `codex_gpt_5_5`" in skeleton
+    assert "86.0/100 under `codex`" in skeleton
+    assert "single-harness anchor" in skeleton
+    assert "**Best open-source model overall**: `deepseek_v4_pro_ollama_cloud`" in skeleton
+    assert "74.0/100 cross-harness avg" in skeleton
+    assert "same as best model overall" not in skeleton.lower()
+
+
+def test_executive_summary_expectations_track_distinct_verdicts() -> None:
+    reports = _exec_summary_fixture_reports()
+    expectations = executive_summary_expectations(reports)
+
+    assert expectations["top_model_slug"] == "codex_gpt_5_5"
+    assert expectations["top_model_total"] == 86.0
+    assert expectations["best_ollama_slug"] == "deepseek_v4_pro_ollama_cloud"
+    assert expectations["best_ollama_avg"] == 74.0
+
+
+def test_build_precomputed_rollup_includes_executive_skeleton(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in _exec_summary_fixture_reports():
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "## Executive summary skeleton" in rollup
+    assert rollup.index("Executive summary skeleton") < rollup.index("Model coverage")
+    assert "codex_gpt_5_5" in rollup.split("Executive summary skeleton")[1].split(
+        "Model coverage"
+    )[0]
+
+
+def test_validate_meta_executive_summary_accepts_matching_bullets(
+    tmp_path: Path,
+) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    skeleton_lines = [
+        line
+        for line in build_executive_summary_skeleton(reports).splitlines()
+        if line.startswith("- **")
+    ]
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 1. Executive summary",
+                "",
+                *skeleton_lines,
+                "",
+                "## 2. Best model overall",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
+    assert errors == []
+
+
+def test_validate_meta_executive_summary_detects_missing_slug(
+    tmp_path: Path,
+) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 1. Executive summary",
+                "",
+                "- **Best model overall**: `wrong_model` — 86.0/100 under `codex`.",
+                "- **Best open-source model overall**: `deepseek_v4_pro_ollama_cloud` — 74.0/100 cross-harness avg across 3 contest harnesses.",
+                "- **Best harness overall**: `codex` — 74.5/100 avg (N=2).",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
+    assert any("codex_gpt_5_5" in err for err in errors)
+
+
+def test_validate_meta_executive_summary_detects_paragraph_format(
+    tmp_path: Path,
+) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 1. Executive summary",
+                "",
+                "**Best model overall**: `codex_gpt_5_5` — 86.0/100 (`report.md:8`).",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
+    assert any("bullet list" in err for err in errors)
+    assert any("report.md citations" in err for err in errors)

@@ -9,7 +9,7 @@ meta-analyst — not the final analysis.
 from __future__ import annotations
 
 from pathlib import Path
-from statistics import mean, stdev
+from statistics import mean, median, stdev
 
 from benchmark.audit_report import (
     NUM_DIMENSIONS,
@@ -866,6 +866,287 @@ def build_harness_versions_table(
     return "\n".join(lines) + "\n"
 
 
+def _top_contest_run(reports: list[ParsedReport]) -> ParsedReport | None:
+    """Rank-1 contest-harness run by total (peak Phase-1 score on the brief)."""
+    contest_runs = [
+        r
+        for r in _ranked_run_reports(reports)
+        if _is_benchmark_harness(r.harness)
+    ]
+    return contest_runs[0] if contest_runs else None
+
+
+def _harness_contest_stats(
+    reports: list[ParsedReport], harness: str
+) -> dict[str, float | int | None]:
+    """Stats for one contest harness over the cross-harness cohort."""
+    cohort = _cross_harness_cohort_slugs(reports)
+    subset = [
+        r
+        for r in reports
+        if r.harness == harness
+        and r.model_slug in cohort
+        and r.total is not None
+    ]
+    totals = [float(r.total) for r in subset]
+    std: float | None = None
+    if len(totals) >= 2:
+        std = stdev(totals)
+    return {
+        "n": len(subset),
+        "avg": _avg(totals),
+        "median": median(totals) if totals else None,
+        "std_dev": std,
+    }
+
+
+def _contest_harness_rankings(
+    reports: list[ParsedReport],
+) -> list[tuple[str, dict[str, float | int | None]]]:
+    """Contest harnesses sorted by cross-harness-cohort avg total descending."""
+    rows: list[tuple[str, dict[str, float | int | None]]] = []
+    for harness in _contest_harnesses_in_data(reports):
+        stats = _harness_contest_stats(reports, harness)
+        if stats["avg"] is not None:
+            rows.append((harness, stats))
+    rows.sort(key=lambda item: float(item[1]["avg"]), reverse=True)  # type: ignore[arg-type]
+    return rows
+
+
+def _single_harness_run_note(
+    reports: list[ParsedReport], model_slug: str
+) -> str:
+    """Short clause when a model slug appears under only one contest harness."""
+    harnesses = sorted(
+        {
+            r.harness
+            for r in reports
+            if r.model_slug == model_slug
+            and _is_benchmark_harness(r.harness)
+            and r.total is not None
+        }
+    )
+    if len(harnesses) > 1:
+        return ""
+    if _is_leader_slug(model_slug):
+        return "single-harness anchor — not on the shared Ollama grid"
+    return "single-harness run — not on the shared Ollama grid"
+
+
+def _lowest_dimension_candidate(
+    reports: list[ParsedReport],
+) -> dict[str, object] | None:
+    """Dimension with the lowest contest-cohort all-harness average."""
+    harnesses = _contest_harnesses_in_data(reports)
+    contest = _benchmark_reports(reports)
+    if not harnesses or not contest:
+        return None
+
+    dim_labels = _dimension_labels(reports)
+    candidate: dict[str, object] | None = None
+    lowest_all_avg = float("inf")
+
+    for i in range(1, NUM_DIMENSIONS + 1):
+        all_values = [
+            float(r.dim_score(i))
+            for r in contest
+            if r.dim_score(i) is not None
+        ]
+        all_avg = _avg(all_values)
+        if all_avg is None or all_avg >= lowest_all_avg:
+            continue
+        lowest_all_avg = all_avg
+        per_harness: dict[str, float | None] = {}
+        for harness in harnesses:
+            subset_values = [
+                float(r.dim_score(i))
+                for r in contest
+                if r.harness == harness and r.dim_score(i) is not None
+            ]
+            per_harness[harness] = _avg(subset_values)
+        label = dim_labels[i - 1] if i - 1 < len(dim_labels) else f"D{i}"
+        candidate = {
+            "index": i,
+            "label": label,
+            "max": _max_for_dimension(reports, i),
+            "all_avg": all_avg,
+            "per_harness": per_harness,
+        }
+    return candidate
+
+
+def _mixed_version_contest_harnesses(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> list[str]:
+    """Contest harnesses whose CLI version labels differ across targets."""
+    coverage = collect_harness_cli_versions(reports, source_dirs=source_dirs)
+    mixed: list[str] = []
+    for harness, version_map in coverage.items():
+        if harness == CURSOR_AGENT_PREFIX:
+            continue
+        if not _is_benchmark_harness(harness):
+            continue
+        if len(version_map) > 1:
+            mixed.append(harness)
+    return sorted(mixed)
+
+
+def executive_summary_expectations(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> dict[str, object]:
+    """Key verdict fields the executive summary must contain."""
+    expectations: dict[str, object] = {}
+
+    harness_rows = _contest_harness_rankings(reports)
+    if harness_rows:
+        best_harness, best_stats = harness_rows[0]
+        expectations["best_harness"] = best_harness
+        expectations["best_harness_avg"] = best_stats["avg"]
+
+    top_run = _top_contest_run(reports)
+    if top_run is not None and top_run.total is not None:
+        expectations["top_model_slug"] = top_run.model_slug
+        expectations["top_model_total"] = float(top_run.total)
+        expectations["top_model_harness"] = top_run.harness
+
+    ollama_rows = _ollama_ranking_rows(reports)
+    if ollama_rows:
+        best = ollama_rows[0]
+        expectations["best_ollama_slug"] = best["slug"]
+        expectations["best_ollama_avg"] = best["avg_total"]
+        expectations["best_ollama_n_harnesses"] = best["n_harnesses"]
+
+    expectations["mixed_version_harnesses"] = _mixed_version_contest_harnesses(
+        reports, source_dirs=source_dirs
+    )
+    return expectations
+
+
+def build_executive_summary_skeleton(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Deterministic verdict bullets for meta-analysis section 1."""
+    lines = [
+        "## Executive summary skeleton",
+        "",
+        "Copy these verdict bullets into section 1 **verbatim** (numbers and slugs).",
+        "Add at most three narrative bullets after them (harness pattern, universal",
+        "blind spot, calibration). No ``report.md:line`` citations in section 1.",
+        "",
+    ]
+
+    harness_rows = _contest_harness_rankings(reports)
+    if harness_rows:
+        best_harness, best_stats = harness_rows[0]
+        avg = float(best_stats["avg"])  # type: ignore[arg-type]
+        n = int(best_stats["n"])  # type: ignore[arg-type]
+        std = best_stats["std_dev"]
+        std_clause = f", std dev {_fmt(float(std))}" if std is not None else ""
+        runners = [
+            f"{name} {_fmt(float(stats['avg']))}"  # type: ignore[arg-type]
+            for name, stats in harness_rows[1:3]
+            if stats["avg"] is not None
+        ]
+        tie_note = ""
+        if len(harness_rows) >= 2:
+            second_avg = float(harness_rows[1][1]["avg"])  # type: ignore[arg-type]
+            second_n = int(harness_rows[1][1]["n"])  # type: ignore[arg-type]
+            if abs(avg - second_avg) <= 3 and (n <= 8 or second_n <= 8):
+                tie_note = " *Statistical tie* (margin ≤3 on N≤8)."
+        runner_clause = (
+            f" Runners-up: {', '.join(runners)}." if runners else ""
+        )
+        lines.append(
+            f"- **Best harness overall**: `{best_harness}` — "
+            f"{_fmt(avg)}/100 avg (N={n}{std_clause})."
+            f"{runner_clause}{tie_note}"
+        )
+    else:
+        lines.append(
+            "- **Best harness overall**: insufficient cross-model coverage — "
+            "harness verdict suppressed."
+        )
+
+    top_run = _top_contest_run(reports)
+    if top_run is not None and top_run.total is not None:
+        note = _single_harness_run_note(reports, top_run.model_slug or "")
+        note_clause = f" ({note})" if note else ""
+        lines.append(
+            f"- **Best model overall**: `{top_run.model_slug}` — "
+            f"{_fmt(float(top_run.total))}/100 under `{top_run.harness}` "
+            f"(top contest-harness run{note_clause})."
+        )
+    else:
+        lines.append(
+            "- **Best model overall**: no contest-harness runs with parseable totals."
+        )
+
+    ollama_rows = _ollama_ranking_rows(reports)
+    if ollama_rows:
+        best = ollama_rows[0]
+        avg_total = float(best["avg_total"])  # type: ignore[arg-type]
+        n_harnesses = int(best["n_harnesses"])  # type: ignore[arg-type]
+        std = best["std_dev"]
+        std_clause = f" (std dev {_fmt(float(std))})" if std is not None else ""
+        lines.append(
+            f"- **Best open-source model overall**: `{best['slug']}` — "
+            f"{_fmt(avg_total)}/100 cross-harness avg across {n_harnesses} "
+            f"contest harnesses{std_clause}; best on the shared Ollama Cloud grid."
+        )
+    else:
+        lines.append(
+            "- **Best open-source model overall**: no open-source model has "
+            "cross-harness coverage — open-source verdict suppressed."
+        )
+
+    cursor_reports = _cursor_agent_reports(reports)
+    if cursor_reports:
+        cursor_totals = [
+            float(r.total) for r in cursor_reports if r.total is not None
+        ]
+        cursor_avg = mean(cursor_totals) if cursor_totals else None
+        lines.append(
+            f"- **Cursor agent runs**: N={len(cursor_reports)}, "
+            f"avg {_fmt(cursor_avg)} — model-only benchmarks; excluded from "
+            "harness contest."
+        )
+
+    mixed = _mixed_version_contest_harnesses(reports, source_dirs=source_dirs)
+    if mixed:
+        harness_list = ", ".join(f"`{h}`" for h in mixed)
+        lines.append(
+            f"- **Harness CLI versions**: cohort spans multiple CLI builds for "
+            f"{harness_list}; cross-harness rankings for those harnesses are "
+            "caveated (see appendix)."
+        )
+
+    blind_spot = _lowest_dimension_candidate(reports)
+    if blind_spot is not None:
+        per_harness = blind_spot["per_harness"]
+        assert isinstance(per_harness, dict)
+        dim_index = int(blind_spot["index"])  # type: ignore[arg-type]
+        dim_label = str(blind_spot["label"])
+        dim_max = blind_spot["max"]
+        all_avg = float(blind_spot["all_avg"])  # type: ignore[arg-type]
+        harness_parts = " / ".join(
+            f"{h} {_fmt(v) if v is not None else 'n/a'}"
+            for h, v in sorted(per_harness.items())
+        )
+        max_display = dim_max if dim_max is not None else "?"
+        lines.append(
+            f"- **Universal blind spot candidate**: D{dim_index} {dim_label} — "
+            f"all avg {_fmt(all_avg)}/{max_display}; {harness_parts}."
+        )
+
+    return "\n".join(lines) + "\n"
+
+
 def build_precomputed_rollup(
     reports_dir: Path | None = None,
     *,
@@ -882,10 +1163,14 @@ def build_precomputed_rollup(
     parts = [
         "## Precomputed rollup",
         "",
-        "Harness-computed from parsed ``report.md`` files. **Section 2, 2a, 3, 4 "
-        "numeric tables and the harness CLI versions table in meta-analysis.md "
-        "MUST match these values.** Use individual reports only for citations "
-        "and narrative.",
+        "Harness-computed from parsed ``report.md`` files. **Section 1 verdict "
+        "bullets, section 2, 2a, 3, 4 numeric tables, and the harness CLI "
+        "versions table in meta-analysis.md MUST match these values.** Use "
+        "individual reports only for citations and narrative.",
+        "",
+        build_executive_summary_skeleton(
+            reports, source_dirs=source_dirs
+        ).rstrip(),
         "",
         build_model_coverage_table(reports).rstrip(),
         "",
@@ -1035,6 +1320,87 @@ def validate_meta_analysis_ollama_ranking(
     if len(reported) > len(expected):
         for extra in reported[len(expected) :]:
             errors.append(f"section 2a unexpected extra row: {extra[0]}")
+
+    return errors
+
+
+def validate_meta_analysis_executive_summary(
+    meta_path: Path,
+    *,
+    source_dirs: list[Path] | None = None,
+    reports_dir: Path | None = None,
+) -> list[str]:
+    """Compare section-1 verdict bullets in meta-analysis.md to the skeleton."""
+    import re
+
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    if not reports or not meta_path.is_file():
+        return []
+
+    expectations = executive_summary_expectations(
+        reports, source_dirs=source_dirs
+    )
+    text = meta_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"#{2,3}\s*1\.\s*Executive summary(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not section_match:
+        return ["section 1 (Executive summary) not found in meta-analysis.md"]
+
+    section = section_match.group(1).strip()
+    errors: list[str] = []
+
+    if not re.search(r"^\s*-\s+\*\*", section, re.MULTILINE):
+        errors.append(
+            "section 1 is not a bullet list (expected markdown `- **Label**: …` bullets)"
+        )
+
+    if "report.md:" in section:
+        errors.append("section 1 contains report.md citations (move to later sections)")
+
+    best_harness = expectations.get("best_harness")
+    best_harness_avg = expectations.get("best_harness_avg")
+    if isinstance(best_harness, str) and isinstance(best_harness_avg, float):
+        if best_harness not in section:
+            errors.append(
+                f"section 1 missing best harness slug {best_harness!r}"
+            )
+        avg_token = _fmt(best_harness_avg)
+        if avg_token not in section:
+            errors.append(
+                f"section 1 missing best harness avg {avg_token} "
+                f"for {best_harness!r}"
+            )
+
+    top_slug = expectations.get("top_model_slug")
+    top_total = expectations.get("top_model_total")
+    if isinstance(top_slug, str) and isinstance(top_total, float):
+        if top_slug not in section:
+            errors.append(
+                f"section 1 missing best model overall slug {top_slug!r}"
+            )
+        total_token = _fmt(top_total)
+        if total_token not in section:
+            errors.append(
+                f"section 1 missing best model overall total {total_token} "
+                f"for {top_slug!r}"
+            )
+
+    ollama_slug = expectations.get("best_ollama_slug")
+    ollama_avg = expectations.get("best_ollama_avg")
+    if isinstance(ollama_slug, str) and isinstance(ollama_avg, float):
+        if ollama_slug not in section:
+            errors.append(
+                f"section 1 missing best open-source model slug {ollama_slug!r}"
+            )
+        avg_token = _fmt(ollama_avg)
+        if avg_token not in section:
+            errors.append(
+                f"section 1 missing best open-source avg {avg_token} "
+                f"for {ollama_slug!r}"
+            )
 
     return errors
 

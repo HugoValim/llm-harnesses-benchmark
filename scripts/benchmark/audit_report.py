@@ -329,6 +329,7 @@ from benchmark.audit_rollup import (  # noqa: E402, F401
     expected_section2a_ollama_rows,
     model_harness_coverage,
     validate_meta_analysis_coverage,
+    validate_meta_analysis_executive_summary,
     validate_meta_analysis_ollama_ranking,
 )
 from benchmark.audit_meta import (  # noqa: E402, F401
