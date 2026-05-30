@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.config import summarize_project
+from benchmark.d9_preflight import write_d9_preflight
 from benchmark.result_layout import split_target_slug, target_dir
 from benchmark.util import USAGE_LIMIT_REACHED, load_json, migrate_to_v2
 
@@ -213,6 +214,7 @@ def validate_benchmark_result(
         }
     else:
         fresh_summary = summarize_project(project_dir)
+        write_d9_preflight(result_dir, project_dir)
 
     fresh_status = rederive_status(row, fresh_summary)
 
