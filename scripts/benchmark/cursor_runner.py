@@ -9,14 +9,13 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.pricing import merge_cursor_model_usage, model_usage_from_cursor_final
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
     RateLimitWaitPolicy,
-    run_with_rate_limit_retry,
     stream_event_looks_rate_limited,
     text_looks_rate_limited,
 )
@@ -25,23 +24,22 @@ from benchmark.timeouts import (
     DEFAULT_TIMEOUT_SECONDS,
 )
 from benchmark.config import _resolve_model_num_runs
-from benchmark.replicates import attach_replicate_fields, resolve_result_dir
+from benchmark.replicates import resolve_result_dir
+from benchmark.target_lifecycle import (
+    PhaseRunRequest,
+    TargetRunLifecycle,
+    TargetRunPaths,
+)
 from benchmark.util import (
-    RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
     contains_usage_limit,
     count_files,
-    format_duration,
-    init_project_git,
     print_line,
     prompt_sha256,
     resolve_harness_cli_versions,
-    save_json,
     shorten_text,
     stream_log_prefix,
     utc_now,
-    validate_benchmark_workspace,
-    write_project_context,
 )
 
 
@@ -325,48 +323,205 @@ def _run_cursor_phase(
     return result, process, round(time.monotonic() - wall_start, 2)
 
 
-def _run_rate_limited_cursor_phase(
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _merge_counts(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
+    merged = dict(first)
+    for key, value in second.items():
+        merged[key] = merged.get(key, 0) + value
+    return merged
+
+
+def _run_cursor_lifecycle_phase(
     *,
-    log_tag: str,
-    policy: RateLimitWaitPolicy,
-    stdout_path: Path,
-    stderr_path: Path,
-    execute: Callable[[], tuple[CursorStreamResult, subprocess.Popen[str], float]],
-) -> tuple[CursorStreamResult, subprocess.Popen[str], float, str]:
-    holder: dict[str, Any] = {}
+    request: PhaseRunRequest,
+    variant: dict[str, Any],
+    command_prefix: list[str] | None,
+    harness: str,
+    slug: str,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+) -> dict[str, Any]:
+    request.prompt_path.write_text(request.prompt)
+    result, process, elapsed = _run_cursor_phase(
+        variant=variant,
+        prompt=request.prompt,
+        project_dir=request.project_dir,
+        stdout_path=request.stdout_path,
+        stderr_path=request.stderr_path,
+        command_prefix=command_prefix,
+        harness=harness,
+        slug=slug,
+        phase_name=request.phase_name,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+        continue_session=request.phase_name == "phase2",
+    )
+    return _cursor_phase_payload(
+        request=request,
+        variant=variant,
+        result=result,
+        process=process,
+        elapsed=elapsed,
+        command_prefix=command_prefix,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+    )
 
-    def run_once() -> dict[str, Any]:
-        result, process, elapsed = execute()
-        final = result.final_result_event or {}
-        status = _phase_status(result, final)
-        holder["result"] = result
-        holder["process"] = process
-        holder["elapsed"] = elapsed
-        holder["status"] = status
-        return {
-            "status": status,
-            "stall_reason": result.stall_reason,
-            "paths": {
-                "stream_ndjson": str(stdout_path),
-                "stderr_log": str(stderr_path),
-            },
+
+def _cursor_phase_payload(
+    *,
+    request: PhaseRunRequest,
+    variant: dict[str, Any],
+    result: CursorStreamResult,
+    process: subprocess.Popen[str],
+    elapsed: float,
+    command_prefix: list[str] | None,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+) -> dict[str, Any]:
+    final = result.final_result_event or {}
+    usage = _dict_or_empty(final.get("usage"))
+    model_usage = model_usage_from_cursor_final(variant["main_model"], final)
+    status = _phase_status(result, final)
+    command = build_command(
+        variant["main_model"],
+        request.prompt,
+        command_prefix,
+        continue_session=request.phase_name == "phase2",
+    )
+    return {
+        "phase": request.phase_name,
+        "status": status,
+        "started_at": request.started_at,
+        "ended_at": utc_now(),
+        "elapsed_seconds": elapsed,
+        "timed_out": result.timed_out,
+        "stalled": result.stalled,
+        "stall_reason": result.stall_reason,
+        "timeout_seconds": timeout_seconds,
+        "no_progress_timeout_seconds": no_progress_timeout_seconds,
+        "exit_code": process.returncode,
+        "file_count": count_files(request.project_dir),
+        "num_turns": result.assistant_turns,
+        "assistant_turns": result.assistant_turns,
+        "result_subtype": final.get("subtype"),
+        "duration_ms": final.get("duration_ms"),
+        "usage_total": usage,
+        "model_usage": model_usage,
+        "tool_use_counts": dict(result.tool_use_counts),
+        "prompt_sha256": prompt_sha256(request.prompt),
+        "command": command[:-1] + ["<prompt>"],
+        "paths": {
+            "stream_ndjson": str(request.stdout_path),
+            "stderr_log": str(request.stderr_path),
+        },
+    }
+
+
+def _cursor_phase_record(phase: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "phase",
+        "status",
+        "elapsed_seconds",
+        "num_turns",
+        "file_count",
+        "model_usage",
+    )
+    return {key: phase[key] for key in keys if key in phase}
+
+
+def _finalize_cursor_payload(
+    *,
+    payload: dict[str, Any],
+    phases: list[dict[str, Any]],
+    variant: dict[str, Any],
+    prompt: str,
+    followup_prompt: str | None,
+    cli_version_fields: dict[str, Any],
+) -> dict[str, Any]:
+    phase1 = phases[0]
+    payload.update(
+        {
+            "slug": variant["slug"],
+            "label": variant.get("label"),
+            "main_model": variant["main_model"],
+            "prompt_sha256": prompt_sha256(prompt),
+            "command": phase1.get("command", []),
+            "phases": [_cursor_phase_record(phase) for phase in phases],
+            **cli_version_fields,
         }
+    )
+    if len(phases) > 1:
+        _merge_cursor_followup_payload(payload, phase1, phases[-1], followup_prompt)
+    return payload
 
-    payload = run_with_rate_limit_retry(
-        log_tag=log_tag,
-        policy=policy,
-        run_once=run_once,
-        capture_paths=lambda phase_payload: [
-            Path(phase_payload["paths"]["stream_ndjson"]),
-            Path(phase_payload["paths"]["stderr_log"]),
-        ],
+
+def _merge_cursor_followup_payload(
+    payload: dict[str, Any],
+    phase1: dict[str, Any],
+    phase2: dict[str, Any],
+    followup_prompt: str | None,
+) -> None:
+    assert followup_prompt is not None
+    payload.update(
+        {
+            "started_at": phase1["started_at"],
+            "num_turns": phase1["num_turns"] + phase2["num_turns"],
+            "assistant_turns": phase1["assistant_turns"] + phase2["assistant_turns"],
+            "model_usage": merge_cursor_model_usage(
+                phase1["model_usage"], phase2["model_usage"]
+            ),
+            "tool_use_counts": _merge_counts(
+                phase1["tool_use_counts"], phase2["tool_use_counts"]
+            ),
+            "followup_prompt_sha256": prompt_sha256(followup_prompt),
+        }
     )
-    return (
-        holder["result"],
-        holder["process"],
-        holder["elapsed"],
-        str(payload.get("status", holder["status"])),
+
+
+def _print_cursor_start(
+    *,
+    slug: str,
+    variant: dict[str, Any],
+    result_dir: Path,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+    log_tag: str,
+) -> None:
+    print_line("")
+    print_line(f"Starting {slug} -> {variant['main_model']} (Cursor CLI)")
+    print_line(f"[{log_tag}] results_dir={result_dir}")
+    print_line(
+        f"[{log_tag}] timeout={timeout_seconds}s "
+        f"no_progress_timeout={no_progress_timeout_seconds}s"
     )
+
+
+def _print_cursor_completion(
+    payload: dict[str, Any],
+    slug: str,
+    log_tag: str,
+) -> None:
+    model_usage = _dict_or_empty(payload.get("model_usage"))
+    print_line(
+        f"Finished {slug} status={payload['status']} "
+        f"elapsed={float(payload['elapsed_seconds']):.2f}s "
+        f"files={payload['file_count']} turns={payload['num_turns']}"
+    )
+    if model_usage:
+        _print_model_usage(log_tag, model_usage)
+
+
+def _print_model_usage(log_tag: str, model_usage: dict[str, Any]) -> None:
+    print_line(f"[{log_tag}] model_usage:")
+    for model, usage in model_usage.items():
+        in_tok = usage.get("inputTokens", 0)
+        out_tok = usage.get("outputTokens", 0)
+        cache_read = usage.get("cacheReadInputTokens", 0)
+        print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
 
 
 def run_variant(
@@ -388,9 +543,6 @@ def run_variant(
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
     log_tag = stream_log_prefix(harness, slug)
-    effective_num_runs = (
-        num_runs if num_runs is not None else _resolve_model_num_runs(variant)
-    )
     result_dir = resolve_result_dir(
         results_dir=results_dir,
         harness=harness,
@@ -398,224 +550,73 @@ def run_variant(
         replicate_index=replicate_index,
         explicit_result_dir=explicit_result_dir,
     )
-    project_dir = result_dir / "project"
-    prompt_path = result_dir / "prompt.txt"
-    stdout_path = result_dir / "stream.ndjson"
-    stderr_path = result_dir / "stderr.log"
-    result_path = result_dir / "result.json"
-
-    result_dir.mkdir(parents=True, exist_ok=True)
-    project_dir.mkdir(parents=True, exist_ok=True)
-    init_project_git(project_dir)
-    validate_benchmark_workspace(results_dir, result_dir, project_dir)
-    write_project_context(project_dir)
-
-    if not force and result_path.exists():
-        try:
-            cached = json.loads(result_path.read_text())
-            if cached.get("status") in (
-                "completed",
-                "completed_with_errors",
-                "failed",
-                "timeout",
-                USAGE_LIMIT_REACHED,
-            ):
-                print_line(
-                    f"[{log_tag}] cached result status={cached['status']}; "
-                    "skipping (use --force to rerun)"
-                )
-                return cached
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    prompt_path.write_text(prompt)
-    started_at = utc_now()
+    paths = TargetRunPaths.cli(result_dir)
     command_prefix = variant.get("command_prefix") or runner_command_prefix
-    cli_version_fields = resolve_harness_cli_versions(
-        harness=harness, command_prefix=command_prefix
+    effective_num_runs = (
+        num_runs if num_runs is not None else _resolve_model_num_runs(variant)
     )
-    effective_rate_limit_policy = rate_limit_policy or RateLimitWaitPolicy()
-    command = build_command(variant["main_model"], prompt, command_prefix)
+    cli_version_fields_cache: dict[str, Any] | None = None
 
-    print_line("")
-    print_line(f"Starting {slug} -> {variant['main_model']} (Cursor CLI)")
-    print_line(f"[{log_tag}] results_dir={result_dir}")
-    print_line(
-        f"[{log_tag}] timeout={timeout_seconds}s "
-        f"no_progress_timeout={no_progress_timeout_seconds}s"
-    )
+    def get_cli_version_fields() -> dict[str, Any]:
+        nonlocal cli_version_fields_cache
+        if cli_version_fields_cache is None:
+            cli_version_fields_cache = resolve_harness_cli_versions(
+                harness=harness,
+                command_prefix=command_prefix,
+            )
+        return cli_version_fields_cache
 
-    result, process, elapsed, status = _run_rate_limited_cursor_phase(
-        log_tag=stream_log_prefix(harness, slug, "phase1"),
-        policy=effective_rate_limit_policy,
-        stdout_path=stdout_path,
-        stderr_path=stderr_path,
-        execute=lambda: _run_cursor_phase(
+    def before_phases() -> dict[str, Any] | None:
+        _print_cursor_start(
+            slug=slug,
             variant=variant,
-            prompt=prompt,
-            project_dir=project_dir,
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
+            result_dir=result_dir,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            log_tag=log_tag,
+        )
+        return None
+
+    def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
+        return _run_cursor_lifecycle_phase(
+            request=request,
+            variant=variant,
             command_prefix=command_prefix,
             harness=harness,
             slug=slug,
-            phase_name="phase1",
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
-        ),
-    )
-    final = result.final_result_event or {}
-    usage = final.get("usage", {})
-    if not isinstance(usage, dict):
-        usage = {}
-    main_model = variant["main_model"]
-    model_usage = model_usage_from_cursor_final(main_model, final)
-    num_turns = result.assistant_turns
-    file_count = count_files(project_dir)
-
-    payload: dict[str, Any] = {
-        "result_schema_version": RESULT_SCHEMA_VERSION,
-        "harness": "cursor",
-        "slug": slug,
-        "label": variant.get("label"),
-        "main_model": variant["main_model"],
-        "status": status,
-        "started_at": started_at,
-        "ended_at": utc_now(),
-        "elapsed_seconds": elapsed,
-        "timed_out": result.timed_out,
-        "stalled": result.stalled,
-        "stall_reason": result.stall_reason,
-        "timeout_seconds": timeout_seconds,
-        "no_progress_timeout_seconds": no_progress_timeout_seconds,
-        "exit_code": process.returncode,
-        "file_count": file_count,
-        "num_turns": num_turns,
-        "assistant_turns": result.assistant_turns,
-        "result_subtype": final.get("subtype"),
-        "duration_ms": final.get("duration_ms"),
-        "usage_total": usage,
-        "model_usage": model_usage,
-        "tool_use_counts": dict(result.tool_use_counts),
-        "prompt_sha256": prompt_sha256(prompt),
-        "command": command[:-1] + ["<prompt>"],
-        "paths": {
-            "project_dir": str(project_dir),
-            "prompt": str(prompt_path),
-            "stream_ndjson": str(stdout_path),
-            "stderr_log": str(stderr_path),
-        },
-        **cli_version_fields,
-    }
-
-    run_phase2 = (
-        followup_prompt is not None
-        and not result.timed_out
-        and not result.stalled
-        and status != USAGE_LIMIT_REACHED
-    )
-    if run_phase2:
-        followup_prompt_path = result_dir / "followup-prompt.txt"
-        followup_stdout_path = result_dir / "followup-stream.ndjson"
-        followup_stderr_path = result_dir / "followup-stderr.log"
-        followup_prompt_path.write_text(followup_prompt)
-        print_line(
-            f"[{stream_log_prefix(harness, slug, 'phase1')}] complete; "
-            "starting phase 2 (follow-up, --continue)"
         )
-        p2_result, p2_process, p2_elapsed, p2_status = _run_rate_limited_cursor_phase(
-            log_tag=stream_log_prefix(harness, slug, "phase2"),
-            policy=effective_rate_limit_policy,
-            stdout_path=followup_stdout_path,
-            stderr_path=followup_stderr_path,
-            execute=lambda: _run_cursor_phase(
-                variant=variant,
-                prompt=followup_prompt,
-                project_dir=project_dir,
-                stdout_path=followup_stdout_path,
-                stderr_path=followup_stderr_path,
-                command_prefix=command_prefix,
-                harness=harness,
-                slug=slug,
-                phase_name="phase2",
-                timeout_seconds=timeout_seconds,
-                no_progress_timeout_seconds=no_progress_timeout_seconds,
-                continue_session=True,
-            ),
-        )
-        p2_final = p2_result.final_result_event or {}
-        p2_usage = p2_final.get("usage", {})
-        if not isinstance(p2_usage, dict):
-            p2_usage = {}
-        p2_model_usage = model_usage_from_cursor_final(main_model, p2_final)
-        merged_model_usage = merge_cursor_model_usage(model_usage, p2_model_usage)
-        phase1_core = {
-            "phase": "phase1",
-            "status": payload["status"],
-            "elapsed_seconds": payload["elapsed_seconds"],
-            "num_turns": payload["num_turns"],
-            "file_count": payload["file_count"],
-            "model_usage": model_usage,
-        }
-        phase2_core = {
-            "phase": "phase2",
-            "status": p2_status,
-            "elapsed_seconds": p2_elapsed,
-            "num_turns": p2_result.assistant_turns,
-            "file_count": count_files(project_dir),
-            "model_usage": p2_model_usage,
-        }
-        combined_tools = dict(result.tool_use_counts)
-        for k, v in p2_result.tool_use_counts.items():
-            combined_tools[k] = combined_tools.get(k, 0) + v
-        payload.update({
-            "status": p2_status,
-            "ended_at": utc_now(),
-            "elapsed_seconds": round(elapsed + p2_elapsed, 2),
-            "timed_out": p2_result.timed_out,
-            "stalled": p2_result.stalled,
-            "stall_reason": p2_result.stall_reason,
-            "exit_code": p2_process.returncode,
-            "file_count": phase2_core["file_count"],
-            "num_turns": num_turns + p2_result.assistant_turns,
-            "assistant_turns": result.assistant_turns + p2_result.assistant_turns,
-            "result_subtype": p2_final.get("subtype"),
-            "duration_ms": p2_final.get("duration_ms"),
-            "usage_total": p2_usage,
-            "model_usage": merged_model_usage,
-            "tool_use_counts": combined_tools,
-            "followup_prompt_sha256": prompt_sha256(followup_prompt),
-            "phases": [phase1_core, phase2_core],
-            "paths": {
-                **payload["paths"],
-                "followup_prompt": str(followup_prompt_path),
-                "followup_stream_ndjson": str(followup_stdout_path),
-                "followup_stderr_log": str(followup_stderr_path),
-            },
-        })
-        status = p2_status
-        elapsed = payload["elapsed_seconds"]
-        file_count = payload["file_count"]
-        num_turns = payload["num_turns"]
-        model_usage = merged_model_usage
 
-    save_json(
-        result_path,
-        attach_replicate_fields(
-            payload,
-            replicate_index=replicate_index,
-            num_runs=effective_num_runs,
+    def finalize_payload(
+        payload: dict[str, Any],
+        phases: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return _finalize_cursor_payload(
+            payload=payload,
+            phases=phases,
+            variant=variant,
+            prompt=prompt,
+            followup_prompt=followup_prompt,
+            cli_version_fields=get_cli_version_fields(),
+        )
+
+    return TargetRunLifecycle(
+        harness=harness,
+        slug=slug,
+        results_dir=results_dir,
+        paths=paths,
+        force=force,
+        prompt=prompt,
+        followup_prompt=followup_prompt,
+        run_phase=run_phase,
+        rate_limit_policy=rate_limit_policy or RateLimitWaitPolicy(),
+        before_phases=before_phases,
+        final_payload_hook=finalize_payload,
+        after_save=lambda payload: _print_cursor_completion(
+            payload, slug=slug, log_tag=log_tag
         ),
-    )
-    print_line(
-        f"Finished {slug} status={status} elapsed={elapsed:.2f}s "
-        f"files={file_count} turns={num_turns}"
-    )
-    if model_usage:
-        print_line(f"[{log_tag}] model_usage:")
-        for model, u in model_usage.items():
-            in_tok = u.get("inputTokens", 0)
-            out_tok = u.get("outputTokens", 0)
-            cache_read = u.get("cacheReadInputTokens", 0)
-            print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
-    return payload
+        phase_log_tag=lambda phase_name: stream_log_prefix(harness, slug, phase_name),
+        replicate_index=replicate_index,
+        num_runs=effective_num_runs,
+    ).run()

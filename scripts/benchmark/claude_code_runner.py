@@ -9,13 +9,12 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
     RateLimitWaitPolicy,
-    run_with_rate_limit_retry,
     stream_event_looks_rate_limited,
     text_looks_rate_limited,
 )
@@ -24,23 +23,22 @@ from benchmark.timeouts import (
     DEFAULT_TIMEOUT_SECONDS,
 )
 from benchmark.config import _resolve_model_num_runs
-from benchmark.replicates import attach_replicate_fields, resolve_result_dir
+from benchmark.replicates import resolve_result_dir
+from benchmark.target_lifecycle import (
+    PhaseRunRequest,
+    TargetRunLifecycle,
+    TargetRunPaths,
+)
 from benchmark.util import (
-    RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
     contains_usage_limit,
     count_files,
-    format_value,
-    init_project_git,
     print_line,
     prompt_sha256,
     resolve_harness_cli_versions,
-    save_json,
     shorten_text,
     stream_log_prefix,
     utc_now,
-    validate_benchmark_workspace,
-    write_project_context,
 )
 
 
@@ -284,50 +282,6 @@ def stream_process(
     )
 
 
-def _run_rate_limited_claude_phase(
-    *,
-    log_tag: str,
-    policy: RateLimitWaitPolicy,
-    stdout_path: Path,
-    stderr_path: Path,
-    execute: Callable[[], tuple[ClaudeCodeStreamResult, subprocess.Popen[str], float]],
-) -> tuple[ClaudeCodeStreamResult, subprocess.Popen[str], float, str]:
-    holder: dict[str, Any] = {}
-
-    def run_once() -> dict[str, Any]:
-        result, process, elapsed = execute()
-        final = result.final_result_event or {}
-        status = _phase_status_from_stream(result, final)
-        holder["result"] = result
-        holder["process"] = process
-        holder["elapsed"] = elapsed
-        holder["status"] = status
-        return {
-            "status": status,
-            "stall_reason": result.stall_reason,
-            "paths": {
-                "stream_ndjson": str(stdout_path),
-                "stderr_log": str(stderr_path),
-            },
-        }
-
-    payload = run_with_rate_limit_retry(
-        log_tag=log_tag,
-        policy=policy,
-        run_once=run_once,
-        capture_paths=lambda phase_payload: [
-            Path(phase_payload["paths"]["stream_ndjson"]),
-            Path(phase_payload["paths"]["stderr_log"]),
-        ],
-    )
-    return (
-        holder["result"],
-        holder["process"],
-        holder["elapsed"],
-        str(payload.get("status", holder["status"])),
-    )
-
-
 def _phase_status_from_stream(
     result: ClaudeCodeStreamResult,
     final: dict[str, Any],
@@ -392,6 +346,339 @@ def _run_claude_phase(
     return result, process, round(time.monotonic() - wall_start, 2)
 
 
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _subagent_counts(invocations: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for invocation in invocations:
+        counts[invocation.get("subagent_type") or "unknown"] += 1
+    return dict(counts)
+
+
+def _merge_counts(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
+    merged = dict(first)
+    for key, value in second.items():
+        merged[key] = merged.get(key, 0) + value
+    return merged
+
+
+def _merge_claude_model_usage(
+    first: dict[str, Any],
+    second: dict[str, Any],
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {key: dict(value) for key, value in first.items()}
+    for model_id, usage in second.items():
+        if model_id not in merged:
+            merged[model_id] = dict(usage)
+            continue
+        _merge_token_counts(merged[model_id], usage)
+    return merged
+
+
+def _merge_token_counts(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key in (
+        "inputTokens",
+        "outputTokens",
+        "cacheReadInputTokens",
+        "cacheCreationInputTokens",
+    ):
+        target[key] = target.get(key, 0) + source.get(key, 0)
+
+
+def _apply_home_isolation(
+    env: dict[str, str],
+    result_dir: Path,
+    isolate_home: bool,
+    log_tag: str,
+) -> None:
+    if isolate_home:
+        # Isolating HOME prevents user-level agents from leaking into a run.
+        env["HOME"] = str(result_dir.resolve())
+        print_line(
+            f"[{log_tag}] HOME isolated to {result_dir} "
+            "(API-key auth required; subscription auth will fail)"
+        )
+        return
+    print_line(
+        f"[{log_tag}] HOME not isolated — subscription auth via ~/.claude/ works; "
+        "user-level agents may leak"
+    )
+
+
+def _apply_env_overrides(
+    env: dict[str, str],
+    overrides: dict[str, Any],
+    log_tag: str,
+) -> None:
+    if not overrides:
+        return
+    applied: list[str] = []
+    for raw_key, raw_value in overrides.items():
+        _apply_one_env_override(env, str(raw_key), raw_value, applied, log_tag)
+    print_line(f"[{log_tag}] env_overrides applied: {', '.join(applied)}")
+
+
+def _apply_one_env_override(
+    env: dict[str, str],
+    raw_key: str,
+    raw_value: Any,
+    applied: list[str],
+    log_tag: str,
+) -> None:
+    if raw_key.startswith("UNSET:"):
+        target = raw_key.split(":", 1)[1]
+        env.pop(target, None)
+        applied.append(f"unset {target}")
+        return
+    _set_env_override(env, raw_key, str(raw_value), applied, log_tag)
+
+
+def _set_env_override(
+    env: dict[str, str],
+    key: str,
+    value: str,
+    applied: list[str],
+    log_tag: str,
+) -> None:
+    if not value.startswith("$"):
+        env[key] = value
+        applied.append(f"{key}={value}")
+        return
+    resolved = os.environ.get(value[1:], "")
+    if not resolved:
+        print_line(
+            f"[{log_tag}] WARNING: env override {key} references {value} "
+            "but it is empty in parent env"
+        )
+    env[key] = resolved
+    applied.append(f"{key}=<{value}>")
+
+
+def _build_claude_env(
+    *,
+    result_dir: Path,
+    variant: dict[str, Any],
+    isolate_home: bool,
+    log_tag: str,
+) -> dict[str, str]:
+    env = os.environ.copy()
+    _apply_home_isolation(env, result_dir, isolate_home, log_tag)
+    _apply_env_overrides(env, variant.get("env_overrides") or {}, log_tag)
+    return env
+
+
+def _run_claude_lifecycle_phase(
+    *,
+    request: PhaseRunRequest,
+    variant: dict[str, Any],
+    command_prefix: list[str] | None,
+    isolated_env: dict[str, str],
+    harness: str,
+    slug: str,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+) -> dict[str, Any]:
+    request.prompt_path.write_text(request.prompt)
+    result, process, elapsed = _run_claude_phase(
+        variant=variant,
+        prompt=request.prompt,
+        project_dir=request.project_dir,
+        stdout_path=request.stdout_path,
+        stderr_path=request.stderr_path,
+        command_prefix=command_prefix,
+        isolated_env=isolated_env,
+        harness=harness,
+        slug=slug,
+        phase_name=request.phase_name,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+    )
+    return _claude_phase_payload(
+        request=request,
+        variant=variant,
+        result=result,
+        process=process,
+        elapsed=elapsed,
+        command_prefix=command_prefix,
+        timeout_seconds=timeout_seconds,
+        no_progress_timeout_seconds=no_progress_timeout_seconds,
+    )
+
+
+def _claude_phase_payload(
+    *,
+    request: PhaseRunRequest,
+    variant: dict[str, Any],
+    result: ClaudeCodeStreamResult,
+    process: subprocess.Popen[str],
+    elapsed: float,
+    command_prefix: list[str] | None,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+) -> dict[str, Any]:
+    final = result.final_result_event or {}
+    usage = _dict_or_empty(final.get("usage"))
+    model_usage = _dict_or_empty(final.get("modelUsage"))
+    status = _phase_status_from_stream(result, final)
+    command = build_command(variant["main_model"], request.prompt, command_prefix)
+    return {
+        "phase": request.phase_name,
+        "status": status,
+        "started_at": request.started_at,
+        "ended_at": utc_now(),
+        "elapsed_seconds": elapsed,
+        "timed_out": result.timed_out,
+        "stalled": result.stalled,
+        "stall_reason": result.stall_reason,
+        "timeout_seconds": timeout_seconds,
+        "no_progress_timeout_seconds": no_progress_timeout_seconds,
+        "exit_code": process.returncode,
+        "file_count": count_files(request.project_dir),
+        "num_turns": final.get("num_turns", result.assistant_turns),
+        "assistant_turns": result.assistant_turns,
+        "stop_reason": final.get("stop_reason"),
+        "usage_total": usage,
+        "model_usage": model_usage,
+        "tool_use_counts": dict(result.tool_use_counts),
+        "subagent_invocations": result.subagent_invocations,
+        "subagent_invocation_counts": _subagent_counts(result.subagent_invocations),
+        "prompt_sha256": prompt_sha256(request.prompt),
+        "command": command[:-1] + ["<prompt>"],
+        "paths": {
+            "stream_ndjson": str(request.stdout_path),
+            "stderr_log": str(request.stderr_path),
+        },
+    }
+
+
+def _claude_phase_record(phase: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "phase",
+        "status",
+        "started_at",
+        "ended_at",
+        "elapsed_seconds",
+        "timed_out",
+        "stalled",
+        "exit_code",
+        "file_count",
+        "num_turns",
+        "model_usage",
+        "prompt_sha256",
+    )
+    return {key: phase[key] for key in keys if key in phase}
+
+
+def _finalize_claude_payload(
+    *,
+    payload: dict[str, Any],
+    phases: list[dict[str, Any]],
+    variant: dict[str, Any],
+    prompt: str,
+    followup_prompt: str | None,
+    cli_version_fields: dict[str, Any],
+) -> dict[str, Any]:
+    phase1 = phases[0]
+    payload.update(
+        {
+            "slug": variant["slug"],
+            "label": variant.get("label"),
+            "main_model": variant["main_model"],
+            "subagent": variant.get("subagent"),
+            "prompt_sha256": prompt_sha256(prompt),
+            "command": phase1.get("command", []),
+            "phases": [_claude_phase_record(phase) for phase in phases],
+            **cli_version_fields,
+        }
+    )
+    if len(phases) > 1:
+        _merge_claude_followup_payload(payload, phase1, phases[-1], followup_prompt)
+    return payload
+
+
+def _merge_claude_followup_payload(
+    payload: dict[str, Any],
+    phase1: dict[str, Any],
+    phase2: dict[str, Any],
+    followup_prompt: str | None,
+) -> None:
+    assert followup_prompt is not None
+    payload.update(
+        {
+            "started_at": phase1["started_at"],
+            "num_turns": phase1["num_turns"] + phase2["num_turns"],
+            "assistant_turns": phase1["assistant_turns"] + phase2["assistant_turns"],
+            "model_usage": _merge_claude_model_usage(
+                phase1["model_usage"], phase2["model_usage"]
+            ),
+            "tool_use_counts": _merge_counts(
+                phase1["tool_use_counts"], phase2["tool_use_counts"]
+            ),
+            "subagent_invocations": phase1["subagent_invocations"]
+            + phase2["subagent_invocations"],
+            "subagent_invocation_counts": _merge_counts(
+                phase1["subagent_invocation_counts"],
+                phase2["subagent_invocation_counts"],
+            ),
+            "followup_prompt_sha256": prompt_sha256(followup_prompt),
+        }
+    )
+
+
+def _print_claude_start(
+    *,
+    slug: str,
+    variant: dict[str, Any],
+    result_dir: Path,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+    command_prefix: list[str] | None,
+    log_tag: str,
+) -> None:
+    subagent = variant.get("subagent")
+    subagent_name = subagent.get("name") if isinstance(subagent, dict) else "none"
+    print_line("")
+    print_line(
+        f"Starting {slug} -> {variant['main_model']} "
+        f"(subagent={subagent_name})"
+    )
+    print_line(f"[{log_tag}] results_dir={result_dir}")
+    print_line(
+        f"[{log_tag}] timeout={timeout_seconds}s "
+        f"no_progress_timeout={no_progress_timeout_seconds}s"
+    )
+    if command_prefix:
+        print_line(f"[{log_tag}] command_prefix={command_prefix}")
+
+
+def _print_claude_completion(
+    payload: dict[str, Any],
+    slug: str,
+    log_tag: str,
+) -> None:
+    model_usage = _dict_or_empty(payload.get("model_usage"))
+    print_line("")
+    print_line(
+        f"Finished {slug} status={payload['status']} "
+        f"elapsed={float(payload['elapsed_seconds']):.2f}s "
+        f"files={payload['file_count']} turns={payload['num_turns']} "
+        f"delegations={len(payload.get('subagent_invocations', []))}"
+    )
+    if model_usage:
+        _print_model_usage(log_tag, model_usage)
+
+
+def _print_model_usage(log_tag: str, model_usage: dict[str, Any]) -> None:
+    print_line(f"[{log_tag}] model_usage:")
+    for model, usage in model_usage.items():
+        in_tok = usage.get("inputTokens", 0)
+        out_tok = usage.get("outputTokens", 0)
+        cache_read = usage.get("cacheReadInputTokens", 0)
+        print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
+
+
 def run_variant(
     *,
     variant: dict[str, Any],
@@ -426,9 +713,6 @@ def run_variant(
     """
     slug = variant["slug"]
     log_tag = stream_log_prefix(harness, slug)
-    effective_num_runs = (
-        num_runs if num_runs is not None else _resolve_model_num_runs(variant)
-    )
     result_dir = resolve_result_dir(
         results_dir=results_dir,
         harness=harness,
@@ -436,328 +720,89 @@ def run_variant(
         replicate_index=replicate_index,
         explicit_result_dir=explicit_result_dir,
     )
-    project_dir = result_dir / "project"
-    prompt_path = result_dir / "prompt.txt"
-    stdout_path = result_dir / "stream.ndjson"
-    stderr_path = result_dir / "stderr.log"
-    result_path = result_dir / "result.json"
-
-    result_dir.mkdir(parents=True, exist_ok=True)
-    project_dir.mkdir(parents=True, exist_ok=True)
-    init_project_git(project_dir)
-    validate_benchmark_workspace(results_dir, result_dir, project_dir)
-    write_project_context(project_dir)
-
-    if not force and result_path.exists():
-        try:
-            cached = json.loads(result_path.read_text())
-            if cached.get("status") in (
-                "completed",
-                "completed_with_errors",
-                "failed",
-                "timeout",
-                USAGE_LIMIT_REACHED,
-            ):
-                print_line(
-                    f"[{log_tag}] cached result status={cached['status']}; "
-                    "skipping (use --force to rerun)"
-                )
-                return cached
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Write project-local agent definition (for delegation variants)
-    write_project_agent(project_dir, variant.get("subagent"))
-
-    prompt_path.write_text(prompt)
-    started_at = utc_now()
+    paths = TargetRunPaths.cli(result_dir)
     command_prefix = variant.get("command_prefix") or runner_command_prefix
-    cli_version_fields = resolve_harness_cli_versions(
-        harness=harness, command_prefix=command_prefix
+    effective_num_runs = (
+        num_runs if num_runs is not None else _resolve_model_num_runs(variant)
     )
-    effective_rate_limit_policy = rate_limit_policy or RateLimitWaitPolicy()
-    command = build_command(variant["main_model"], prompt, command_prefix)
+    env_cache: dict[str, str] | None = None
+    cli_version_fields_cache: dict[str, Any] | None = None
 
-    print_line("")
-    print_line(
-        f"Starting {slug} -> {variant['main_model']} (subagent={variant.get('subagent', {}).get('name') if variant.get('subagent') else 'none'})"
-    )
-    print_line(f"[{log_tag}] results_dir={result_dir}")
-    print_line(
-        f"[{log_tag}] timeout={timeout_seconds}s "
-        f"no_progress_timeout={no_progress_timeout_seconds}s"
-    )
-    if command_prefix:
-        print_line(f"[{log_tag}] command_prefix={command_prefix}")
+    def get_env() -> dict[str, str]:
+        nonlocal env_cache
+        if env_cache is None:
+            env_cache = _build_claude_env(
+                result_dir=result_dir,
+                variant=variant,
+                isolate_home=isolate_home,
+                log_tag=log_tag,
+            )
+        return env_cache
 
-    isolated_env = os.environ.copy()
-    if isolate_home:
-        # Replace HOME with the result_dir to prevent user-level ~/.claude/agents/*.md
-        # from leaking into the run. Only safe when auth is via ANTHROPIC_API_KEY —
-        # subscription auth reads ~/.claude/.credentials.json from the real HOME and
-        # will fail under isolation.
-        isolated_env["HOME"] = str(result_dir.resolve())
-        print_line(
-            f"[{log_tag}] HOME isolated to {result_dir} "
-            "(API-key auth required; subscription auth will fail)"
-        )
-    else:
-        print_line(
-            f"[{log_tag}] HOME not isolated — subscription auth via ~/.claude/ works; "
-            "user-level agents may leak"
-        )
+    def get_cli_version_fields() -> dict[str, Any]:
+        nonlocal cli_version_fields_cache
+        if cli_version_fields_cache is None:
+            cli_version_fields_cache = resolve_harness_cli_versions(
+                harness=harness,
+                command_prefix=command_prefix,
+            )
+        return cli_version_fields_cache
 
-    # Optional per-variant env overrides — used by deepclaude-style variants that swap
-    # ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN + ANTHROPIC_DEFAULT_*_MODEL to point
-    # Claude Code's tool loop at a different (Anthropic-compatible) backend like
-    # DeepSeek V4 Pro via OpenRouter. Values may reference $ENVVAR for indirection
-    # (e.g. "$OPENROUTER_API_KEY") which gets resolved against the parent env at run
-    # time so secrets aren't committed to config files. UNSET= prefix removes the
-    # variable from the subprocess env (used to drop ANTHROPIC_API_KEY when swapping).
-    overrides = variant.get("env_overrides") or {}
-    if overrides:
-        applied = []
-        for raw_key, raw_val in overrides.items():
-            if raw_key.startswith("UNSET:"):
-                target = raw_key.split(":", 1)[1]
-                isolated_env.pop(target, None)
-                applied.append(f"unset {target}")
-                continue
-            val = str(raw_val)
-            if val.startswith("$"):
-                # Indirect lookup so we don't commit secrets to JSON
-                resolved = os.environ.get(val[1:], "")
-                if not resolved:
-                    print_line(
-                        f"[{log_tag}] WARNING: env override {raw_key} references {val} "
-                        "but it is empty in parent env"
-                    )
-                isolated_env[raw_key] = resolved
-                applied.append(f"{raw_key}=<{val}>")
-            else:
-                isolated_env[raw_key] = val
-                applied.append(f"{raw_key}={val}")
-        print_line(f"[{log_tag}] env_overrides applied: {', '.join(applied)}")
-
-    result, process, elapsed, status = _run_rate_limited_claude_phase(
-        log_tag=stream_log_prefix(harness, slug, "phase1"),
-        policy=effective_rate_limit_policy,
-        stdout_path=stdout_path,
-        stderr_path=stderr_path,
-        execute=lambda: _run_claude_phase(
-            variant=variant,
-            prompt=prompt,
-            project_dir=project_dir,
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
-            command_prefix=command_prefix,
-            isolated_env=isolated_env,
-            harness=harness,
+    def before_phases() -> dict[str, Any] | None:
+        write_project_agent(paths.project_dir, variant.get("subagent"))
+        _print_claude_start(
             slug=slug,
-            phase_name="phase1",
+            variant=variant,
+            result_dir=result_dir,
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
-        ),
-    )
-
-    # Extract usage and timing data from the final result event
-    final = result.final_result_event or {}
-    usage = final.get("usage", {})
-    model_usage = final.get("modelUsage", {})
-    stop_reason = final.get("stop_reason")
-    num_turns = final.get("num_turns", result.assistant_turns)
-
-    if status == USAGE_LIMIT_REACHED:
-        print_line(f"[{log_tag}] usage limit persisted after wait cap")
-
-    file_count = count_files(project_dir)
-
-    # Aggregate subagent token usage per model
-    subagent_counts_by_type: dict[str, int] = defaultdict(int)
-    for inv in result.subagent_invocations:
-        subagent_counts_by_type[inv.get("subagent_type") or "unknown"] += 1
-
-    payload = {
-        "result_schema_version": RESULT_SCHEMA_VERSION,
-        "harness": "claude",
-        "slug": slug,
-        "label": variant.get("label"),
-        "main_model": variant["main_model"],
-        "subagent": variant.get("subagent"),
-        "status": status,
-        "started_at": started_at,
-        "ended_at": utc_now(),
-        "elapsed_seconds": elapsed,
-        "timed_out": result.timed_out,
-        "stalled": result.stalled,
-        "stall_reason": result.stall_reason,
-        "timeout_seconds": timeout_seconds,
-        "no_progress_timeout_seconds": no_progress_timeout_seconds,
-        "exit_code": process.returncode,
-        "file_count": file_count,
-        "num_turns": num_turns,
-        "assistant_turns": result.assistant_turns,
-        "stop_reason": stop_reason,
-        "usage_total": usage,
-        "model_usage": model_usage,
-        "tool_use_counts": dict(result.tool_use_counts),
-        "subagent_invocations": result.subagent_invocations,
-        "subagent_invocation_counts": dict(subagent_counts_by_type),
-        "prompt_sha256": prompt_sha256(prompt),
-        "command": command[:-1]
-        + ["<prompt>"],  # don't dump the full prompt into result.json
-        "paths": {
-            "project_dir": str(project_dir),
-            "prompt": str(prompt_path),
-            "stream_ndjson": str(stdout_path),
-            "stderr_log": str(stderr_path),
-        },
-        **cli_version_fields,
-    }
-    run_phase2 = (
-        followup_prompt is not None
-        and not payload.get("timed_out")
-        and not payload.get("stalled")
-        and payload.get("status") != USAGE_LIMIT_REACHED
-    )
-    if run_phase2:
-        assert followup_prompt is not None  # narrowing for type checker
-        followup_prompt_path = result_dir / "followup-prompt.txt"
-        followup_stdout_path = result_dir / "followup-stream.ndjson"
-        followup_stderr_path = result_dir / "followup-stderr.log"
-        followup_prompt_path.write_text(followup_prompt)
-        p2_started_at = utc_now()
-        print_line(
-            f"[{stream_log_prefix(harness, slug, 'phase1')}] complete; "
-            "starting phase 2 (follow-up prompt)"
+            command_prefix=command_prefix,
+            log_tag=log_tag,
         )
-        p2_result, p2_process, p2_elapsed, p2_status = _run_rate_limited_claude_phase(
-            log_tag=stream_log_prefix(harness, slug, "phase2"),
-            policy=effective_rate_limit_policy,
-            stdout_path=followup_stdout_path,
-            stderr_path=followup_stderr_path,
-            execute=lambda: _run_claude_phase(
-                variant=variant,
-                prompt=followup_prompt,
-                project_dir=project_dir,
-                stdout_path=followup_stdout_path,
-                stderr_path=followup_stderr_path,
-                command_prefix=command_prefix,
-                isolated_env=isolated_env,
-                harness=harness,
-                slug=slug,
-                phase_name="phase2",
-                timeout_seconds=timeout_seconds,
-                no_progress_timeout_seconds=no_progress_timeout_seconds,
-            ),
+        get_env()
+        return None
+
+    def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
+        return _run_claude_lifecycle_phase(
+            request=request,
+            variant=variant,
+            command_prefix=command_prefix,
+            isolated_env=get_env(),
+            harness=harness,
+            slug=slug,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
         )
-        p2_final = p2_result.final_result_event or {}
-        p2_model_usage = p2_final.get("modelUsage", {})
-        p2_stop_reason = p2_final.get("stop_reason")
-        p2_num_turns = p2_final.get("num_turns", p2_result.assistant_turns)
-        p2_file_count = count_files(project_dir)
-        p2_subagent_counts: dict[str, int] = defaultdict(int)
-        for inv in p2_result.subagent_invocations:
-            p2_subagent_counts[inv.get("subagent_type") or "unknown"] += 1
-        phase1_core = {
-            "phase": "phase1",
-            "status": payload["status"],
-            "started_at": payload["started_at"],
-            "ended_at": payload["ended_at"],
-            "elapsed_seconds": payload["elapsed_seconds"],
-            "timed_out": payload["timed_out"],
-            "stalled": payload["stalled"],
-            "exit_code": payload["exit_code"],
-            "file_count": payload["file_count"],
-            "num_turns": payload["num_turns"],
-            "model_usage": payload["model_usage"],
-            "prompt_sha256": payload["prompt_sha256"],
-        }
-        phase2_core = {
-            "phase": "phase2",
-            "status": p2_status,
-            "started_at": p2_started_at,
-            "ended_at": utc_now(),
-            "elapsed_seconds": p2_elapsed,
-            "timed_out": p2_result.timed_out,
-            "stalled": p2_result.stalled,
-            "exit_code": p2_process.returncode,
-            "file_count": p2_file_count,
-            "num_turns": p2_num_turns,
-            "model_usage": p2_model_usage,
-            "prompt_sha256": prompt_sha256(followup_prompt),
-        }
-        merged_model_usage: dict[str, Any] = {k: dict(v) for k, v in model_usage.items()}
-        for model_id, p2_u in p2_model_usage.items():
-            if model_id in merged_model_usage:
-                m = merged_model_usage[model_id]
-                for tok_key in (
-                    "inputTokens",
-                    "outputTokens",
-                    "cacheReadInputTokens",
-                    "cacheCreationInputTokens",
-                ):
-                    m[tok_key] = m.get(tok_key, 0) + p2_u.get(tok_key, 0)
-            else:
-                merged_model_usage[model_id] = dict(p2_u)
-        combined_tool_use = dict(result.tool_use_counts)
-        for k, v in p2_result.tool_use_counts.items():
-            combined_tool_use[k] = combined_tool_use.get(k, 0) + v
-        combined_subagent_counts: dict[str, int] = dict(subagent_counts_by_type)
-        for k, v in p2_subagent_counts.items():
-            combined_subagent_counts[k] = combined_subagent_counts.get(k, 0) + v
-        payload.update({
-            "status": p2_status,
-            "ended_at": utc_now(),
-            "elapsed_seconds": round(elapsed + p2_elapsed, 2),
-            "timed_out": p2_result.timed_out,
-            "stalled": p2_result.stalled,
-            "stall_reason": p2_result.stall_reason,
-            "exit_code": p2_process.returncode,
-            "file_count": p2_file_count,
-            "num_turns": num_turns + p2_num_turns,
-            "assistant_turns": result.assistant_turns + p2_result.assistant_turns,
-            "stop_reason": p2_stop_reason,
-            "usage_total": p2_final.get("usage", {}),
-            "model_usage": merged_model_usage,
-            "tool_use_counts": combined_tool_use,
-            "subagent_invocations": result.subagent_invocations + p2_result.subagent_invocations,
-            "subagent_invocation_counts": combined_subagent_counts,
-            "followup_prompt_sha256": prompt_sha256(followup_prompt),
-            "phases": [phase1_core, phase2_core],
-            "paths": {
-                **payload["paths"],
-                "followup_prompt": str(followup_prompt_path),
-                "followup_stream_ndjson": str(followup_stdout_path),
-                "followup_stderr_log": str(followup_stderr_path),
-            },
-        })
-        status = p2_status
-        elapsed = elapsed + p2_elapsed
-        file_count = p2_file_count
-        num_turns = num_turns + p2_num_turns
-        model_usage = merged_model_usage
 
-    save_json(
-        result_path,
-        attach_replicate_fields(
-            payload,
-            replicate_index=replicate_index,
-            num_runs=effective_num_runs,
+    def finalize_payload(
+        payload: dict[str, Any],
+        phases: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return _finalize_claude_payload(
+            payload=payload,
+            phases=phases,
+            variant=variant,
+            prompt=prompt,
+            followup_prompt=followup_prompt,
+            cli_version_fields=get_cli_version_fields(),
+        )
+
+    return TargetRunLifecycle(
+        harness=harness,
+        slug=slug,
+        results_dir=results_dir,
+        paths=paths,
+        force=force,
+        prompt=prompt,
+        followup_prompt=followup_prompt,
+        run_phase=run_phase,
+        rate_limit_policy=rate_limit_policy or RateLimitWaitPolicy(),
+        before_phases=before_phases,
+        final_payload_hook=finalize_payload,
+        after_save=lambda payload: _print_claude_completion(
+            payload, slug=slug, log_tag=log_tag
         ),
-    )
-
-    print_line("")
-    print_line(
-        f"Finished {slug} status={status} elapsed={elapsed:.2f}s files={file_count} "
-        f"turns={num_turns} delegations={len(payload.get('subagent_invocations', []))}"
-    )
-    if model_usage:
-        print_line(f"[{log_tag}] model_usage:")
-        for model, u in model_usage.items():
-            in_tok = u.get("inputTokens", 0)
-            out_tok = u.get("outputTokens", 0)
-            cache_read = u.get("cacheReadInputTokens", 0)
-            print_line(f"  {model}: in={in_tok} out={out_tok} cache_read={cache_read}")
-
-    return payload
+        phase_log_tag=lambda phase_name: stream_log_prefix(harness, slug, phase_name),
+        replicate_index=replicate_index,
+        num_runs=effective_num_runs,
+    ).run()

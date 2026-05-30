@@ -41,6 +41,11 @@ from benchmark.timeouts import (
 from benchmark.replicates import attach_replicate_fields, resolve_result_dir
 from benchmark.session_export import export_opencode_session
 from benchmark.stream_state import ActionKind, EventStreamState
+from benchmark.target_lifecycle import (
+    PhaseRunRequest,
+    TargetRunLifecycle,
+    TargetRunPaths,
+)
 
 _SKIP_CONFIG_LOCK = threading.Lock()
 
@@ -992,298 +997,248 @@ def run_model(
         replicate_index: 1-based replicate folder index (``run_01``, …).
         num_runs: Total configured replicates; defaults to ``model['num_runs']``.
     """
-    effective_num_runs = num_runs if num_runs is not None else _resolve_model_num_runs(model)
+    effective_num_runs = (
+        num_runs if num_runs is not None else _resolve_model_num_runs(model)
+    )
     result_dir = resolve_result_dir(
         results_dir=bench.results_dir,
         harness=bench.harness,
         slug=model["slug"],
         replicate_index=replicate_index,
     )
-    project_dir = result_dir / "project"
-    prompt_path = result_dir / "prompt.txt"
-    stdout_path = result_dir / "opencode-output.ndjson"
-    stderr_path = result_dir / "opencode-stderr.log"
-    phase1_result_path = result_dir / "phase1-result.json"
-    followup_prompt_path = result_dir / "followup-prompt.txt"
-    followup_stdout_path = result_dir / "followup-opencode-output.ndjson"
-    followup_stderr_path = result_dir / "followup-opencode-stderr.log"
-    phase2_result_path = result_dir / "phase2-result.json"
-    session_export_path = result_dir / "session-export.json"
-    result_path = result_dir / "result.json"
-    result_dir.mkdir(parents=True, exist_ok=True)
-    project_dir.mkdir(parents=True, exist_ok=True)
-    init_project_git(project_dir)
-    validate_benchmark_workspace(bench.results_dir, result_dir, project_dir)
-    write_project_context(project_dir)
-
-    if not bench.force:
-        cached = existing_terminal_result(result_path)
-        if cached:
-            print_line(
-                f"[{index}/{total}] {model['slug']} skipping cached result "
-                f"status={cached['status']} elapsed={format_value(cached.get('elapsed_seconds'))}s"
-            )
-            return cached
-
+    paths = TargetRunPaths.opencode(result_dir)
     runner_type = model.get("runner_type", "opencode")
-
-    if runner_type not in _CODEX_RUNNERS and not skip_stale_kill:
-        _kill_stale_opencode_processes()
-
-    started_at = utc_now()
     log_tag = stream_log_prefix(bench.harness, model["slug"])
-    print_line("")
-    print_line(
-        f"[{index}/{total}] starting {log_tag} -> {model['id']} (runner={runner_type})"
-    )
-    print_line(f"[{log_tag}] results_dir={result_dir}")
-    print_line(f"[{log_tag}] timeout={bench.timeout_seconds}s")
-    print_line(
-        f"[{log_tag}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
-    )
-
     phase_command_prefix: list[str] | None = None
     if runner_type in _CODEX_RUNNERS:
         phase_command_prefix = model.get("command_prefix")
         if not phase_command_prefix and runner_type == "ollama":
             phase_command_prefix = ollama_launch_command_prefix("codex")
-    cli_version_fields = resolve_harness_cli_versions(
-        harness=bench.harness,
-        command_prefix=phase_command_prefix,
-    )
+    cli_version_fields_cache: dict[str, Any] | None = None
 
-    # Preflight for local models
+    def get_cli_version_fields() -> dict[str, Any]:
+        nonlocal cli_version_fields_cache
+        if cli_version_fields_cache is None:
+            cli_version_fields_cache = resolve_harness_cli_versions(
+                harness=bench.harness,
+                command_prefix=phase_command_prefix,
+            )
+        return cli_version_fields_cache
+
+    started_at = utc_now()
     is_local = model["provider"] == "ollama"
-    if is_local:
-        preflight_ok, preflight_message = _ensure_local_model_ready(model, bench)
-        if not preflight_ok:
-            payload = {
-                "result_schema_version": RESULT_SCHEMA_VERSION,
-                "harness": bench.harness,
-                "assistant_output_excerpt": "",
-                "command": [],
-                "elapsed_seconds": 0.0,
-                "ended_at": utc_now(),
-                "exit_code": None,
-                "finish_reason": None,
-                "model": model,
-                "opencode_session_id": None,
-                "paths": {
-                    "project_dir": str(project_dir),
-                    "prompt": str(prompt_path),
-                    "stderr": str(stderr_path),
-                    "stdout": str(stdout_path),
-                },
-                "project_summary": summarize_project(project_dir),
-                "prompt_sha256": prompt_sha256(bench.prompt),
-                "started_at": started_at,
-                "status": "failed",
-                "stderr_excerpt": "",
-                "timed_out": False,
-                "timeout_seconds": bench.timeout_seconds,
-                "no_progress_timeout_seconds": bench.no_progress_timeout_seconds,
-                "tokens": {},
-                "tokens_per_second": None,
-                "output_tokens_per_second": None,
-                "preview_output_tokens_per_second": None,
-                "preview_output_tokens_per_second_average": None,
-                "preflight_error": preflight_message,
-                "phases": [],
-                **cli_version_fields,
-            }
-            save_json(
-                result_path,
-                attach_replicate_fields(
-                    payload,
-                    replicate_index=replicate_index,
-                    num_runs=effective_num_runs,
-                ),
-            )
-            print_line(
-                f"[{index}/{total}] finished {model['slug']} status=failed preflight_error={preflight_message}"
-            )
-            return payload
 
-    _run_phase = (
-        run_codex_phase if runner_type in _CODEX_RUNNERS else run_opencode_phase
-    )
-    phase1_kwargs: dict[str, Any] = {
-        "bench": bench,
-        "model": model,
-        "model_slug": model["slug"],
-        "prompt": bench.prompt,
-        "started_at": started_at,
-        "project_dir": project_dir,
-        "prompt_path": prompt_path,
-        "stdout_path": stdout_path,
-        "stderr_path": stderr_path,
-        "result_path": phase1_result_path,
-        "phase_name": "phase1",
-    }
-    if phase_command_prefix:
-        phase1_kwargs["command_prefix"] = phase_command_prefix
-    if runner_type not in _CODEX_RUNNERS:
-        phase1_kwargs["continue_session_id"] = None
-    phase1 = _run_phase_with_rate_limit_retry(
-        log_tag=stream_log_prefix(bench.harness, model["slug"], "phase1"),
-        policy=bench.rate_limit_policy,
-        run_once=lambda: _run_phase(**phase1_kwargs),
-    )
+    def before_phases() -> dict[str, Any] | None:
+        if runner_type not in _CODEX_RUNNERS and not skip_stale_kill:
+            _kill_stale_opencode_processes()
 
-    phases = [phase1]
-    final_phase = phase1
-
-    if (
-        bench.followup_prompt
-        and not phase1.get("timed_out")
-        and not phase1.get("stalled")
-    ):
-        continued_session_id = (
-            phase1.get("opencode_session_id")
-            if runner_type not in _CODEX_RUNNERS
-            else None
-        )
+        print_line("")
         print_line(
-            f"[{stream_log_prefix(bench.harness, model['slug'], 'phase1')}] "
-            "complete; continuing with follow-up prompt"
+            f"[{index}/{total}] starting {log_tag} -> {model['id']} "
+            f"(runner={runner_type})"
         )
-        phase2_kwargs: dict[str, Any] = {
+        print_line(f"[{log_tag}] results_dir={result_dir}")
+        print_line(f"[{log_tag}] timeout={bench.timeout_seconds}s")
+        print_line(
+            f"[{log_tag}] no_progress_timeout={bench.no_progress_timeout_seconds}s"
+        )
+
+        if not is_local:
+            return None
+        preflight_ok, preflight_message = _ensure_local_model_ready(model, bench)
+        if preflight_ok:
+            return None
+        payload = {
+            "result_schema_version": RESULT_SCHEMA_VERSION,
+            "harness": bench.harness,
+            "assistant_output_excerpt": "",
+            "command": [],
+            "elapsed_seconds": 0.0,
+            "ended_at": utc_now(),
+            "exit_code": None,
+            "finish_reason": None,
+            "model": model,
+            "opencode_session_id": None,
+            "paths": {
+                "project_dir": str(paths.project_dir),
+                "prompt": str(paths.prompt_path),
+                "stderr": str(paths.stderr_path),
+                "stdout": str(paths.stdout_path),
+            },
+            "project_summary": summarize_project(paths.project_dir),
+            "prompt_sha256": prompt_sha256(bench.prompt),
+            "started_at": started_at,
+            "status": "failed",
+            "stderr_excerpt": "",
+            "timed_out": False,
+            "timeout_seconds": bench.timeout_seconds,
+            "no_progress_timeout_seconds": bench.no_progress_timeout_seconds,
+            "tokens": {},
+            "tokens_per_second": None,
+            "output_tokens_per_second": None,
+            "preview_output_tokens_per_second": None,
+            "preview_output_tokens_per_second_average": None,
+            "preflight_error": preflight_message,
+            "phases": [],
+            **get_cli_version_fields(),
+        }
+        return payload
+
+    def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
+        phase_func = (
+            run_codex_phase if runner_type in _CODEX_RUNNERS else run_opencode_phase
+        )
+        phase_kwargs: dict[str, Any] = {
             "bench": bench,
             "model": model,
             "model_slug": model["slug"],
-            "prompt": build_followup_prompt(
-                bench.followup_prompt, continued_session_id
-            ),
-            "started_at": utc_now(),
-            "project_dir": project_dir,
-            "prompt_path": followup_prompt_path,
-            "stdout_path": followup_stdout_path,
-            "stderr_path": followup_stderr_path,
-            "result_path": phase2_result_path,
-            "phase_name": "phase2",
-            "override_min_preview_tps": None,
+            "prompt": request.prompt,
+            "started_at": request.started_at,
+            "project_dir": request.project_dir,
+            "prompt_path": request.prompt_path,
+            "stdout_path": request.stdout_path,
+            "stderr_path": request.stderr_path,
+            "result_path": request.result_path,
+            "phase_name": request.phase_name,
         }
+        if request.phase_name == "phase2":
+            phase_kwargs["override_min_preview_tps"] = None
         if phase_command_prefix:
-            phase2_kwargs["command_prefix"] = phase_command_prefix
+            phase_kwargs["command_prefix"] = phase_command_prefix
         if runner_type not in _CODEX_RUNNERS:
-            phase2_kwargs["continue_session_id"] = continued_session_id
-        phase2 = _run_phase_with_rate_limit_retry(
-            log_tag=stream_log_prefix(bench.harness, model["slug"], "phase2"),
-            policy=bench.rate_limit_policy,
-            run_once=lambda: _run_phase(**phase2_kwargs),
-        )
-        phases.append(phase2)
-        final_phase = phase2
+            phase_kwargs["continue_session_id"] = request.continue_session_id
+        return phase_func(**phase_kwargs)
 
-    if (
-        bench.auto_skip_slow_preview
-        and isinstance(bench.min_preview_output_tps, float)
-        and isinstance(
-            final_phase.get("preview_output_tokens_per_second_average"), float
+    def select_followup_session(phase1: dict[str, Any]) -> str | None:
+        if runner_type in _CODEX_RUNNERS:
+            return None
+        value = phase1.get("opencode_session_id")
+        return value if isinstance(value, str) else None
+
+    def finalize_payload(
+        payload: dict[str, Any],
+        phases: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        final_phase = phases[-1]
+        phase1 = phases[0]
+        mark_slow_preview_skip(final_phase)
+        session_id = final_phase.get("opencode_session_id") or phase1.get(
+            "opencode_session_id"
         )
-        and float(final_phase["preview_output_tokens_per_second_average"])
-        < bench.min_preview_output_tps
-    ):
+        exported_session = export_session_artifact(session_id)
+        payload.update(
+            {
+                "model": model,
+                "opencode_session_id": session_id,
+                "paths": {
+                    **payload["paths"],
+                    "session_export": str(exported_session)
+                    if exported_session is not None
+                    else None,
+                },
+                "session_exported": exported_session is not None,
+                **get_cli_version_fields(),
+            }
+        )
+        root_dir = bench.results_dir.resolve().parent
+        return detect_workspace_escape(
+            payload,
+            root_dir=root_dir,
+            results_dir=bench.results_dir,
+            project_dir=paths.project_dir,
+            before_markers=snapshot_root_generated_markers(
+                root_dir, bench.results_dir
+            ),
+            session_export_path=exported_session,
+        )
+
+    def mark_slow_preview_skip(final_phase: dict[str, Any]) -> None:
+        if not should_mark_slow_preview_skip(final_phase):
+            return
+        average_tps = float(final_phase["preview_output_tokens_per_second_average"])
         note = (
-            f" Skipped by default after benchmark preview averaged "
-            f"{float(final_phase['preview_output_tokens_per_second_average']):.2f} output tok/s over the first "
+            " Skipped by default after benchmark preview averaged "
+            f"{average_tps:.2f} output tok/s over the first "
             f"{bench.min_preview_samples} steps (< {bench.min_preview_output_tps:.2f})."
         )
         with _SKIP_CONFIG_LOCK:
-            wrote = mark_model_skip_by_default(
-                bench.config_path, model["slug"], note
-            )
+            wrote = mark_model_skip_by_default(bench.config_path, model["slug"], note)
         if wrote:
-            print_line(
-                f"[{log_tag}] marked skip_by_default in {bench.config_path}"
-            )
+            print_line(f"[{log_tag}] marked skip_by_default in {bench.config_path}")
 
-    session_id = final_phase.get("opencode_session_id") or phase1.get(
-        "opencode_session_id"
-    )
-    exported_session = None
-    if runner_type not in _CODEX_RUNNERS:
+    def should_mark_slow_preview_skip(final_phase: dict[str, Any]) -> bool:
+        return (
+            bench.auto_skip_slow_preview
+            and isinstance(bench.min_preview_output_tps, float)
+            and isinstance(
+                final_phase.get("preview_output_tokens_per_second_average"),
+                float,
+            )
+            and float(final_phase["preview_output_tokens_per_second_average"])
+            < bench.min_preview_output_tps
+        )
+
+    def export_session_artifact(session_id: Any) -> Path | None:
+        if runner_type in _CODEX_RUNNERS:
+            return None
         process_env = os.environ.copy()
         process_env["OPENCODE_PERMISSION"] = json.dumps(
             OPENCODE_YOLO_PERMISSION, separators=(",", ":")
         )
-        exported_session = (
-            export_opencode_session(
-                session_id, session_export_path, process_env, log_tag
-            )
-            if isinstance(session_id, str) and session_id
-            else None
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        assert paths.session_export_path is not None
+        return export_opencode_session(
+            session_id, paths.session_export_path, process_env, log_tag
         )
 
-    total_elapsed = round(
-        sum(float(phase.get("elapsed_seconds") or 0.0) for phase in phases), 2
-    )
-    payload = {
-        **final_phase,
-        "result_schema_version": RESULT_SCHEMA_VERSION,
-        "harness": bench.harness,
-        "elapsed_seconds": total_elapsed,
-        "ended_at": utc_now(),
-        "model": model,
-        "opencode_session_id": session_id,
-        "paths": {
-            "project_dir": str(project_dir),
-            "prompt": str(prompt_path),
-            "stderr": str(stderr_path),
-            "stdout": str(stdout_path),
-            "followup_prompt": str(followup_prompt_path)
-            if followup_prompt_path.exists()
-            else None,
-            "followup_stderr": str(followup_stderr_path)
-            if followup_stderr_path.exists()
-            else None,
-            "followup_stdout": str(followup_stdout_path)
-            if followup_stdout_path.exists()
-            else None,
-            "session_export": str(exported_session)
-            if exported_session is not None
-            else None,
-        },
-        "primary_prompt_sha256": prompt_sha256(bench.prompt),
-        "followup_prompt_sha256": prompt_sha256(bench.followup_prompt)
-        if bench.followup_prompt
-        else None,
-        "session_exported": exported_session is not None,
-        "phases": phases,
-        **cli_version_fields,
-    }
-    root_dir = bench.results_dir.resolve().parent
-    payload = detect_workspace_escape(
-        payload,
-        root_dir=root_dir,
-        results_dir=bench.results_dir,
-        project_dir=project_dir,
-        before_markers=snapshot_root_generated_markers(root_dir, bench.results_dir),
-        session_export_path=exported_session,
-    )
-    save_json(
-        result_path,
-        attach_replicate_fields(
-            payload,
-            replicate_index=replicate_index,
-            num_runs=effective_num_runs,
-        ),
-    )
-    print_line(
-        f"[{index}/{total}] finished {model['slug']} status={payload['status']} "
-        f"elapsed={total_elapsed:.2f}s files={payload['project_summary']['file_count']} "
-        f"total_tokens={format_value(payload['tokens'].get('total'))}"
-    )
-
-    # Unload the model after the run to free GPU for the next model.
-    # This prevents OOM when the next model's preflight tries to evict
-    # the competing backend while this model is still resident.
-    if is_local and bench.backend is not None:
-        active = bench.backend.list_active()
-        if active:
+    def after_save(payload: dict[str, Any]) -> None:
+        if payload.get("preflight_error"):
             print_line(
-                f"[{log_tag}] post-run cleanup: unloading {', '.join(active)}"
+                f"[{index}/{total}] finished {model['slug']} status=failed "
+                f"preflight_error={payload['preflight_error']}"
             )
-            bench.backend.unload_all()
+            return
+        total_elapsed = float(payload.get("elapsed_seconds") or 0.0)
+        project_summary = payload.get("project_summary", {})
+        file_count = (
+            project_summary.get("file_count")
+            if isinstance(project_summary, dict)
+            else None
+        )
+        tokens = payload.get("tokens", {})
+        total_tokens = tokens.get("total") if isinstance(tokens, dict) else None
+        print_line(
+            f"[{index}/{total}] finished {model['slug']} status={payload['status']} "
+            f"elapsed={total_elapsed:.2f}s files={file_count} "
+            f"total_tokens={format_value(total_tokens)}"
+        )
+        if is_local and bench.backend is not None:
+            active = bench.backend.list_active()
+            if active:
+                print_line(
+                    f"[{log_tag}] post-run cleanup: unloading {', '.join(active)}"
+                )
+                bench.backend.unload_all()
 
-    return payload
+    return TargetRunLifecycle(
+        harness=bench.harness,
+        slug=model["slug"],
+        results_dir=bench.results_dir,
+        paths=paths,
+        force=bench.force,
+        prompt=bench.prompt,
+        followup_prompt=bench.followup_prompt,
+        run_phase=run_phase,
+        rate_limit_policy=bench.rate_limit_policy,
+        followup_prompt_builder=build_followup_prompt,
+        before_phases=before_phases,
+        final_payload_hook=finalize_payload,
+        after_save=after_save,
+        phase_log_tag=lambda phase_name: stream_log_prefix(
+            bench.harness, model["slug"], phase_name
+        ),
+        followup_session_selector=select_followup_session,
+        replicate_index=replicate_index,
+        num_runs=effective_num_runs,
+    ).run()
