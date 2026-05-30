@@ -119,6 +119,14 @@ _TIER_PATTERN = re.compile(
     r"(?:Practical\s+)?tier\s*[:\n]+\s*\*{0,2}\s*([A-D])\b",
     re.IGNORECASE,
 )
+# Section D heading with tier letter on the next line, e.g.:
+#   D. **Practical tier**
+#   B (61-80): ...
+_TIER_SECTION_D = re.compile(
+    r"(?:^|\n)(?:#{1,3}\s+)?D\.\s*(?:\*{0,2}\s*)?"
+    r"(?:Practical\s+)?[Tt]ier\*{0,2}\s*\n+\s*\*{0,2}\s*([A-D])\b",
+    re.IGNORECASE | re.MULTILINE,
+)
 _TIER_INLINE_PATTERN = re.compile(r"Tier\s+([A-D])\b", re.IGNORECASE)
 
 # Dimension table row:
@@ -165,9 +173,13 @@ def parse_report_scores(
     if tier_match:
         report.tier = tier_match.group(1).upper()
     else:
-        inline = _TIER_INLINE_PATTERN.search(report_text)
-        if inline:
-            report.tier = inline.group(1).upper()
+        section_d = _TIER_SECTION_D.search(report_text)
+        if section_d:
+            report.tier = section_d.group(1).upper()
+        else:
+            inline = _TIER_INLINE_PATTERN.search(report_text)
+            if inline:
+                report.tier = inline.group(1).upper()
 
     seen_indices: set[int] = set()
     for m in _DIM_ROW_PATTERN.finditer(report_text):
