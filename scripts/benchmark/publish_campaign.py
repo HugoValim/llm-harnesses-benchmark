@@ -363,6 +363,7 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
         [
             "",
             "# Shared exclusions for published benchmark targets",
+            f"/{results_root}/**/d9-preflight.json",
             f"/{results_root}/**/*.ndjson",
             f"/{results_root}/**/stderr.log",
             f"/{results_root}/**/followup-stderr.log",

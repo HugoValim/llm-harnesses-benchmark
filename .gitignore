@@ -24,7 +24,7 @@ db.sqlite3
 # Default: ignore all runtime outputs
 /results/run_01/projects/*/
 /results-claude-code/*/
-/results/run_01/projects/runtime_verification_summary.json
+/results/run_01/runtime_verification_summary.json
 /audit-reports/*/
 
 # Published audit tree: results/run_01/audit-reports/codex_gpt_5_5
@@ -67,6 +67,7 @@ db.sqlite3
 !/results/run_01/projects/opencode-qwen3_5_ollama_cloud/
 
 # Shared exclusions for published benchmark targets
+/results/run_01/projects/**/d9-preflight.json
 /results/run_01/projects/**/*.ndjson
 /results/run_01/projects/**/stderr.log
 /results/run_01/projects/**/followup-stderr.log

@@ -108,6 +108,7 @@ class TestGitignoreBlock(unittest.TestCase):
         self.assertIn(GITIGNORE_END, block)
         self.assertIn("!/audit-reports/codex_gpt_5_5/", block)
         self.assertIn("!/results/codex-demo/", block)
+        self.assertIn("/results/**/d9-preflight.json", block)
         self.assertIn("/results/**/followup-stderr.log", block)
         self.assertIn("/results/**/project/.env", block)
         self.assertIn(f"/results/**/project/{TAILWINDCSS_BINARY_PREFIX}*", block)
