@@ -14,12 +14,14 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.publish_campaign import (  # noqa: E402
     GITIGNORE_BEGIN,
     GITIGNORE_END,
+    GITHUB_LATEST_META_ANALYSIS,
     TAILWINDCSS_BINARY_PREFIX,
     CampaignManifest,
     build_manifest,
     discover_targets_from_auditor,
     render_gitignore_block,
     strip_project_ephemeral,
+    update_github_latest_meta_analysis,
     update_gitignore,
     update_symlink,
     validate_no_secrets,
@@ -226,6 +228,59 @@ class TestBuildManifestFromRepo(unittest.TestCase):
             "results/run_02/audit-reports/codex_gpt_5_5",
         )
         self.assertEqual(manifest.meta_analysis, "results/run_02/meta-analysis.md")
+
+
+class TestGithubLatestMetaAnalysis(unittest.TestCase):
+    def test_copies_meta_analysis_to_stable_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            source = repo / "results" / "run_01" / "meta-analysis.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Meta-analysis\n")
+
+            manifest = CampaignManifest(
+                id="2026-05-test",
+                label="Test",
+                date="2026-05-30",
+                prompt_versions={"meta": "meta-v1"},
+                auditor_slug="codex_gpt_5_5",
+                meta_analysis="results/run_01/meta-analysis.md",
+                audit_root="results/run_01/audit-reports/codex_gpt_5_5",
+                benchmark_results_root="results/run_01/projects",
+                targets=["codex-demo"],
+                harnesses=["codex"],
+                models_config_sha256="abc",
+                harnesses_config_sha256="def",
+                run_id="run_01",
+            )
+
+            dest = update_github_latest_meta_analysis(repo, manifest)
+            self.assertIsNotNone(dest)
+            assert dest is not None
+            self.assertEqual(
+                dest, repo / GITHUB_LATEST_META_ANALYSIS,
+            )
+            self.assertEqual(dest.read_text(), "# Meta-analysis\n")
+
+    def test_returns_none_when_source_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            manifest = CampaignManifest(
+                id="2026-05-test",
+                label="Test",
+                date="2026-05-30",
+                prompt_versions={"meta": "meta-v1"},
+                auditor_slug="codex_gpt_5_5",
+                meta_analysis="results/run_01/meta-analysis.md",
+                audit_root="results/run_01/audit-reports/codex_gpt_5_5",
+                benchmark_results_root="results/run_01/projects",
+                targets=["codex-demo"],
+                harnesses=["codex"],
+                models_config_sha256="abc",
+                harnesses_config_sha256="def",
+                run_id="run_01",
+            )
+            self.assertIsNone(update_github_latest_meta_analysis(repo, manifest))
 
 
 if __name__ == "__main__":
