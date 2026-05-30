@@ -16,8 +16,10 @@ from typing import Any
 
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
+    benchmark_target_slug_from_leaf,
     discover_project_result_jsons,
     layout_from_repo,
+    matches_benchmark_only_filter,
 )
 from benchmark.util import load_json, save_json, terminate_process_group, utc_now
 
@@ -653,12 +655,14 @@ def analyze_one(
     result_payload: dict[str, Any],
     args: argparse.Namespace,
     ollama_env: dict[str, str],
+    *,
+    slug: str | None = None,
 ) -> dict[str, Any]:
     project_dir = result_dir / "project"
     runtime_dir = project_dir / RUNTIME_DIRNAME
     runtime_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "slug": result_dir.name,
+        "slug": slug or result_dir.name,
         "benchmark_status": result_payload.get("status"),
         "benchmark_works": (result_payload.get("project_summary") or {}).get(
             "works_as_intended"
@@ -709,16 +713,23 @@ def main() -> int:
     if args.run_id:
         result_paths = discover_project_result_jsons(results_dir)
     else:
-        result_paths = sorted(results_dir.glob("*/result.json"))
+        result_paths = sorted(results_dir.glob("**/result.json"))
     if args.only:
         only = {slug.strip() for slug in args.only.split(",") if slug.strip()}
-        result_paths = [path for path in result_paths if path.parent.name in only]
+        result_paths = [
+            path
+            for path in result_paths
+            if matches_benchmark_only_filter(path, only, results_dir)
+        ]
     if args.max_projects is not None:
         result_paths = result_paths[: args.max_projects]
 
     for result_path in result_paths:
         payload = load_json(result_path)
-        report = analyze_one(result_path.parent, payload, args, ollama_env)
+        slug = benchmark_target_slug_from_leaf(result_path.parent, results_dir)
+        report = analyze_one(
+            result_path.parent, payload, args, ollama_env, slug=slug
+        )
         summaries.append(
             {
                 "slug": report["slug"],

@@ -12,12 +12,14 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
+    benchmark_target_slug_from_leaf,
     discover_project_result_jsons,
     layout_from_repo,
-    split_target_slug,
+    matches_benchmark_only_filter,
 )
 from benchmark.result_validation import (  # noqa: E402
     followup_expected,
+    resolve_result_target_identity,
     validate_benchmark_result,
     wipe_result_dir,
 )
@@ -35,7 +37,11 @@ def parse_args() -> argparse.Namespace:
     add_run_id_arg(parser)
     parser.add_argument(
         "--only",
-        help="Comma-separated result directory names (e.g. opencode-qwen3_5_ollama_cloud).",
+        help=(
+            "Comma-separated target names: target group "
+            "(e.g. opencode-qwen3_5_ollama_cloud), replicate slug "
+            "(run_01), or full path (group/run_01)."
+        ),
     )
     parser.add_argument(
         "--models-config",
@@ -59,6 +65,10 @@ def _registry_by_slug(models_config: Path) -> dict[str, dict]:
     return {
         str(m["slug"]): m for m in models if isinstance(m, dict) and m.get("slug")
     }
+
+
+def _matches_only_filter(result_path: Path, only: set[str], projects_root: Path) -> bool:
+    return matches_benchmark_only_filter(result_path, only, projects_root)
 
 
 def main() -> int:
@@ -89,9 +99,11 @@ def main() -> int:
     if args.run_id:
         result_paths = discover_project_result_jsons(results_dir)
     else:
-        result_paths = sorted(results_dir.glob("*/result.json"))
+        result_paths = sorted(results_dir.glob("**/result.json"))
     if only:
-        result_paths = [p for p in result_paths if p.parent.name in only]
+        result_paths = [
+            p for p in result_paths if _matches_only_filter(p, only, results_dir)
+        ]
 
     if not result_paths:
         print_line("No result.json files matched.")
@@ -100,7 +112,7 @@ def main() -> int:
     failures = 0
     for result_path in result_paths:
         result_dir = result_path.parent
-        harness, slug = split_target_slug(result_dir.name)
+        _harness, slug = resolve_result_target_identity(result_dir)
         model = registry.get(slug, {})
         expect_followup = followup_expected(followup_prompt=followup_prompt)
         vr = validate_benchmark_result(
@@ -108,8 +120,9 @@ def main() -> int:
             model=model or None,
             followup_expected_flag=expect_followup,
         )
+        label = benchmark_target_slug_from_leaf(result_dir, results_dir)
         status = "PASS" if vr.ok else "FAIL"
-        print_line(f"[{status}] {result_dir.name}: {vr.summary()}")
+        print_line(f"[{status}] {label}: {vr.summary()}")
         if not vr.ok:
             failures += 1
             if args.remove_on_fail:
