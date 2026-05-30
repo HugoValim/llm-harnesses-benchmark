@@ -31,7 +31,7 @@ Path prefixes identify how each target was generated:
 
 When more than one auditor directory is listed, the same `(harness, model_slug)` cell may have multiple `report.md` files (one per auditor). Treat each as an independent sample for that cell. When ranking models or contest harnesses, AVERAGE the totals across auditors for that cell and report the cross-auditor std-dev so auditor disagreement is visible. Keep `auditor` as an extra column wherever per-cell data is shown.
 
-Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5` and `claude_opus_4_7`) are **excluded from harness comparison averages** (section 3) because they were not run under every contest harness. They remain in section 2 and the appendix.
+Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5(xhigh)` and `claude_opus_4_7`) are **excluded from harness comparison averages** (section 3) because they were not run under every contest harness. They remain in section 2 and the appendix.
 
 ## What you are testing
 

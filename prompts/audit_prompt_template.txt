@@ -75,7 +75,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
 
 ## Benchmark anchors (scoring calibration)
 
-`gpt_5_5` and `claude_opus_4_7` are benchmark reference anchors for this rubric. A near-perfect, fully spec-compliant submission from these models is expected to land in the **95-97 / 100** band — not 100 by default. Reserve 98-100 for submissions with literally zero rubric trip-ups across all ten dimensions. If you are about to score a **non-leader** run **>92/100**, you MUST list zero critical failures in section F and cite evidence that every Universal blind spot row was checked. Auditor-induced score inflation against leaders is the most common calibration failure here.
+`codex_gpt_5_5(xhigh)` and `claude_opus_4_7` are benchmark reference anchors for this rubric. A near-perfect, fully spec-compliant submission from these models is expected to land in the **95-97 / 100** band — not 100 by default. Reserve 98-100 for submissions with literally zero rubric trip-ups across all ten dimensions. If you are about to score a **non-leader** run **>92/100**, you MUST list zero critical failures in section F and cite evidence that every Universal blind spot row was checked. Auditor-induced score inflation against leaders is the most common calibration failure here.
 
 ## Audit dimensions — score each per its weight, total 100
 

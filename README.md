@@ -14,7 +14,7 @@ cross-run meta-analysis.
 | Meta-analysis | [`results/latest/meta-analysis.md`](results/latest/meta-analysis.md) |
 | Score index | [`results/run_01/audit-reports/codex_gpt_5_5/comparison.md`](results/run_01/audit-reports/codex_gpt_5_5/comparison.md) |
 | Generated code | [`results/run_01/projects/`](results/run_01/projects/) (28 targets listed in manifest) |
-| Auditor | `codex_gpt_5_5` |
+| Auditor | `codex_gpt_5_5(xhigh)` |
 
 Headline from the latest meta-analysis: **best open-source model**
 `deepseek_v4_pro_ollama_cloud` (74.0/100 cross-harness mean); **best contest harness**
@@ -153,8 +153,9 @@ even if the numeric total would be higher.
 
 #### Calibration anchors
 
-Reference runs from **`gpt_5_5`** and **`claude_opus_4_7`** are expected in the
-**95–97 / 100** band for near-perfect submissions — not 100 by default. Scores above
+Reference runs from **`codex_gpt_5_5(xhigh)`** and **`claude_opus_4_7`** are expected in the
+**95–97 / 100** band for near-perfect submissions — not 100 by default. The `(xhigh)` suffix
+denotes Codex extra-high reasoning effort from [`config/models.json`](config/models.json). Scores above
 92 for non-leader runs require zero critical failures and evidence that all universal
 blind spots were checked.
 
@@ -190,7 +191,7 @@ only for citations and narrative in later sections.
 **Excluded from harness contest:**
 
 - **Cursor** runs (`cursor-<model>`) — model-only benchmarks, not a fourth harness entrant
-- **Single-harness leaders** (`codex_gpt_5_5`, `claude_opus_4_7`) — not run on every contest harness
+- **Single-harness leaders** (`codex_gpt_5_5(xhigh)`, `claude_opus_4_7`) — not run on every contest harness
 
 ### Runtime verification (supplementary)
 

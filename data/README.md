@@ -14,7 +14,7 @@ and `audit-reports/` connect via target slugs within each run directory.
 - **Label:** Ollama Cloud grid — benchmark v3.2
 - **Run:** `run_01`
 - **Meta-analysis:** [`results/latest/meta-analysis.md`](../results/latest/meta-analysis.md)
-- **Auditor:** `codex_gpt_5_5`
+- **Auditor:** `codex_gpt_5_5(xhigh)`
 - **Targets:** 28 `(harness, model)` runs across opencode, codex, claude, and cursor
 
 Symlink [`campaigns/latest`](campaigns/latest) always points at the current campaign directory.
