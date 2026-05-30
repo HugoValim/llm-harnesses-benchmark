@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,7 +23,12 @@ from benchmark.config import (  # noqa: E402
     load_opencode_ollama_api_base,
     resolve_build_harness_config,
 )
-from benchmark.harnesses import get_harness, list_harnesses  # noqa: E402
+from benchmark.harnesses import (  # noqa: E402
+    check_harness_cli_requirements,
+    get_harness,
+    list_harnesses,
+    model_matches_harness,
+)
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 from benchmark.result_validation import MAX_VALIDATION_RETRIES  # noqa: E402
 from benchmark.result_layout import (  # noqa: E402
@@ -33,7 +37,6 @@ from benchmark.result_layout import (  # noqa: E402
 )
 from benchmark.util import (  # noqa: E402
     load_json,
-    model_matches_harness,
     normalize_path_fields,
     print_line,
 )
@@ -131,21 +134,6 @@ def normalize_benchmark_paths(args: argparse.Namespace) -> argparse.Namespace:
         layout.projects_root.mkdir(parents=True, exist_ok=True)
         layout.run_root.mkdir(parents=True, exist_ok=True)
     return args
-
-
-def _verify_codex_binaries(models: list[dict]) -> tuple[bool, str]:
-    for m in models:
-        cp = m.get("command_prefix") or []
-        runner_type = m.get("runner_type", "opencode")
-        uses_ollama_launch = (
-            len(cp) >= 2 and cp[0] == "ollama" and cp[1] == "launch"
-        ) or (runner_type == "ollama" and not cp)
-        if uses_ollama_launch:
-            if shutil.which("ollama") is None:
-                return False, "ollama is not available on PATH (needed for ollama launch codex)"
-        elif shutil.which("codex") is None:
-            return False, "codex is not available on PATH"
-    return True, ""
 
 
 def _model_row_to_cli_variant(model: dict[str, Any]) -> dict[str, Any]:
@@ -350,14 +338,10 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         )
         return 1
 
-    if harness == "opencode" and shutil.which("opencode") is None:
-        print("opencode is not available on PATH", file=sys.stderr)
+    ok, err = check_harness_cli_requirements(harness, selected_models)
+    if not ok:
+        print(err, file=sys.stderr)
         return 1
-    if harness in {"codex", "ollama"}:
-        ok, err = _verify_codex_binaries(selected_models)
-        if not ok:
-            print(err, file=sys.stderr)
-            return 1
 
     api_base = args.local_api_base or load_opencode_ollama_api_base()
     backend = None
@@ -450,9 +434,9 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             f"Note: --max-runs applies only to opencode/codex; ignoring for {harness_name}."
         )
 
-    if harness.cli_binary and shutil.which(harness.cli_binary) is None:
-        print(harness.cli_install_hint or f"{harness.cli_binary} not on PATH",
-              file=sys.stderr)
+    ok, err = check_harness_cli_requirements(harness_name)
+    if not ok:
+        print(err, file=sys.stderr)
         return 1
     print_line(
         f"Note: --harness {harness_name} uses {harness_name} runner semantics; "

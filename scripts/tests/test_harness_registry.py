@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -13,8 +14,11 @@ from benchmark.harnesses import (  # noqa: E402
     HARNESS_REGISTRY,
     Harness,
     UnknownHarnessError,
+    canonical_harness_name,
+    check_harness_cli_requirements,
     get_harness,
     list_harnesses,
+    model_matches_harness,
 )
 
 
@@ -58,6 +62,21 @@ class TestHarnessRegistry(unittest.TestCase):
         # claude + cursor are variant-only — no run_model.
         for name in ("claude", "cursor"):
             self.assertIsNone(get_harness(name).run_model)
+
+    def test_ollama_alias_routes_to_codex_harness(self) -> None:
+        self.assertEqual(canonical_harness_name("ollama"), "codex")
+
+    def test_model_runner_types_are_harness_owned(self) -> None:
+        self.assertTrue(model_matches_harness({"runner_type": "ollama"}, "codex"))
+        self.assertFalse(model_matches_harness({"runner_type": "ollama"}, "opencode"))
+
+    def test_codex_ollama_model_requires_ollama_binary(self) -> None:
+        with patch("benchmark.harnesses.shutil.which", return_value=None):
+            ok, err = check_harness_cli_requirements(
+                "codex", [{"runner_type": "ollama"}]
+            )
+        self.assertFalse(ok)
+        self.assertIn("ollama", err)
 
 
 class TestHarnessIdentity(unittest.TestCase):

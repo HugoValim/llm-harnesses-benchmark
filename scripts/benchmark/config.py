@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.backends import LocalModelBackend
+from benchmark.harnesses import registry_models_for_harness
 from benchmark.rate_limit import RateLimitWaitPolicy
 from benchmark.run_status import TERMINAL_STATUSES
 from benchmark.workspace import summarize_project
@@ -15,7 +16,6 @@ from benchmark.util import (
     clone_json,
     load_json,
     load_optional_json,
-    ollama_launch_command_prefix,
     print_line,
     save_json,
     save_json_preserve_order,
@@ -284,53 +284,13 @@ def _load_registry_harness(config_path: Path, harness: str) -> dict[str, Any]:
     )
 
 
-# Maps provider -> harnesses that run it natively (without opencode_id).
-_PROVIDER_HARNESS_MAP: dict[str, frozenset[str]] = {
-    "anthropic": frozenset({"claude"}),
-    "openai": frozenset({"codex"}),
-    "cursor": frozenset({"cursor"}),
-    "ollama_cloud": frozenset({"claude", "codex", "opencode"}),
-}
-
-
-def _build_registry_model_row(model: dict[str, Any], harness: str) -> dict[str, Any]:
-    row = clone_json(model)
-    row["harness"] = harness
-    # opencode uses a harness-specific id (e.g. openrouter path) when provided.
-    if harness == "opencode" and model.get("opencode_id"):
-        row["id"] = model["opencode_id"]
-    provider = row.get("provider", "")
-    if provider == "ollama_cloud":
-        # codex: runner_type=ollama auto-injects `ollama launch codex`.
-        # claude/opencode: per-model command_prefix for `ollama launch <harness>`.
-        if harness == "codex":
-            row.setdefault("runner_type", "ollama")
-        else:
-            row.setdefault("runner_type", harness)
-            row.setdefault("command_prefix", ollama_launch_command_prefix(harness))
-    elif provider == "openai":
-        row.setdefault("runner_type", "codex")
-    else:
-        row.setdefault("runner_type", harness)
-    if not isinstance(row.get("id"), str) or not row["id"]:
-        raise ValueError(
-            f"harness {harness!r} model {row.get('slug')!r} needs string id"
-        )
-    row["num_runs"] = _resolve_model_num_runs(row)
-    return row
-
-
 def _registry_models_for_harness(
     registry_models: list[dict[str, Any]], harness: str
 ) -> list[dict[str, Any]]:
-    out = []
-    for model in registry_models:
-        provider = model.get("provider", "")
-        if harness in _PROVIDER_HARNESS_MAP.get(provider, frozenset()):
-            out.append(_build_registry_model_row(model, harness))
-        elif harness == "opencode" and model.get("opencode_id"):
-            out.append(_build_registry_model_row(model, harness))
-    return out
+    rows = registry_models_for_harness(registry_models, harness)
+    for row in rows:
+        row["num_runs"] = _resolve_model_num_runs(row)
+    return rows
 
 
 def _strip_harness_model_map(runner: dict[str, Any]) -> dict[str, Any]:

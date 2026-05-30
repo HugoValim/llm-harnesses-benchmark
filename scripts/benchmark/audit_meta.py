@@ -10,6 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from benchmark.harnesses import (
+    PROVIDER_HARNESS_MAP,
+    canonical_harness_name,
+    get_harness,
+)
 from benchmark.result_layout import HARNESS_PREFIXES
 from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
@@ -39,15 +44,13 @@ def audit_model_harness(
         if isinstance(models, dict) and slug in models:
             return str(harness)
     if models_config is not None:
-        from benchmark.config import _PROVIDER_HARNESS_MAP
-
         registry = models_config.get("models") or []
         _preferred = ["claude", "codex", "opencode", "cursor"]
         for model in registry:
             if not isinstance(model, dict) or model.get("slug") != slug:
                 continue
             provider = model.get("provider", "")
-            harnesses = _PROVIDER_HARNESS_MAP.get(provider, frozenset())
+            harnesses = PROVIDER_HARNESS_MAP.get(provider, frozenset())
             if harnesses:
                 return min(
                     harnesses,
@@ -213,11 +216,13 @@ def run_ai_meta_analysis(
 
     Supported harnesses: ``"claude"``, ``"codex"``, ``"ollama"``.
     """
-    if harness not in {"claude", "codex", "ollama"}:
+    harness_name = canonical_harness_name(harness)
+    if harness_name not in {"claude", "codex"}:
         raise NotImplementedError(
             f"meta-analysis harness={harness!r} not supported; "
             "expected one of 'claude', 'codex', 'ollama'."
         )
+    harness_adapter = get_harness(harness_name)
 
     reports_dir = reports_dir.resolve()
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -256,32 +261,19 @@ def run_ai_meta_analysis(
     meta_run_dir.mkdir(parents=True, exist_ok=True)
     (meta_run_dir / "prompt.txt").write_text(prompt)
 
-    if harness in {"codex", "ollama"}:
-        from benchmark.runner import run_codex_variant  # noqa: PLC0415
-
-        return run_codex_variant(
-            variant=variant,
-            prompt=prompt,
-            results_dir=meta_run_dir.parent,
-            timeout_seconds=timeout_seconds,
-            no_progress_timeout_seconds=no_progress_timeout_seconds,
-            force=force,
-            harness=harness,
-            explicit_result_dir=meta_run_dir,
-            rate_limit_policy=rate_limit_policy,
-        )
-
-    from benchmark.claude_code_runner import run_variant  # noqa: PLC0415
-
-    return run_variant(
-        variant=variant,
-        prompt=prompt,
-        results_dir=meta_run_dir.parent,
-        timeout_seconds=timeout_seconds,
-        no_progress_timeout_seconds=no_progress_timeout_seconds,
-        force=force,
-        runner_command_prefix=runner_command_prefix,
-        isolate_home=isolate_home,
-        explicit_result_dir=meta_run_dir,
-        rate_limit_policy=rate_limit_policy,
-    )
+    run_kwargs = {
+        "variant": variant,
+        "prompt": prompt,
+        "results_dir": meta_run_dir.parent,
+        "timeout_seconds": timeout_seconds,
+        "no_progress_timeout_seconds": no_progress_timeout_seconds,
+        "force": force,
+        "harness": harness,
+        "explicit_result_dir": meta_run_dir,
+        "rate_limit_policy": rate_limit_policy,
+    }
+    if harness_adapter.accepts_runner_command_prefix:
+        run_kwargs["runner_command_prefix"] = runner_command_prefix
+    if harness_adapter.accepts_isolate_home:
+        run_kwargs["isolate_home"] = isolate_home
+    return harness_adapter.run_variant(**run_kwargs)

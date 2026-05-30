@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -41,7 +40,11 @@ from benchmark.audit_report import (  # noqa: E402
     build_statistical_summary,
     load_rubric_result,
 )
-from benchmark.harnesses import get_harness  # noqa: E402
+from benchmark.harnesses import (  # noqa: E402
+    canonical_harness_name,
+    check_harness_cli_requirements,
+    get_harness,
+)
 from benchmark.audit_coverage import (  # noqa: E402
     audit_dispatch_needed,
     find_audit_coverage_gaps,
@@ -75,37 +78,13 @@ from benchmark.util import (  # noqa: E402
 )
 
 
-_CODEX_RUNNER_TYPES: frozenset[str] = frozenset({"codex", "ollama"})
-
-
 def _verify_auditor_binaries(auditors: list[dict]) -> tuple[bool, str]:
-    """Check the PATH binaries required by the selected auditors.
-
-    Each auditor's ``runner_type`` (default ``"claude"``) selects which CLI
-    must be available. ``"ollama"`` auditors need ``ollama`` on PATH (codex
-    is launched via ``ollama launch codex``); ``"codex"`` needs ``codex``;
-    ``"claude"`` needs ``claude``.
-    """
-    needs_claude = False
-    needs_codex = False
-    needs_ollama = False
-    for a in auditors:
-        runner_type = a.get("runner_type", "claude")
-        cp = a.get("command_prefix") or []
-        if runner_type == "ollama" or (
-            len(cp) >= 2 and cp[0] == "ollama" and cp[1] == "launch"
-        ):
-            needs_ollama = True
-        elif runner_type == "codex":
-            needs_codex = True
-        else:
-            needs_claude = True
-    if needs_claude and shutil.which("claude") is None:
-        return False, "claude (Claude Code CLI) is not available on PATH"
-    if needs_codex and shutil.which("codex") is None:
-        return False, "codex is not available on PATH"
-    if needs_ollama and shutil.which("ollama") is None:
-        return False, "ollama is not available on PATH (needed for ollama launch codex)"
+    """Check PATH binaries required by selected auditor harnesses."""
+    for auditor in auditors:
+        runner_type = auditor.get("runner_type", "claude")
+        ok, err = check_harness_cli_requirements(runner_type, [auditor])
+        if not ok:
+            return ok, err
     return True, ""
 
 
@@ -769,10 +748,7 @@ def main() -> int:
 
             try:
                 runner_type = auditor.get("runner_type", "claude")
-                # "ollama" is a legacy alias routed through the codex harness.
-                harness_name = (
-                    "codex" if runner_type in _CODEX_RUNNER_TYPES else runner_type
-                )
+                harness_name = canonical_harness_name(runner_type)
                 harness = get_harness(harness_name)
                 run_kwargs: dict[str, Any] = dict(
                     variant=auditor,
@@ -785,7 +761,7 @@ def main() -> int:
                     explicit_result_dir=result_dir,
                     rate_limit_policy=rate_limit_policy,
                 )
-                if harness.name not in _CODEX_RUNNER_TYPES:
+                if harness.accepts_runner_command_prefix:
                     run_kwargs["runner_command_prefix"] = runner_command_prefix
                 if harness.accepts_isolate_home:
                     run_kwargs["isolate_home"] = isolate_home

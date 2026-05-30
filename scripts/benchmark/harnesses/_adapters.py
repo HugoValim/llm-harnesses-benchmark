@@ -59,6 +59,7 @@ register(Harness(
     run_model=_opencode_run_model,
     cli_binary="opencode",
     cli_install_hint="opencode is not available on PATH",
+    model_runner_types=frozenset({"opencode"}),
 ))
 
 register(Harness(
@@ -67,6 +68,8 @@ register(Harness(
     run_model=_codex_run_model,
     cli_binary="codex",
     cli_install_hint="codex is not available on PATH",
+    model_runner_types=frozenset({"codex", "ollama"}),
+    aliases=frozenset({"ollama"}),
 ))
 
 register(Harness(
@@ -76,6 +79,7 @@ register(Harness(
     cli_binary="claude",
     cli_install_hint="claude (Claude Code CLI) is not available on PATH",
     accepts_isolate_home=True,
+    accepts_runner_command_prefix=True,
 ))
 
 register(Harness(
@@ -87,4 +91,5 @@ register(Harness(
         "agent (Cursor CLI) is not available on PATH. "
         "Install: curl https://cursor.com/install -fsS | bash"
     ),
+    accepts_runner_command_prefix=True,
 ))
