@@ -26,7 +26,6 @@ from benchmark.config import (
     _resolve_model_num_runs,
     existing_terminal_result,
     mark_model_skip_by_default,
-    summarize_project,
 )
 from benchmark.harnesses.stall_policy import (
     ERROR_LOOP_THRESHOLD,
@@ -53,6 +52,8 @@ _CODEX_RUNNERS: frozenset[str] = frozenset({"codex", "ollama"})
 
 from benchmark.workspace import (
     detect_workspace_escape,
+    prepare_project_workspace,
+    summarize_project,
     snapshot_root_generated_markers,
 )
 from benchmark.util import (
@@ -61,7 +62,6 @@ from benchmark.util import (
     count_files,
     format_duration,
     format_value,
-    init_project_git,
     print_line,
     prompt_sha256,
     resolve_harness_cli_versions,
@@ -70,8 +70,6 @@ from benchmark.util import (
     stream_log_prefix,
     terminate_process_group,
     utc_now,
-    validate_benchmark_workspace,
-    write_project_context,
 )
 
 
@@ -745,11 +743,8 @@ def run_codex_variant(
         if explicit_result_dir is not None
         else layout_target_dir(results_dir, harness, slug).resolve()
     )
-    result_dir.mkdir(parents=True, exist_ok=True)
     project_dir = result_dir
-    init_project_git(project_dir)
-    validate_benchmark_workspace(results_dir, result_dir, project_dir)
-    write_project_context(project_dir)
+    prepare_project_workspace(results_dir, result_dir, project_dir)
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "stream.ndjson"
     stderr_path = result_dir / "stderr.log"

@@ -118,9 +118,9 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
         mock_proc.returncode = 0
         with TemporaryDirectory() as tmp:
             results_dir = Path(tmp)
-            with patch("benchmark.target_lifecycle.init_project_git"), patch(
-                "benchmark.target_lifecycle.validate_benchmark_workspace"
-            ), patch("benchmark.target_lifecycle.write_project_context"), patch(
+            with patch("benchmark.workspace.init_project_git"), patch(
+                "benchmark.workspace.validate_benchmark_workspace"
+            ), patch("benchmark.workspace.write_project_context"), patch(
                 "benchmark.claude_code_runner.write_project_agent"
             ), patch(
                 "benchmark.claude_code_runner.resolve_harness_cli_versions",
@@ -162,9 +162,9 @@ class TestRunVariantUsageLimitStatus(unittest.TestCase):
         mock_proc.returncode = 0
         with TemporaryDirectory() as tmp:
             results_dir = Path(tmp)
-            with patch("benchmark.target_lifecycle.init_project_git"), patch(
-                "benchmark.target_lifecycle.validate_benchmark_workspace"
-            ), patch("benchmark.target_lifecycle.write_project_context"), patch(
+            with patch("benchmark.workspace.init_project_git"), patch(
+                "benchmark.workspace.validate_benchmark_workspace"
+            ), patch("benchmark.workspace.write_project_context"), patch(
                 "benchmark.claude_code_runner.write_project_agent"
             ), patch(
                 "benchmark.claude_code_runner.resolve_harness_cli_versions",

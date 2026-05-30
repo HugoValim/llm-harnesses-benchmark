@@ -17,10 +17,52 @@ maintainers can navigate without reading the orchestration giant.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmark.config import summarize_project
+from benchmark.util import (
+    count_files,
+    count_files_matching,
+    has_file_matching,
+    init_project_git,
+    validate_benchmark_workspace,
+    write_project_context,
+)
+
+
+@dataclass(frozen=True)
+class ProjectWorkspace:
+    """Filesystem lifecycle for one generated project workspace."""
+
+    results_dir: Path
+    result_dir: Path
+    project_dir: Path
+
+    def prepare(self) -> None:
+        """Create, isolate, validate, and seed the workspace context files."""
+        prepare_project_workspace(
+            self.results_dir,
+            self.result_dir,
+            self.project_dir,
+        )
+
+    def summarize(self) -> dict[str, Any]:
+        """Return scaffold summary for the generated project."""
+        return summarize_project(self.project_dir)
+
+
+def prepare_project_workspace(
+    results_dir: Path,
+    result_dir: Path,
+    project_dir: Path,
+) -> None:
+    """Create and validate one isolated generated-project workspace."""
+    result_dir.mkdir(parents=True, exist_ok=True)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    init_project_git(project_dir)
+    validate_benchmark_workspace(results_dir, result_dir, project_dir)
+    write_project_context(project_dir)
 
 # File names whose appearance at the repo root indicates an agent wrote
 # outside its sandbox. Matches typical Django/Docker/JS project markers
@@ -115,3 +157,105 @@ def detect_workspace_escape(
     if session_directory is not None:
         checked["workspace_escape_session_directory"] = str(session_directory)
     return checked
+
+
+def summarize_project(project_dir: Path) -> dict[str, Any]:
+    """Summarize whether ``project_dir`` contains the expected Django scaffold."""
+    checks = {
+        "manage_py": project_dir / "manage.py",
+        "requirements_txt": project_dir / "requirements.txt",
+        "pyproject_toml": project_dir / "pyproject.toml",
+        "readme_md": project_dir / "README.md",
+        "readme_lower": project_dir / "readme.md",
+        "dockerfile": project_dir / "Dockerfile",
+        "docker_compose_yml": project_dir / "docker-compose.yml",
+        "docker_compose_yaml": project_dir / "docker-compose.yaml",
+        "compose_yml": project_dir / "compose.yml",
+        "compose_yaml": project_dir / "compose.yaml",
+    }
+    present = {name: path.exists() for name, path in checks.items()}
+    _add_tree_markers(project_dir, present)
+    return _project_summary_from_markers(project_dir, present)
+
+
+def _add_tree_markers(project_dir: Path, present: dict[str, bool]) -> None:
+    present["settings_py"] = has_file_matching(project_dir, "settings.py")
+    present["asgi_py"] = has_file_matching(project_dir, "asgi.py")
+    present["tests_present"] = (
+        count_files_matching(project_dir, "test_*.py", limit=1) > 0
+        or count_files_matching(project_dir, "*_test.py", limit=1) > 0
+        or count_files_matching(project_dir, "tests.py", limit=1) > 0
+    )
+
+
+def _project_summary_from_markers(
+    project_dir: Path,
+    present: dict[str, bool],
+) -> dict[str, Any]:
+    files = count_files(project_dir)
+    readme_present = present["readme_md"] or present["readme_lower"]
+    docker_present = present["dockerfile"] and _compose_present(present)
+    django_present = _python_present(present) and present["settings_py"]
+    channels_present = present["asgi_py"]
+    intended, note = _scaffold_intent(
+        files=files,
+        django_present=django_present,
+        channels_present=channels_present,
+        tests_present=present["tests_present"],
+        readme_present=readme_present,
+        docker_present=docker_present,
+    )
+    return {
+        "file_count": files,
+        "present": present,
+        "works_as_intended": intended,
+        "works_note": note,
+    }
+
+
+def _compose_present(present: dict[str, bool]) -> bool:
+    return any(
+        present[name]
+        for name in (
+            "docker_compose_yml",
+            "docker_compose_yaml",
+            "compose_yml",
+            "compose_yaml",
+        )
+    )
+
+
+def _python_present(present: dict[str, bool]) -> bool:
+    return present["manage_py"] and (
+        present["requirements_txt"] or present["pyproject_toml"]
+    )
+
+
+def _scaffold_intent(
+    *,
+    files: int,
+    django_present: bool,
+    channels_present: bool,
+    tests_present: bool,
+    readme_present: bool,
+    docker_present: bool,
+) -> tuple[str, str]:
+    if (
+        django_present
+        and channels_present
+        and tests_present
+        and readme_present
+        and docker_present
+    ):
+        return (
+            "yes",
+            "Django + Channels app, tests, README, and container files detected.",
+        )
+    if files == 0:
+        return "no", "Project directory is empty."
+    if django_present or readme_present or docker_present or tests_present:
+        return (
+            "partial",
+            "Some expected benchmark artifacts exist, but the scaffold looks incomplete.",
+        )
+    return "no", "Generated files do not resemble the requested Django project."

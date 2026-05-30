@@ -12,10 +12,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.util import init_project_git, validate_benchmark_workspace  # noqa: E402
+from benchmark.workspace import prepare_project_workspace  # noqa: E402
 
 
 @unittest.skipUnless(shutil.which("git"), "git not on PATH")
 class TestValidateBenchmarkWorkspace(unittest.TestCase):
+    def test_prepare_project_workspace_creates_isolated_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            results_dir = Path(tmp) / "results"
+            result_dir = results_dir / "opencode-model"
+            project_dir = result_dir / "project"
+
+            prepare_project_workspace(results_dir, result_dir, project_dir)
+
+            self.assertTrue((project_dir / ".git").is_dir())
+            self.assertTrue((project_dir / "CLAUDE.md").is_file())
+            validate_benchmark_workspace(results_dir, result_dir, project_dir)
+
     def test_accepts_project_workspace_under_results_dir(self) -> None:
         with TemporaryDirectory() as tmp:
             results_dir = Path(tmp) / "results"

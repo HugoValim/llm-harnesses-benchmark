@@ -10,11 +10,9 @@ from typing import Any
 from benchmark.backends import LocalModelBackend
 from benchmark.rate_limit import RateLimitWaitPolicy
 from benchmark.run_status import TERMINAL_STATUSES
+from benchmark.workspace import summarize_project
 from benchmark.util import (
     clone_json,
-    count_files,
-    count_files_matching,
-    has_file_matching,
     load_json,
     load_optional_json,
     ollama_launch_command_prefix,
@@ -450,79 +448,6 @@ def load_ollama_warmup_payload(path: Path) -> dict[str, Any] | None:
     return payload
 
 
-def summarize_project(project_dir: Path) -> dict[str, Any]:
-    checks = {
-        "manage_py": project_dir / "manage.py",
-        "requirements_txt": project_dir / "requirements.txt",
-        "pyproject_toml": project_dir / "pyproject.toml",
-        "readme_md": project_dir / "README.md",
-        "readme_lower": project_dir / "readme.md",
-        "dockerfile": project_dir / "Dockerfile",
-        "docker_compose_yml": project_dir / "docker-compose.yml",
-        "docker_compose_yaml": project_dir / "docker-compose.yaml",
-        "compose_yml": project_dir / "compose.yml",
-        "compose_yaml": project_dir / "compose.yaml",
-    }
-    present = {name: path.exists() for name, path in checks.items()}
-
-    # Django/Channels structural markers — search the tree but prune vendored
-    # dirs (handled inside util.has_file_matching / count_files_matching).
-    settings_py_present = has_file_matching(project_dir, "settings.py")
-    asgi_py_present = has_file_matching(project_dir, "asgi.py")
-    tests_present = (
-        count_files_matching(project_dir, "test_*.py", limit=1) > 0
-        or count_files_matching(project_dir, "*_test.py", limit=1) > 0
-        or count_files_matching(project_dir, "tests.py", limit=1) > 0
-    )
-    present["settings_py"] = settings_py_present
-    present["asgi_py"] = asgi_py_present
-    present["tests_present"] = tests_present
-
-    files = count_files(project_dir)
-    readme_present = present["readme_md"] or present["readme_lower"]
-    compose_present = any(
-        present[name]
-        for name in (
-            "docker_compose_yml",
-            "docker_compose_yaml",
-            "compose_yml",
-            "compose_yaml",
-        )
-    )
-    python_present = present["manage_py"] and (
-        present["requirements_txt"] or present["pyproject_toml"]
-    )
-    django_present = python_present and settings_py_present
-    channels_present = asgi_py_present
-    docker_present = present["dockerfile"] and compose_present
-
-    if (
-        django_present
-        and channels_present
-        and tests_present
-        and readme_present
-        and docker_present
-    ):
-        intended = "yes"
-        note = "Django + Channels app, tests, README, and container files detected."
-    elif files == 0:
-        intended = "no"
-        note = "Project directory is empty."
-    elif django_present or readme_present or docker_present or tests_present:
-        intended = "partial"
-        note = "Some expected benchmark artifacts exist, but the scaffold looks incomplete."
-    else:
-        intended = "no"
-        note = "Generated files do not resemble the requested Django project."
-
-    return {
-        "file_count": files,
-        "present": present,
-        "works_as_intended": intended,
-        "works_note": note,
-    }
-
-
 def existing_terminal_result(result_path: Path) -> dict[str, Any] | None:
     if not result_path.exists():
         return None
@@ -558,4 +483,3 @@ def mark_model_skip_by_default(config_path: Path, model_slug: str, note: str) ->
         return False
     save_json_preserve_order(config_path, payload)
     return True
-

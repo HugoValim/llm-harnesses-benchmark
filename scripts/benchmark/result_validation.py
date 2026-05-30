@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benchmark.config import summarize_project
 from benchmark.d9_preflight import write_d9_preflight
 from benchmark.result_layout import REPLICATE_DIR_PATTERN, split_target_slug, target_dir
 from benchmark.run_status import (
@@ -17,6 +16,7 @@ from benchmark.run_status import (
     validation_retryable_status,
 )
 from benchmark.util import load_json, migrate_to_v2
+from benchmark.workspace import summarize_project
 
 
 def rederive_status(row: dict[str, Any], project_summary: dict[str, Any]) -> str:

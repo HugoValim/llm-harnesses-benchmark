@@ -11,14 +11,12 @@ from benchmark.config import existing_terminal_result
 from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.replicates import attach_replicate_fields
 from benchmark.run_status import payload_hit_usage_limit
+from benchmark.workspace import prepare_project_workspace
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
-    init_project_git,
     prompt_sha256,
     save_json,
     utc_now,
-    validate_benchmark_workspace,
-    write_project_context,
 )
 
 
@@ -199,15 +197,11 @@ class TargetRunLifecycle:
         return payload
 
     def _prepare_workspace(self) -> None:
-        self.paths.result_dir.mkdir(parents=True, exist_ok=True)
-        self.paths.project_dir.mkdir(parents=True, exist_ok=True)
-        init_project_git(self.paths.project_dir)
-        validate_benchmark_workspace(
+        prepare_project_workspace(
             self.results_dir,
             self.paths.result_dir,
             self.paths.project_dir,
         )
-        write_project_context(self.paths.project_dir)
 
     def _cached_payload(self) -> dict[str, Any] | None:
         if self.force:
