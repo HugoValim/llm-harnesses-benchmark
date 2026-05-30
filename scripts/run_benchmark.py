@@ -48,6 +48,7 @@ from benchmark.util import (  # noqa: E402
     print_line,
 )
 
+from benchmark.defaults import DEFAULT_JOBS  # noqa: E402
 from benchmark.timeouts import (  # noqa: E402
     DEFAULT_NO_PROGRESS_MINUTES,
     DEFAULT_TIMEOUT_MINUTES,
@@ -437,8 +438,8 @@ def parse_args() -> argparse.Namespace:
         "--jobs",
         "-j",
         type=int,
-        default=2,
-        help="Max concurrent model runs (default: 2). Pass 1 for sequential. Pass 0 for "
+        default=DEFAULT_JOBS,
+        help=f"Max concurrent model runs (default: {DEFAULT_JOBS}). Pass 1 for sequential. Pass 0 for "
         "one worker per selected model. Local GPU models (provider=ollama) share one "
         "lock so only one loads at a time; other models can run in parallel.",
     )

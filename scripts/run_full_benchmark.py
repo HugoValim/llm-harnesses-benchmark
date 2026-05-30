@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end benchmark + audit + meta-analysis pipeline.
 
-Phase 1 runs an explicit (harness, model) matrix:
-  - Every ``ollama_cloud`` registry row on opencode, codex, and claude (not cursor)
-  - Subscription baselines: ``claude_opus_4_7`` (claude), ``codex_gpt_5_5`` (codex)
+Phase 1 runs every model in ``config/models.json`` on each harness it resolves for
+(opencode, codex, claude, cursor per provider routing).
 
 Phase 2 audits all benchmark results; Phase 3 runs cross-auditor meta-analysis.
 
@@ -16,7 +15,7 @@ Examples:
   python3 scripts/run_full_benchmark.py --run-id run_02
   python3 scripts/run_full_benchmark.py --run-id run_02 --force
   python3 scripts/run_full_benchmark.py --run-id run_02 --list-steps
-  python3 scripts/run_full_benchmark.py --run-id run_02 -j 4
+  python3 scripts/run_full_benchmark.py --run-id run_02 -j 4  # override default -j 3
   AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py --run-id run_02
 """
 
@@ -30,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.defaults import DEFAULT_AUDITOR_SLUG  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_JOBS  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
     REPO_ROOT,
     assert_no_stale_audit_reports,
@@ -69,8 +68,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-j",
         "--jobs",
         type=int,
-        default=2,
-        help="Phase 1 concurrency passed to run_benchmark.py (default: 2).",
+        default=DEFAULT_JOBS,
+        help=f"Concurrency for build and audit phases (default: {DEFAULT_JOBS}).",
     )
     parser.add_argument(
         "--dry-run",
@@ -149,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             layout.audit_root,
             auditor_slug,
             auditor_harness,
+            jobs=args.jobs,
             run_id=args.run_id,
             dry_run=args.dry_run,
         )

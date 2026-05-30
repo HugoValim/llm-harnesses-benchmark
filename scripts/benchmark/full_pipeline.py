@@ -11,17 +11,13 @@ from typing import Sequence
 
 from benchmark.audit_meta import audit_model_harness
 from benchmark.config import resolve_build_harness_config
+from benchmark.defaults import DEFAULT_JOBS
+from benchmark.harnesses import list_harnesses
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
-
-OLLAMA_BUILD_HARNESSES: tuple[str, ...] = ("opencode", "codex", "claude")
-BASELINE_STEPS: tuple[tuple[str, str], ...] = (
-    ("claude", "claude_opus_4_7"),
-    ("codex", "codex_gpt_5_5"),
-)
 
 STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.0"
 
@@ -47,52 +43,27 @@ class BuildBatch:
     model_slugs: tuple[str, ...]
 
 
-def ollama_cloud_slugs(registry_models: Sequence[dict]) -> list[str]:
-    return [
-        str(m["slug"])
-        for m in registry_models
-        if m.get("provider") == "ollama_cloud" and m.get("slug")
-    ]
-
-
-def slug_in_harness(
-    models_config_path: Path, harness: str, slug: str
-) -> bool:
-    """True when ``slug`` resolves for ``harness`` in the shared registry."""
-    config = load_json(models_config_path)
-    resolved = resolve_build_harness_config(config, models_config_path, harness)
-    return any(m.get("slug") == slug for m in resolved.get("models", []))
-
-
 def build_matrix(models_config_path: Path) -> list[BuildStep]:
-    """Ollama Cloud on opencode/codex/claude plus subscription baselines."""
-    registry = load_json(models_config_path).get("models", [])
+    """Every registry model on each harness it resolves for."""
+    config = load_json(models_config_path)
+    registry = config.get("models", [])
     if not isinstance(registry, list):
         raise ValueError(f"{models_config_path} must contain a models array")
 
     steps: list[BuildStep] = []
     seen: set[tuple[str, str]] = set()
 
-    for harness in OLLAMA_BUILD_HARNESSES:
-        for slug in ollama_cloud_slugs(registry):
-            if not slug_in_harness(models_config_path, harness, slug):
+    for harness in list_harnesses():
+        resolved = resolve_build_harness_config(config, models_config_path, harness)
+        for model in resolved.get("models", []):
+            slug = model.get("slug")
+            if not slug:
                 continue
             key = (harness, slug)
             if key in seen:
                 continue
             seen.add(key)
-            steps.append(BuildStep(harness, slug))
-
-    for harness, slug in BASELINE_STEPS:
-        if not slug_in_harness(models_config_path, harness, slug):
-            raise ValueError(
-                f"baseline {slug!r} is not configured for harness {harness!r} "
-                f"in {models_config_path}"
-            )
-        key = (harness, slug)
-        if key not in seen:
-            seen.add(key)
-            steps.append(BuildStep(harness, slug))
+            steps.append(BuildStep(harness, str(slug)))
 
     return steps
 
@@ -190,7 +161,7 @@ def phase_build(
     results_dir: Path,
     extra_args: Sequence[str],
     *,
-    jobs: int = 2,
+    jobs: int = DEFAULT_JOBS,
     run_id: str | None = None,
     dry_run: bool = False,
 ) -> list[BuildStep]:
@@ -299,6 +270,7 @@ def phase_audit(
     auditor_slug: str,
     auditor_harness: str,
     *,
+    jobs: int = DEFAULT_JOBS,
     run_id: str | None = None,
     dry_run: bool = False,
 ) -> None:
@@ -315,7 +287,7 @@ def phase_audit(
         "--target",
         "all",
         "-j",
-        "3",
+        str(jobs),
         *timeout_cli_flags(),
     ]
     if run_id:

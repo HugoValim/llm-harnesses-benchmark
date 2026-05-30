@@ -62,7 +62,7 @@ from benchmark.config import (  # noqa: E402
     registry_by_slug,
     resolve_audit_harness_config,
 )
-from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_AUDIT_HARNESS, DEFAULT_JOBS  # noqa: E402
 from benchmark.rate_limit import add_rate_limit_cli_args, rate_limit_policy_from_args  # noqa: E402
 
 # Runner imports go through the Harness registry; no direct imports needed.
@@ -314,8 +314,8 @@ def parse_args() -> argparse.Namespace:
         "--jobs",
         "-j",
         type=int,
-        default=1,
-        help="Number of concurrent audits (default: 1 = sequential). Use 0 for one worker per job.",
+        default=DEFAULT_JOBS,
+        help=f"Number of concurrent audits (default: {DEFAULT_JOBS}). Use 0 for one worker per job.",
     )
     add_rate_limit_cli_args(parser)
     return parser.parse_args()

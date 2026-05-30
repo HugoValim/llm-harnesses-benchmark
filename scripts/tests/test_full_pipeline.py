@@ -10,47 +10,56 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.defaults import DEFAULT_AUDITOR_SLUG  # noqa: E402
+from benchmark.config import resolve_build_harness_config  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_JOBS  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
-    BASELINE_STEPS,
-    OLLAMA_BUILD_HARNESSES,
     build_benchmark_argv,
     build_matrix,
     group_build_batches,
-    ollama_cloud_slugs,
     phase_audit,
     reject_forwarded_model_flag,
     resolve_meta_config,
 )
+from benchmark.harnesses import list_harnesses  # noqa: E402
+from benchmark.util import load_json  # noqa: E402
 
 MODELS_CONFIG = REPO_ROOT / "config" / "models.json"
 HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
 
 
-def test_ollama_cloud_slug_count() -> None:
-    from benchmark.util import load_json
+def _expected_matrix_steps() -> list[tuple[str, str]]:
+    config = load_json(MODELS_CONFIG)
+    steps: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for harness in list_harnesses():
+        resolved = resolve_build_harness_config(config, MODELS_CONFIG, harness)
+        for model in resolved.get("models", []):
+            slug = model.get("slug")
+            if not slug:
+                continue
+            key = (harness, slug)
+            if key in seen:
+                continue
+            seen.add(key)
+            steps.append(key)
+    return steps
 
-    registry = load_json(MODELS_CONFIG)["models"]
-    assert len(ollama_cloud_slugs(registry)) == 8
 
-
-def test_build_matrix_includes_all_ollama_on_three_harnesses() -> None:
+def test_build_matrix_covers_all_registry_harness_pairs() -> None:
     steps = build_matrix(MODELS_CONFIG)
-    ollama_slugs = set(ollama_cloud_slugs(load_json_models()))
-    for harness in OLLAMA_BUILD_HARNESSES:
-        harness_slugs = {s.model_slug for s in steps if s.harness == harness}
-        assert ollama_slugs <= harness_slugs, harness
-
-    baseline_keys = {(h, s) for h, s in BASELINE_STEPS}
-    step_keys = {(s.harness, s.model_slug) for s in steps}
-    assert baseline_keys <= step_keys
+    assert {(s.harness, s.model_slug) for s in steps} == set(_expected_matrix_steps())
 
 
-def test_build_matrix_step_count() -> None:
-    registry = load_json_models()
+def test_build_matrix_includes_cursor_models() -> None:
     steps = build_matrix(MODELS_CONFIG)
-    n = len(ollama_cloud_slugs(registry))
-    assert len(steps) == n * len(OLLAMA_BUILD_HARNESSES) + len(BASELINE_STEPS)
+    cursor_slugs = {s.model_slug for s in steps if s.harness == "cursor"}
+    assert cursor_slugs == {"composer_2_5", "composer_2_0"}
+
+
+def test_build_matrix_includes_opencode_id_models() -> None:
+    steps = build_matrix(MODELS_CONFIG)
+    opencode_slugs = {s.model_slug for s in steps if s.harness == "opencode"}
+    assert "claude_opus_4_7" in opencode_slugs
 
 
 def test_reject_forwarded_model_flag() -> None:
@@ -65,8 +74,8 @@ def test_reject_forwarded_model_flag() -> None:
 def test_group_build_batches_batches_by_harness() -> None:
     steps = build_matrix(MODELS_CONFIG)
     batches = group_build_batches(steps)
-    assert len(batches) == 3
-    assert {b.harness for b in batches} == {"opencode", "codex", "claude"}
+    assert {b.harness for b in batches} == set(list_harnesses())
+    assert sum(len(b.model_slugs) for b in batches) == len(steps)
 
 
 def test_build_benchmark_argv_includes_jobs() -> None:
@@ -76,15 +85,19 @@ def test_build_benchmark_argv_includes_jobs() -> None:
         batch,
         models_config=MODELS_CONFIG,
         results_dir=REPO_ROOT / "results",
-        jobs=2,
+        jobs=DEFAULT_JOBS,
         extra_args=[],
     )
     j_index = argv.index("-j")
-    assert argv[j_index + 1] == "2"
+    assert argv[j_index + 1] == str(DEFAULT_JOBS)
 
 
 def test_default_auditor_is_codex_gpt_5_5() -> None:
     assert DEFAULT_AUDITOR_SLUG == "codex_gpt_5_5"
+
+
+def test_default_jobs_is_three() -> None:
+    assert DEFAULT_JOBS == 3
 
 
 def test_resolve_meta_config_default_auditor_uses_codex() -> None:
@@ -109,6 +122,7 @@ def test_phase_audit_dry_run_passes_codex_harness(capsys: pytest.CaptureFixture[
         REPO_ROOT / "results" / "run_02" / "audit-reports",
         DEFAULT_AUDITOR_SLUG,
         "codex",
+        jobs=DEFAULT_JOBS,
         run_id="run_02",
         dry_run=True,
     )
@@ -116,6 +130,7 @@ def test_phase_audit_dry_run_passes_codex_harness(capsys: pytest.CaptureFixture[
     assert "--run-id run_02" in out
     assert "--harness codex" in out
     assert f"--model {DEFAULT_AUDITOR_SLUG}" in out
+    assert f"-j {DEFAULT_JOBS}" in out
 
 
 def test_build_benchmark_argv_with_run_id() -> None:
@@ -125,7 +140,7 @@ def test_build_benchmark_argv_with_run_id() -> None:
         batch,
         models_config=MODELS_CONFIG,
         results_dir=REPO_ROOT / "results",
-        jobs=2,
+        jobs=DEFAULT_JOBS,
         extra_args=[],
         run_id="run_02",
     )
@@ -150,17 +165,8 @@ def test_list_steps_cli() -> None:
         text=True,
         cwd=REPO_ROOT,
     )
-    registry = load_json_models()
     lines = [ln for ln in completed.stdout.strip().splitlines() if ln]
-    expected = len(ollama_cloud_slugs(registry)) * len(OLLAMA_BUILD_HARNESSES) + len(
-        BASELINE_STEPS
-    )
-    assert len(lines) == expected
+    assert len(lines) == len(_expected_matrix_steps())
     assert "claude_opus_4_7" in completed.stdout
     assert "codex_gpt_5_5" in completed.stdout
-
-
-def load_json_models() -> list:
-    from benchmark.util import load_json
-
-    return load_json(MODELS_CONFIG)["models"]
+    assert "composer_2_5" in completed.stdout

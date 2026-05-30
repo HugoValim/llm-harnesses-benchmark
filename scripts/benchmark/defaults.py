@@ -7,3 +7,6 @@ DEFAULT_AUDITOR_SLUG = "codex_gpt_5_5"
 
 # Harness for DEFAULT_AUDITOR_SLUG (openai provider -> codex).
 DEFAULT_AUDIT_HARNESS = "codex"
+
+# Default concurrent workers for build, audit, and full-pipeline phases.
+DEFAULT_JOBS = 3
