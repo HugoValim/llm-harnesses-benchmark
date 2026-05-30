@@ -24,15 +24,21 @@ results/
     │   └── codex_gpt_5_5/
     │       ├── comparison.md
     │       └── <harness>-<model>/
-    │           ├── report.md
-    │           ├── generation-metrics.json
-    │           └── result.json
+    │           └── run_XX/
+    │               ├── report.md
+    │               ├── generation-metrics.json
+    │               └── result.json
     └── projects/
         └── <harness>-<model>/
-            ├── result.json
-            ├── prompt.txt
-            └── project/                   # trimmed source only
+            └── run_XX/
+                ├── result.json
+                ├── prompt.txt
+                └── project/                   # trimmed source only
 ```
+
+Replicate folders (`run_01`, `run_02`, …) are driven by `num_runs` in
+`config/models.json`. Manifest `targets` list entries use the full slug
+(e.g. `codex-deepseek_v4_pro_ollama_cloud/run_01`).
 
 Harness scripts require `--run-id run_XX` for new full-pipeline runs. Campaign
 manifests document which paths are published.
@@ -44,7 +50,7 @@ manifests document which paths are published.
 | Included | Excluded |
 |----------|----------|
 | `comparison.md` | `_meta-analysis-runs/` |
-| Per target: `report.md`, `generation-metrics.json`, `result.json` | `stream.ndjson`, `stderr.log`, `prompt.txt`, `AGENTS.md`, `CLAUDE.md` |
+| Per target replicate: `run_XX/report.md`, `generation-metrics.json`, `result.json` | `stream.ndjson`, `stderr.log`, `prompt.txt`, `AGENTS.md`, `CLAUDE.md` |
 
 ### Run root
 
@@ -81,7 +87,7 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
   "meta_analysis": "results/run_01/meta-analysis.md",
   "audit_root": "results/run_01/audit-reports/codex_gpt_5_5",
   "benchmark_results_root": "results/run_01/projects",
-  "targets": ["codex-deepseek_v4_pro_ollama_cloud", "..."],
+  "targets": ["codex-deepseek_v4_pro_ollama_cloud/run_01", "..."],
   "harnesses": ["claude", "codex", "cursor", "opencode"],
   "models_config_sha256": "...",
   "harnesses_config_sha256": "..."
@@ -102,8 +108,8 @@ python3 scripts/publish_campaign.py \
 
 The script:
 
-1. Discovers targets from `results/<run_id>/audit-reports/<auditor>/*/report.md`
-2. Strips ephemeral directories from each `results/<run_id>/projects/<target>/project/`
+1. Discovers targets from `results/<run_id>/audit-reports/<auditor>/*/run_XX/report.md` (or flat legacy `*/report.md`)
+2. Strips ephemeral directories from each `results/<run_id>/projects/<target>/run_XX/project/` (or flat `project/`)
 3. Writes `data/campaigns/<id>/manifest.json`
 4. Regenerates the `# BEGIN published-campaigns` block in `.gitignore`
 5. Updates symlinks `data/campaigns/latest` and `results/latest`
@@ -115,9 +121,9 @@ Then commit the manifest, symlinks, `.gitignore` block, audit tree, and listed r
 
 Older campaigns remain in git under their run directories. Update
 [`data/README.md`](../data/README.md) when adding a new row to the campaign table.
-Running `publish_campaign.py` retargets `latest` symlinks; the README link
-[`results/latest/meta-analysis.md`](../results/latest/meta-analysis.md)
-stays stable across campaigns.
+Running `publish_campaign.py` retargets `latest` symlinks and copies
+[`results/latest-meta-analysis.md`](../results/latest-meta-analysis.md) for
+GitHub-compatible README links (GitHub does not resolve nested symlink paths).
 
 ## Safety
 

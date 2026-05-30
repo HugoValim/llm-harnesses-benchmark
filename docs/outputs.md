@@ -18,27 +18,34 @@ results/
     │       ├── comparison.md
     │       ├── _meta-analysis-runs/
     │       └── <harness>-<slug>/
-    │           ├── report.md
-    │           ├── generation-metrics.json
-    │           └── result.json
+    │           └── run_XX/
+    │               ├── report.md
+    │               ├── generation-metrics.json
+    │               └── result.json
     └── projects/
         └── <harness>-<slug>/
-            ├── project/
-            ├── result.json
-            └── stream logs
+            └── run_XX/
+                ├── project/
+                ├── result.json
+                └── stream logs
 ```
+
+Replicate count per target group comes from `num_runs` on each model in
+`config/models.json` (e.g. `run_01` only when `num_runs: 1`, or
+`run_01` … `run_03` when `num_runs: 3`). Campaign `--run-id run_02` is
+independent of replicate folder names.
 
 Stable README links use [`results/latest`](../../results/latest) (symlink retargeted on publish).
 
 ## Benchmark results (`projects/`)
 
-Each benchmark run writes to:
+Each benchmark replicate writes to:
 
 ```text
-results/<run_id>/projects/<harness>-<slug>/
+results/<run_id>/projects/<harness>-<slug>/run_XX/
 ```
 
-Common files:
+Common files per replicate:
 
 - `project/` — generated Django project (untrusted code)
 - `result.json` — status, timing, tokens (no USD cost)
@@ -55,7 +62,7 @@ Generated projects may contain unsafe commands. Prefer harness scripts for verif
 Per-project artifacts:
 
 ```text
-results/<run_id>/projects/<harness>-<slug>/project/_runtime_verification/
+results/<run_id>/projects/<harness>-<slug>/run_XX/project/_runtime_verification/
 ```
 
 Aggregate summary:
@@ -66,10 +73,10 @@ results/<run_id>/runtime_verification_summary.json
 
 ## Audit reports
 
-Each `(auditor, target)` pair writes to:
+Each `(auditor, target replicate)` pair writes to:
 
 ```text
-results/<run_id>/audit-reports/<auditor_slug>/<target_slug>/
+results/<run_id>/audit-reports/<auditor_slug>/<harness>-<slug>/run_XX/
 ```
 
 Common files:
@@ -84,10 +91,21 @@ Auditor-level outputs:
 ```text
 results/<run_id>/audit-reports/<auditor_slug>/comparison.md
 results/<run_id>/meta-analysis.md
-results/latest/meta-analysis.md   # symlink → current run dir
+results/latest-meta-analysis.md   # real file copied on publish (GitHub-safe)
+results/latest/                   # symlink → current run dir (local tooling)
 ```
 
 Comparison and meta-analysis files are generated — do not hand-edit.
+
+## Replicate completeness
+
+After a build phase, verify configured replicates exist:
+
+```bash
+python scripts/validate_results.py --run-id run_02 --enforce-replicates
+```
+
+`run_full_benchmark.py` runs the same check before Phase 2 audit when the build phase was not skipped.
 
 ## Legacy flat layout
 

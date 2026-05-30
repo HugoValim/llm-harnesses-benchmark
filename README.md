@@ -11,7 +11,7 @@ cross-run meta-analysis.
 | Field | Link |
 |-------|------|
 | Campaign | [`2026-05-ollama-cloud-v3.2`](data/campaigns/2026-05-ollama-cloud-v3.2/manifest.json) |
-| Meta-analysis | [`results/latest/meta-analysis.md`](results/latest/meta-analysis.md) |
+| Meta-analysis | [`results/latest-meta-analysis.md`](results/latest-meta-analysis.md) |
 | Score index | [`results/run_01/audit-reports/codex_gpt_5_5/comparison.md`](results/run_01/audit-reports/codex_gpt_5_5/comparison.md) |
 | Generated code | [`results/run_01/projects/`](results/run_01/projects/) (28 targets listed in manifest) |
 | Auditor | `codex_gpt_5_5(xhigh)` |
@@ -23,8 +23,10 @@ pairings, dimension breakdown, cost, and calibration checks.
 
 Symlinks [`data/campaigns/latest`](data/campaigns/latest) and
 [`results/latest`](results/latest) are retargeted by
-[`scripts/publish_campaign.py`](scripts/publish_campaign.py) on each publish — README
-links stay stable across campaigns.
+[`scripts/publish_campaign.py`](scripts/publish_campaign.py) on each publish.
+GitHub does not resolve nested paths through symlinks, so the meta-analysis link
+uses the real file [`results/latest-meta-analysis.md`](results/latest-meta-analysis.md)
+(copied on publish).
 
 ## Artifact map
 
@@ -35,7 +37,7 @@ under `results/<run_id>/projects/` with the **same target slug**.
 ```mermaid
 flowchart TB
   manifest["data/campaigns/latest/manifest.json"]
-  manifest --> meta["results/latest/meta-analysis.md"]
+  manifest --> meta["results/latest-meta-analysis.md"]
   manifest --> comparison["comparison.md per-target scores"]
   manifest --> targets["target slug: harness-model"]
   targets --> results["results/run_XX/projects/harness-model/project/"]
@@ -174,7 +176,7 @@ Example report:
 ([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
 The meta-analyst reads every `report.md` under one auditor directory and produces
-[`meta-analysis.md`](results/latest/meta-analysis.md) with:
+[`meta-analysis.md`](results/latest-meta-analysis.md) with:
 
 - **Best harness overall** — opencode / codex / claude contest only (same model grid)
 - **Best model overall** — peak Phase-1 score (rank-1 contest-harness run from **All runs ranking**)
