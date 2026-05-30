@@ -1,7 +1,7 @@
 {
   "id": "2026-05-ollama-cloud-v3.2",
-  "label": "2026 05 Ollama Cloud V3.2",
-  "date": "2026-05-30",
+  "label": "Ollama Cloud grid \u2014 benchmark v3.2",
+  "date": "2026-05-29",
   "prompt_versions": {
     "benchmark": "benchmark-v3.2",
     "benchmark_followup": "benchmark-followup-v3.2",
@@ -9,9 +9,9 @@
     "meta": "meta-v3.11"
   },
   "auditor_slug": "codex_gpt_5_5",
-  "meta_analysis": "audit-reports/codex_gpt_5_5/meta-analysis.md",
-  "audit_root": "audit-reports/codex_gpt_5_5",
-  "benchmark_results_root": "results",
+  "meta_analysis": "results/run_01/meta-analysis.md",
+  "audit_root": "results/run_01/audit-reports/codex_gpt_5_5",
+  "benchmark_results_root": "results/run_01/projects",
   "targets": [
     "claude-claude_opus_4_7",
     "claude-deepseek_v4_flash_ollama_cloud",
@@ -49,5 +49,6 @@
     "cursor"
   ],
   "models_config_sha256": "bcf12d05d93d07823ddb08a2d82ff56b070fa80332c4b3151fef3770e4b936ed",
-  "harnesses_config_sha256": "3e4b4de4a5fe6ffef4c14e0c65343d24d1da72ca1390288e3d17a2f0542107a9"
+  "harnesses_config_sha256": "3e4b4de4a5fe6ffef4c14e0c65343d24d1da72ca1390288e3d17a2f0542107a9",
+  "run_id": "run_01"
 }
