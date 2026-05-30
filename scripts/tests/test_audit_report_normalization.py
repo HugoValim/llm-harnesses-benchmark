@@ -33,11 +33,11 @@ def test_cross_harness_cohort_excludes_single_harness_leaders() -> None:
     reports = [
         row("codex", "codex_gpt_5_5"),
         row("claude", "claude_opus_4_7"),
-        row("codex", "glm_5_1_ollama_cloud"),
-        row("claude", "glm_5_1_ollama_cloud"),
-        row("opencode", "glm_5_1_ollama_cloud"),
+        row("codex", "glm_5_1_codex"),
+        row("claude", "glm_5_1_claude"),
+        row("opencode", "glm_5_1_opencode"),
     ]
-    assert _cross_harness_cohort_slugs(reports) == frozenset({"glm_5_1_ollama_cloud"})
+    assert _cross_harness_cohort_slugs(reports) == frozenset({"glm_5_1"})
 
 
 def test_is_leader_slug_positive() -> None:

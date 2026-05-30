@@ -9,20 +9,78 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.config import _normalize_registry_models, resolve_build_harness_config  # noqa: E402
+from benchmark.config import (  # noqa: E402
+    _normalize_registry_models,
+    registry_harness_values,
+    resolve_build_harness_config,
+)
 from benchmark.replicates import attach_replicate_fields, model_num_runs, run_replicate_attempts  # noqa: E402
 
 
 class TestNumRunsConfig(unittest.TestCase):
     def test_normalize_requires_positive_num_runs(self) -> None:
         with self.assertRaises(ValueError):
-            _normalize_registry_models([{"slug": "demo", "num_runs": 0}])
+            _normalize_registry_models([{"slug": "demo", "num_runs": 0, "harness": "codex"}])
 
     def test_normalize_propagates_num_runs(self) -> None:
         rows = _normalize_registry_models(
-            [{"slug": "demo", "num_runs": 3, "provider": "openai", "id": "gpt-5"}]
+            [
+                {
+                    "slug": "demo",
+                    "num_runs": 3,
+                    "provider": "openai",
+                    "id": "gpt-5",
+                    "harness": "codex",
+                }
+            ]
         )
         self.assertEqual(rows[0]["num_runs"], 3)
+
+    def test_normalize_accepts_harness_list(self) -> None:
+        rows = _normalize_registry_models(
+            [
+                {
+                    "slug": "kimi_k2_6",
+                    "num_runs": 3,
+                    "provider": "ollama_cloud",
+                    "id": "kimi-k2.6:cloud",
+                    "harness": ["ollama_claude", "ollama_codex"],
+                }
+            ]
+        )
+        self.assertEqual(
+            rows[0]["harness"],
+            ["ollama_claude", "ollama_codex"],
+        )
+        self.assertEqual(
+            registry_harness_values(rows[0]),
+            ["ollama_claude", "ollama_codex"],
+        )
+
+    def test_normalize_accepts_legacy_string_harness(self) -> None:
+        rows = _normalize_registry_models(
+            [
+                {
+                    "slug": "demo",
+                    "num_runs": 1,
+                    "id": "gpt-5",
+                    "harness": "codex",
+                }
+            ]
+        )
+        self.assertEqual(rows[0]["harness"], ["codex"])
+
+    def test_normalize_rejects_empty_harness_list(self) -> None:
+        with self.assertRaises(ValueError):
+            _normalize_registry_models(
+                [{"slug": "demo", "num_runs": 1, "harness": []}]
+            )
+
+    def test_normalize_rejects_invalid_harness_in_list(self) -> None:
+        with self.assertRaises(ValueError):
+            _normalize_registry_models(
+                [{"slug": "demo", "num_runs": 1, "harness": ["not_a_harness"]}]
+            )
 
     def test_resolve_build_harness_config_keeps_num_runs(self) -> None:
         import json

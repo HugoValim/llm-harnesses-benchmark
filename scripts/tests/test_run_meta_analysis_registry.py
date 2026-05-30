@@ -25,6 +25,7 @@ def _meta_row(
         "id": model_id,
         "label": f"{slug} label",
         "provider": "anthropic",
+        "harness": harness,
         "runner_type": harness,
         "selection_reason": "test meta row",
     }

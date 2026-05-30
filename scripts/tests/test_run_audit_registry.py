@@ -27,6 +27,7 @@ def _audit_row(
         "id": model_id,
         "label": f"{slug} label",
         "provider": "anthropic",
+        "harness": harness,
         "runner_type": harness,
         "num_runs": 3,
         "selection_reason": "test row",
@@ -424,4 +425,4 @@ def test_default_models_registry_resolves_audit_harnesses() -> None:
     assert len(codex["models"]) > 0
     raw_models = raw["models"]
     assert all("role" not in model for model in raw_models)
-    assert all("harness" not in model for model in raw_models)
+    assert all("harness" in model for model in raw_models)

@@ -161,9 +161,10 @@ class OllamaModelRankingRow:
 
 def _display_slug(slug: str, display_slug_map: dict[str, str] | None) -> str:
     """Map canonical slug to human-facing slug when a display map is provided."""
+    canonical = cohort_slug(slug)
     if display_slug_map is None:
-        return slug
-    return display_slug_map.get(slug, slug)
+        return canonical
+    return display_slug_map.get(canonical, display_slug_map.get(slug, canonical))
 
 
 def _is_leader_slug(model_slug: str) -> bool:
@@ -351,7 +352,7 @@ def _cross_harness_cohort_slugs(reports: list[ParsedReport]) -> frozenset[str]:
         if not _is_benchmark_harness(r.harness):
             continue
         if r.model_slug and r.total is not None:
-            by_harness.setdefault(r.harness, set()).add(r.model_slug)
+            by_harness.setdefault(r.harness, set()).add(cohort_slug(r.model_slug))
     if not by_harness:
         return frozenset()
     cohort = set.intersection(*by_harness.values())
@@ -417,13 +418,25 @@ def _aggregated_contest_ranking_rows(
     return rows
 
 
-_OLLAMA_CLOUD_SLUG_SUFFIX = "_ollama_cloud"
+_OLLAMA_COHORT_SUFFIXES = ("_claude", "_codex", "_opencode")
 _CONTEST_HARNESS_COLUMN_ORDER: tuple[str, ...] = ("claude", "codex", "opencode")
+
+
+def cohort_slug(model_slug: str) -> str:
+    """Return the shared model identity for contest-harness suffixed slugs."""
+    for suffix in _OLLAMA_COHORT_SUFFIXES:
+        if not model_slug.endswith(suffix):
+            continue
+        base = model_slug[: -len(suffix)]
+        if suffix == "_opencode" and base.startswith(("claude_", "codex_")):
+            return model_slug
+        return base
+    return model_slug
 
 
 def _is_ollama_cloud_slug(model_slug: str) -> bool:
     """Return True when ``model_slug`` is an Ollama Cloud open-source target."""
-    return model_slug.endswith(_OLLAMA_CLOUD_SLUG_SUFFIX)
+    return cohort_slug(model_slug) != model_slug
 
 
 def _cell_avg_total(
@@ -440,6 +453,40 @@ def _cell_avg_total(
     return mean(totals) if totals else None
 
 
+def _contest_cell_avg_total(
+    reports: list[ParsedReport],
+    harness: str,
+    base_slug: str,
+) -> float | None:
+    """Mean total for one contest cell; supports legacy suffixed slugs."""
+    avg = _cell_avg_total(reports, harness, base_slug)
+    if avg is not None:
+        return avg
+    legacy_slug = f"{base_slug}_{harness}"
+    return _cell_avg_total(reports, harness, legacy_slug)
+
+
+def _default_ollama_cloud_registry_slugs() -> frozenset[str]:
+    from benchmark.config import _normalize_registry_models, ollama_cloud_registry_slugs
+    from benchmark.util import load_json
+
+    models_path = Path(__file__).resolve().parents[2] / "config" / "models.json"
+    config = load_json(models_path)
+    models = _normalize_registry_models(config.get("models"))
+    return ollama_cloud_registry_slugs(models)
+
+
+def _ollama_ranking_base_slugs(
+    reports: list[ParsedReport],
+    ollama_slugs: frozenset[str],
+) -> list[str]:
+    bases = set(ollama_slugs)
+    for report in reports:
+        if report.model_slug and _is_ollama_cloud_slug(report.model_slug):
+            bases.add(cohort_slug(report.model_slug))
+    return sorted(bases)
+
+
 def _tier_from_total(total: float) -> str:
     """Map a total score to rubric tier bands."""
     if total >= 81:
@@ -453,20 +500,18 @@ def _tier_from_total(total: float) -> str:
 
 def _ollama_ranking_rows(
     reports: list[ParsedReport],
+    *,
+    ollama_slugs: frozenset[str] | None = None,
 ) -> list[dict[str, object]]:
     """Ranked Ollama Cloud models by cross-contest-harness mean total."""
-    slugs = sorted(
-        {
-            r.model_slug
-            for r in reports
-            if r.model_slug and _is_ollama_cloud_slug(r.model_slug)
-        }
-    )
+    if ollama_slugs is None:
+        ollama_slugs = _default_ollama_cloud_registry_slugs()
+    bases = _ollama_ranking_base_slugs(reports, ollama_slugs)
     rows: list[dict[str, object]] = []
-    for slug in slugs:
+    for base in bases:
         cell_avgs: dict[str, float] = {}
         for harness in _CONTEST_HARNESS_COLUMN_ORDER:
-            cell_avg = _cell_avg_total(reports, harness, slug)
+            cell_avg = _contest_cell_avg_total(reports, harness, base)
             if cell_avg is not None:
                 cell_avgs[harness] = cell_avg
         if len(cell_avgs) < 2:
@@ -476,7 +521,7 @@ def _ollama_ranking_rows(
         std = stdev(values) if len(values) >= 2 else None
         rows.append(
             {
-                "slug": slug,
+                "slug": base,
                 "n_harnesses": len(cell_avgs),
                 "avg_total": avg_total,
                 "std_dev": std,
@@ -521,7 +566,11 @@ def _harness_comparison_row(
     cohort: frozenset[str],
     dim_labels: list[str],
 ) -> HarnessComparisonRow:
-    subset = [r for r in reports if r.harness == harness and r.model_slug in cohort]
+    subset = [
+        r
+        for r in reports
+        if r.harness == harness and cohort_slug(r.model_slug) in cohort
+    ]
     totals = [float(r.total) for r in subset if r.total is not None]
     return HarnessComparisonRow(
         harness=harness,
@@ -622,7 +671,7 @@ def _cross_harness_model_section(
     by_model: dict[str, list[ParsedReport]] = {}
     for r in reports:
         if r.model_slug:
-            by_model.setdefault(r.model_slug, []).append(r)
+            by_model.setdefault(cohort_slug(r.model_slug), []).append(r)
     shared = {
         slug: rs
         for slug, rs in by_model.items()
@@ -733,7 +782,7 @@ def _reports_by_model(reports: list[ParsedReport]) -> dict[str, list[ParsedRepor
     by_model: dict[str, list[ParsedReport]] = {}
     for report in reports:
         if report.model_slug:
-            by_model.setdefault(report.model_slug, []).append(report)
+            by_model.setdefault(cohort_slug(report.model_slug), []).append(report)
     return by_model
 
 
@@ -866,7 +915,7 @@ def calculate_aggregated_runs_ranking(
             AggregatedRunRankingRow(
                 rank=rank,
                 harness=harness,
-                model_slug=slug,
+                model_slug=cohort_slug(slug),
                 mean_total=avg,
                 sample_n=sample_n,
                 std_dev=std,
@@ -994,6 +1043,8 @@ def expected_section2a_ollama_rows(
 
 def calculate_ollama_model_ranking(
     reports: list[ParsedReport],
+    *,
+    ollama_slugs: frozenset[str] | None = None,
 ) -> list[OllamaModelRankingRow]:
     """Return section-2a Ollama ranking rows before Markdown rendering.
 
@@ -1002,7 +1053,10 @@ def calculate_ollama_model_ranking(
         best_slug = rows[0].model_slug
     """
     rows: list[OllamaModelRankingRow] = []
-    for rank, raw in enumerate(_ollama_ranking_rows(reports), start=1):
+    for rank, raw in enumerate(
+        _ollama_ranking_rows(reports, ollama_slugs=ollama_slugs),
+        start=1,
+    ):
         rows.append(_ollama_ranking_row_from_dict(rank, raw))
     return rows
 
@@ -1246,7 +1300,7 @@ def _harness_contest_stats(
         r
         for r in reports
         if r.harness == harness
-        and r.model_slug in cohort
+        and cohort_slug(r.model_slug) in cohort
         and r.total is not None
     ]
     totals = [float(r.total) for r in subset]

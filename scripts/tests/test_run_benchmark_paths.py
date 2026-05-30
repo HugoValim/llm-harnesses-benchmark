@@ -163,7 +163,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                 "Slug `codex_only` is not a opencode model", stderr.getvalue()
             )
 
-    def test_models_registry_selection_uses_provider_routing(self) -> None:
+    def test_models_registry_selection_uses_harness_field(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_dir = root / "config"
@@ -179,6 +179,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                         "label": "Claude",
                         "provider": "anthropic",
                         "id": "claude-test",
+                        "harness": "claude",
                         "selection_reason": "Anthropic row.",
                     },
                     {
@@ -186,6 +187,7 @@ class TestRunBenchmarkPaths(unittest.TestCase):
                         "label": "GPT",
                         "provider": "openai",
                         "id": "gpt-test",
+                        "harness": "codex",
                         "selection_reason": "OpenAI row — should not appear in claude harness.",
                     },
                 ]
@@ -218,7 +220,8 @@ class TestRunBenchmarkPaths(unittest.TestCase):
         self.assertTrue(all(m["harness"] == "cursor" for m in cursor["models"]))
         raw_models = raw["models"]
         self.assertTrue(all("role" not in m for m in raw_models))
-        self.assertTrue(all("harness" not in m for m in raw_models))
+        self.assertTrue(all("harness" in m for m in raw_models))
+        self.assertTrue(all(isinstance(m["harness"], list) for m in raw_models))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Behavior tests for provider-based harness routing in resolve_harness_config."""
+"""Behavior tests for explicit harness routing in resolve_harness_config."""
 
 from __future__ import annotations
 
@@ -27,42 +27,81 @@ def _resolve(config_dir: Path, models: list[dict], harness: str) -> list[dict]:
     return result["models"]
 
 
-class TestOllamaCloudRouting(unittest.TestCase):
+class TestOllamaHarnessRouting(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = TemporaryDirectory()
         self.config_dir = Path(self._tmp.name) / "config"
         self.config_dir.mkdir()
-        _write_minimal_harnesses(self.config_dir, ["claude", "codex"])
+        _write_minimal_harnesses(self.config_dir, ["claude", "codex", "opencode"])
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_ollama_cloud_appears_in_claude_harness(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_claude_routes_to_claude_harness(self) -> None:
+        models = [
+            {
+                "slug": "kimi_claude",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_claude",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "claude")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["slug"], "kimi")
+        self.assertEqual(rows[0]["slug"], "kimi_claude")
 
-    def test_ollama_cloud_appears_in_codex_harness(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_codex_routes_to_codex_harness(self) -> None:
+        models = [
+            {
+                "slug": "kimi_codex",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_codex",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "codex")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["slug"], "kimi")
 
-    def test_ollama_cloud_claude_gets_ollama_launch_prefix(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_claude_gets_ollama_launch_prefix(self) -> None:
+        models = [
+            {
+                "slug": "kimi_claude",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_claude",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "claude")
         self.assertEqual(
             rows[0]["command_prefix"], ["ollama", "launch", "--yes", "claude"]
         )
 
-    def test_ollama_cloud_codex_gets_runner_type_ollama(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_codex_gets_runner_type_ollama(self) -> None:
+        models = [
+            {
+                "slug": "kimi_codex",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_codex",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "codex")
         self.assertEqual(rows[0]["runner_type"], "ollama")
 
-    def test_ollama_cloud_codex_has_no_command_prefix(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_codex_has_no_command_prefix(self) -> None:
+        models = [
+            {
+                "slug": "kimi_codex",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_codex",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "codex")
         self.assertNotIn("command_prefix", rows[0])
 
@@ -73,37 +112,25 @@ class TestOllamaCloudRouting(unittest.TestCase):
         }
         self.assertTrue(uses_ollama_launch_codex(model))
 
-    def test_ollama_cloud_id_preserved(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi-k2.6:cloud"}]
-        rows = _resolve(self.config_dir, models, "claude")
-        self.assertEqual(rows[0]["id"], "kimi-k2.6:cloud")
-
-
-class TestOllamaCloudOpencodeRouting(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = TemporaryDirectory()
-        self.config_dir = Path(self._tmp.name) / "config"
-        self.config_dir.mkdir()
-        _write_minimal_harnesses(self.config_dir, ["claude", "codex", "opencode"])
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def test_ollama_cloud_appears_in_opencode_harness(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
+    def test_ollama_opencode_routes_to_opencode_harness(self) -> None:
+        models = [
+            {
+                "slug": "kimi_opencode",
+                "label": "Kimi",
+                "provider": "ollama_cloud",
+                "id": "kimi:cloud",
+                "harness": "ollama_opencode",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "opencode")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["runner_type"], "opencode")
-
-    def test_ollama_cloud_opencode_gets_launch_prefix(self) -> None:
-        models = [{"slug": "kimi", "label": "Kimi", "provider": "ollama_cloud", "id": "kimi:cloud"}]
-        rows = _resolve(self.config_dir, models, "opencode")
         self.assertEqual(
             rows[0]["command_prefix"], ["ollama", "launch", "--yes", "opencode"]
         )
 
 
-class TestProviderHarnessMapping(unittest.TestCase):
+class TestDirectHarnessRouting(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = TemporaryDirectory()
         self.config_dir = Path(self._tmp.name) / "config"
@@ -113,36 +140,72 @@ class TestProviderHarnessMapping(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_anthropic_routes_to_claude_only(self) -> None:
-        models = [{"slug": "sonnet", "label": "Sonnet", "provider": "anthropic", "id": "claude-test"}]
+    def test_claude_harness_row_routes_to_claude_only(self) -> None:
+        models = [
+            {
+                "slug": "sonnet",
+                "label": "Sonnet",
+                "provider": "anthropic",
+                "id": "claude-test",
+                "harness": "claude",
+            }
+        ]
         self.assertEqual(len(_resolve(self.config_dir, models, "claude")), 1)
         self.assertEqual(len(_resolve(self.config_dir, models, "codex")), 0)
-        self.assertEqual(len(_resolve(self.config_dir, models, "cursor")), 0)
 
-    def test_openai_routes_to_codex_only(self) -> None:
-        models = [{"slug": "gpt", "label": "GPT", "provider": "openai", "id": "gpt-5.5"}]
+    def test_codex_harness_row_routes_to_codex_only(self) -> None:
+        models = [
+            {
+                "slug": "gpt",
+                "label": "GPT",
+                "provider": "openai",
+                "id": "gpt-5.5",
+                "harness": "codex",
+            }
+        ]
         self.assertEqual(len(_resolve(self.config_dir, models, "codex")), 1)
         self.assertEqual(len(_resolve(self.config_dir, models, "claude")), 0)
-        self.assertEqual(len(_resolve(self.config_dir, models, "cursor")), 0)
 
-    def test_cursor_routes_to_cursor_only(self) -> None:
-        models = [{"slug": "comp", "label": "Composer", "provider": "cursor", "id": "composer-2.5"}]
+    def test_cursor_harness_row_routes_to_cursor_only(self) -> None:
+        models = [
+            {
+                "slug": "comp",
+                "label": "Composer",
+                "provider": "cursor",
+                "id": "composer-2.5",
+                "harness": "cursor",
+            }
+        ]
         self.assertEqual(len(_resolve(self.config_dir, models, "cursor")), 1)
         self.assertEqual(len(_resolve(self.config_dir, models, "claude")), 0)
-        self.assertEqual(len(_resolve(self.config_dir, models, "codex")), 0)
 
-    def test_openai_runner_type_is_codex(self) -> None:
-        models = [{"slug": "gpt", "label": "GPT", "provider": "openai", "id": "gpt-5.5"}]
+    def test_codex_runner_type_is_codex(self) -> None:
+        models = [
+            {
+                "slug": "gpt",
+                "label": "GPT",
+                "provider": "openai",
+                "id": "gpt-5.5",
+                "harness": "codex",
+            }
+        ]
         rows = _resolve(self.config_dir, models, "codex")
         self.assertEqual(rows[0]["runner_type"], "codex")
 
-    def test_unknown_provider_excluded_from_all_harnesses(self) -> None:
-        models = [{"slug": "x", "label": "X", "provider": "openrouter", "id": "x/y"}]
-        for harness in ("claude", "codex", "cursor"):
-            self.assertEqual(len(_resolve(self.config_dir, models, harness)), 0)
+    def test_row_without_matching_harness_excluded(self) -> None:
+        models = [
+            {
+                "slug": "x",
+                "label": "X",
+                "provider": "openrouter",
+                "id": "x/y",
+                "harness": "codex",
+            }
+        ]
+        self.assertEqual(len(_resolve(self.config_dir, models, "claude")), 0)
 
 
-class TestOpencodeIdRouting(unittest.TestCase):
+class TestOpencodeHarnessRouting(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = TemporaryDirectory()
         self.config_dir = Path(self._tmp.name) / "config"
@@ -152,33 +215,22 @@ class TestOpencodeIdRouting(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_model_with_opencode_id_appears_in_opencode(self) -> None:
+    def test_opencode_harness_uses_opencode_id(self) -> None:
         models = [
             {
-                "slug": "sonnet",
+                "slug": "sonnet_opencode",
                 "label": "Sonnet",
                 "provider": "anthropic",
                 "id": "claude-native",
                 "opencode_id": "openrouter/anthropic/claude-sonnet",
+                "harness": "opencode",
             }
         ]
         rows = _resolve(self.config_dir, models, "opencode")
         self.assertEqual(len(rows), 1)
-
-    def test_model_with_opencode_id_uses_opencode_id_in_opencode_harness(self) -> None:
-        models = [
-            {
-                "slug": "sonnet",
-                "label": "Sonnet",
-                "provider": "anthropic",
-                "id": "claude-native",
-                "opencode_id": "openrouter/anthropic/claude-sonnet",
-            }
-        ]
-        rows = _resolve(self.config_dir, models, "opencode")
         self.assertEqual(rows[0]["id"], "openrouter/anthropic/claude-sonnet")
 
-    def test_model_with_opencode_id_uses_native_id_in_claude_harness(self) -> None:
+    def test_claude_harness_uses_native_id(self) -> None:
         models = [
             {
                 "slug": "sonnet",
@@ -186,15 +238,11 @@ class TestOpencodeIdRouting(unittest.TestCase):
                 "provider": "anthropic",
                 "id": "claude-native",
                 "opencode_id": "openrouter/anthropic/claude-sonnet",
+                "harness": "claude",
             }
         ]
         rows = _resolve(self.config_dir, models, "claude")
         self.assertEqual(rows[0]["id"], "claude-native")
-
-    def test_model_without_opencode_id_absent_from_opencode(self) -> None:
-        models = [{"slug": "sonnet", "label": "Sonnet", "provider": "anthropic", "id": "claude-native"}]
-        rows = _resolve(self.config_dir, models, "opencode")
-        self.assertEqual(len(rows), 0)
 
 
 class TestModelFieldPassthrough(unittest.TestCase):
@@ -214,6 +262,7 @@ class TestModelFieldPassthrough(unittest.TestCase):
                 "label": "GPT-5.5",
                 "provider": "openai",
                 "id": "gpt-5.5",
+                "harness": "codex",
                 "codex_reasoning_effort": "xhigh",
             }
         ]
@@ -221,6 +270,17 @@ class TestModelFieldPassthrough(unittest.TestCase):
         self.assertEqual(rows[0]["codex_reasoning_effort"], "xhigh")
 
     def test_missing_id_raises_on_resolve(self) -> None:
-        models = [{"slug": "bad", "label": "Bad", "provider": "anthropic"}]
+        models = [
+            {
+                "slug": "bad",
+                "label": "Bad",
+                "provider": "anthropic",
+                "harness": "claude",
+            }
+        ]
         with self.assertRaises(ValueError):
             _resolve(self.config_dir, models, "claude")
+
+
+if __name__ == "__main__":
+    unittest.main()

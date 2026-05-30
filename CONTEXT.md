@@ -10,7 +10,7 @@ One execution backend declared in `config/harnesses.json`: `opencode`, `codex`, 
 
 ## model
 
-A single LLM identity in `config/models.json`. Required fields: `slug`, `label`, `provider`, and `selection_reason`. Optional `num_runs` (default `1`) controls how many replicate attempts the benchmark dispatches per harness. Harness-specific runnable IDs, command prefixes, and runner options live in `config/harnesses.json`. Selected with `--model`. The `slug` is the canonical identifier used in result directory names (`<harness>-<slug>`) and audit report paths.
+A single LLM identity in `config/models.json`. Required fields: `slug`, `label`, `provider`, `harness` (a list of registry harness values), and `selection_reason`. Optional `num_runs` (default `1`) controls how many replicate attempts the benchmark dispatches **per harness** in the list. Runner command metadata lives in `config/harnesses.json`. Selected with `--model`. The `slug` is the canonical identifier used in result directory names (`<harness>-<slug>`) and audit report paths.
 
 ## run_id
 
@@ -26,7 +26,7 @@ Central path helper for run-scoped output. Given `run_id`, yields `results/<run_
 
 ## target
 
-The generated project produced by one `(harness, model, replicate)` run. Lives at `results/<run_id>/projects/<harness>-<slug>/run_XX/project/`. This is the artefact under evaluation — the Django + Channels + Ollama chat SPA the coding agent wrote. Audit and CLI filters use the projects-relative slug (e.g. `claude-kimi_k2_6_ollama_cloud/run_01` or the target group `claude-kimi_k2_6_ollama_cloud`).
+The generated project produced by one `(harness, model, replicate)` run. Lives at `results/<run_id>/projects/<harness>-<slug>/run_XX/project/`. This is the artefact under evaluation — the Django + Channels + Ollama chat SPA the coding agent wrote. Audit and CLI filters use the projects-relative slug (e.g. `claude-kimi_k2_6/run_01` or the target group `claude-kimi_k2_6`).
 
 ## auditor
 

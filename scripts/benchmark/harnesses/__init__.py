@@ -17,7 +17,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from benchmark.result_layout import HARNESS_PREFIXES
-from benchmark.util import clone_json, ollama_launch_command_prefix, ollama_launch_integration
+from benchmark.util import (
+    clone_json,
+    ollama_launch_command_prefix,
+    ollama_launch_integration as ollama_launch_prefix_integration,
+)
 
 
 class UnknownHarnessError(ValueError):
@@ -79,12 +83,39 @@ def list_harnesses() -> list[str]:
     return canonical + extras
 
 
-PROVIDER_HARNESS_MAP: dict[str, frozenset[str]] = {
-    "anthropic": frozenset({"claude"}),
-    "openai": frozenset({"codex"}),
-    "cursor": frozenset({"cursor"}),
-    "ollama_cloud": frozenset({"claude", "codex", "opencode"}),
-}
+MODEL_HARNESS_VALUES: frozenset[str] = frozenset(
+    {
+        "claude",
+        "codex",
+        "opencode",
+        "cursor",
+        "ollama_claude",
+        "ollama_codex",
+        "ollama_opencode",
+    }
+)
+
+_OLLAMA_HARNESS_PREFIX = "ollama_"
+
+
+def dispatch_harness(model_harness: str) -> str:
+    """Map a models.json harness value to the CLI / result-dir prefix."""
+    if model_harness.startswith(_OLLAMA_HARNESS_PREFIX):
+        integration = model_harness[len(_OLLAMA_HARNESS_PREFIX) :]
+        if integration not in {"claude", "codex", "opencode"}:
+            raise ValueError(
+                f"invalid ollama harness {model_harness!r}; "
+                "expected ollama_claude, ollama_codex, or ollama_opencode"
+            )
+        return integration
+    return model_harness
+
+
+def ollama_launch_integration(model_harness: str) -> str | None:
+    """Return the ollama launch integration name when harness is ollama-prefixed."""
+    if not model_harness.startswith(_OLLAMA_HARNESS_PREFIX):
+        return None
+    return model_harness[len(_OLLAMA_HARNESS_PREFIX) :]
 
 
 def canonical_harness_name(name: str) -> str:
@@ -101,7 +132,7 @@ def registry_models_for_harness(
     registry_models: list[dict[str, Any]],
     harness: str,
 ) -> list[dict[str, Any]]:
-    """Return provider-routed model rows for one harness."""
+    """Return model rows whose registry harness dispatches to ``harness``."""
     rows: list[dict[str, Any]] = []
     for model in registry_models:
         row = route_registry_model(model, harness)
@@ -110,20 +141,38 @@ def registry_models_for_harness(
     return rows
 
 
+def _model_harness_values(model: dict[str, Any]) -> list[str]:
+    """Return harness values from a registry row (list after normalize, str legacy)."""
+    raw = model.get("harness")
+    if isinstance(raw, list):
+        return [h for h in raw if isinstance(h, str) and h]
+    if isinstance(raw, str) and raw:
+        return [raw]
+    return []
+
+
 def route_registry_model(
     model: dict[str, Any],
     harness: str,
 ) -> dict[str, Any] | None:
     """Return a harness-specific model row, or ``None`` when out of scope."""
-    provider = model.get("provider", "")
-    if harness not in PROVIDER_HARNESS_MAP.get(provider, frozenset()):
-        if harness != "opencode" or not model.get("opencode_id"):
-            return None
+    harness_values = _model_harness_values(model)
+    if not harness_values:
+        return None
+    target = canonical_harness_name(harness)
+    model_harness: str | None = None
+    for candidate in harness_values:
+        if dispatch_harness(candidate) == target:
+            model_harness = candidate
+            break
+    if model_harness is None:
+        return None
     row = clone_json(model)
-    row["harness"] = harness
-    if harness == "opencode" and model.get("opencode_id"):
+    row["harness"] = target
+    row["registry_harness"] = model_harness
+    if target == "opencode" and model.get("opencode_id"):
         row["id"] = model["opencode_id"]
-    _apply_runner_defaults(row, harness)
+    _apply_runner_defaults(row, model_harness, target)
     if not isinstance(row.get("id"), str) or not row["id"]:
         raise ValueError(
             f"harness {harness!r} model {row.get('slug')!r} needs string id"
@@ -156,16 +205,19 @@ def check_harness_cli_requirements(
     return True, ""
 
 
-def _apply_runner_defaults(row: dict[str, Any], harness: str) -> None:
-    provider = row.get("provider", "")
-    if provider == "ollama_cloud":
-        if harness == "codex":
+def _apply_runner_defaults(
+    row: dict[str, Any], model_harness: str, dispatch: str
+) -> None:
+    integration = ollama_launch_integration(model_harness)
+    if integration is not None:
+        if dispatch == "codex":
             row.setdefault("runner_type", "ollama")
             return
-        row.setdefault("runner_type", harness)
-        row.setdefault("command_prefix", ollama_launch_command_prefix(harness))
+        row.setdefault("command_prefix", ollama_launch_command_prefix(integration))
+        row.setdefault("runner_type", dispatch)
         return
-    row.setdefault("runner_type", "codex" if provider == "openai" else harness)
+    provider = row.get("provider", "")
+    row.setdefault("runner_type", "codex" if provider == "openai" else dispatch)
 
 
 def _required_binaries(harness: Harness, models: list[dict[str, Any]]) -> list[str]:
@@ -179,7 +231,7 @@ def _required_binaries(harness: Harness, models: list[dict[str, Any]]) -> list[s
 def _codex_binary_for_model(model: dict[str, Any]) -> str:
     command_prefix = model.get("command_prefix") or []
     runner_type = model.get("runner_type", "codex")
-    if runner_type == "ollama" or ollama_launch_integration(command_prefix) == "codex":
+    if runner_type == "ollama" or ollama_launch_prefix_integration(command_prefix) == "codex":
         return "ollama"
     return "codex"
 

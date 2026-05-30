@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -28,21 +29,48 @@ HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
 
 
 def _expected_matrix_steps() -> list[tuple[str, str]]:
+    from benchmark.config import _normalize_registry_models, registry_harness_values
+    from benchmark.harnesses import dispatch_harness
+
     config = load_json(MODELS_CONFIG)
     steps: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for harness in list_harnesses():
-        resolved = resolve_build_harness_config(config, MODELS_CONFIG, harness)
-        for model in resolved.get("models", []):
-            slug = model.get("slug")
-            if not slug:
-                continue
-            key = (harness, slug)
-            if key in seen:
-                continue
-            seen.add(key)
-            steps.append(key)
+    for model in _normalize_registry_models(config.get("models")):
+        slug = model.get("slug")
+        if not slug:
+            continue
+        for registry_harness in registry_harness_values(model):
+            steps.append((dispatch_harness(registry_harness), str(slug)))
     return steps
+
+
+def test_build_matrix_expands_harness_list(tmp_path: Path) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": [
+                            "ollama_claude",
+                            "ollama_codex",
+                            "ollama_opencode",
+                        ],
+                        "num_runs": 3,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    steps = build_matrix(config_path)
+    assert {(s.harness, s.model_slug) for s in steps} == {
+        ("claude", "kimi_k2_6"),
+        ("codex", "kimi_k2_6"),
+        ("opencode", "kimi_k2_6"),
+    }
 
 
 def test_build_matrix_covers_all_registry_harness_pairs() -> None:
@@ -56,10 +84,11 @@ def test_build_matrix_includes_cursor_models() -> None:
     assert cursor_slugs == {"composer_2_5", "composer_2_0"}
 
 
-def test_build_matrix_includes_opencode_id_models() -> None:
+def test_build_matrix_includes_ollama_opencode_models() -> None:
     steps = build_matrix(MODELS_CONFIG)
     opencode_slugs = {s.model_slug for s in steps if s.harness == "opencode"}
-    assert "claude_opus_4_7" in opencode_slugs
+    assert "kimi_k2_6" in opencode_slugs
+    assert "deepseek_v4_pro" in opencode_slugs
 
 
 def test_reject_forwarded_model_flag() -> None:

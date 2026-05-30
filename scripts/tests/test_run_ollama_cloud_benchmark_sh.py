@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.audit_report import audit_model_harness  # noqa: E402
+from benchmark.audit_meta import audit_model_harness  # noqa: E402
 from benchmark.util import load_json  # noqa: E402
 
 HARNESSES_CONFIG = REPO_ROOT / "config" / "harnesses.json"
@@ -26,10 +26,13 @@ def test_audit_model_harness_lookup() -> None:
     config = load_json(HARNESSES_CONFIG)
     models_config = load_json(MODELS_CONFIG)
     assert (
-        audit_model_harness(config, "deepseek_v4_pro_ollama_cloud", models_config=models_config)
+        audit_model_harness(config, "deepseek_v4_pro", models_config=models_config)
         == "claude"
     )
-    assert audit_model_harness(config, "kimi_k2_6_ollama_cloud", models_config=models_config) == "claude"
+    assert (
+        audit_model_harness(config, "kimi_k2_6", models_config=models_config)
+        == "claude"
+    )
     assert audit_model_harness(config, "codex_gpt_5_5", models_config=models_config) == "codex"
 
 
@@ -39,7 +42,7 @@ def test_audit_model_harness_cli() -> None:
             sys.executable,
             str(MODEL_HARNESS_SCRIPT),
             str(HARNESSES_CONFIG),
-            "deepseek_v4_pro_ollama_cloud",
+            "deepseek_v4_pro",
         ],
         check=True,
         capture_output=True,

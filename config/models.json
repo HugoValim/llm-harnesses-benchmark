@@ -5,7 +5,7 @@
       "label": "Claude Opus 4.7",
       "provider": "anthropic",
       "id": "claude-opus-4-7",
-      "opencode_id": "openrouter/anthropic/claude-opus-4.7",
+      "harness": ["claude"],
       "num_runs": 1,
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
     },
@@ -14,6 +14,7 @@
       "label": "GPT-5.5 xhigh (Codex / ChatGPT)",
       "provider": "openai",
       "id": "gpt-5.5",
+      "harness": ["codex"],
       "codex_reasoning_effort": "xhigh",
       "num_runs": 1,
       "selection_reason": "Codex GPT-5.5 with extra-high reasoning. Verify availability with `codex debug models`."
@@ -23,6 +24,7 @@
       "label": "Composer 2.5 (Cursor CLI, subscription auth)",
       "provider": "cursor",
       "id": "composer-2.5",
+      "harness": ["cursor"],
       "num_runs": 3,
       "selection_reason": "Cursor Composer 2.5 baseline on the Python benchmark."
     },
@@ -31,71 +33,80 @@
       "label": "Composer 2.0 (Cursor CLI, subscription auth)",
       "provider": "cursor",
       "id": "composer-2",
+      "harness": ["cursor"],
       "num_runs": 3,
       "selection_reason": "Cursor Composer 2.0 baseline on the Python benchmark."
     },
     {
-      "slug": "kimi_k2_6_ollama_cloud",
+      "slug": "kimi_k2_6",
       "label": "Kimi K2.6 (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "kimi-k2.6:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
     },
     {
-      "slug": "deepseek_v4_pro_ollama_cloud",
+      "slug": "deepseek_v4_pro",
       "label": "DeepSeek V4 Pro (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "deepseek-v4-pro:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "known_issues": "OpenCode may fail phase 2 when reasoning_content is stripped; Claude/Codex follow-up still runs.",
       "num_runs": 3,
       "selection_reason": "DeepSeek V4 Pro served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
     },
     {
-      "slug": "deepseek_v4_flash_ollama_cloud",
+      "slug": "deepseek_v4_flash",
       "label": "DeepSeek V4 Flash (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "deepseek-v4-flash:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "DeepSeek V4 Flash served by Ollama Cloud as a fast mid-tier build comparison model."
     },
     {
-      "slug": "glm_5_1_ollama_cloud",
+      "slug": "glm_5_1",
       "label": "GLM 5.1 (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "glm-5.1:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "GLM 5.1 served by Ollama Cloud for long-horizon agentic engineering comparison."
     },
     {
-      "slug": "qwen3_5_ollama_cloud",
+      "slug": "qwen3_5",
       "label": "Qwen 3.5 (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "qwen3.5:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "Qwen 3.5 served by Ollama Cloud for agentic Python-stack benchmark coverage."
     },
     {
-      "slug": "nemotron_3_super_ollama_cloud",
+      "slug": "nemotron_3_super",
       "label": "Nemotron 3 Super (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "nemotron-3-super:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "NVIDIA Nemotron 3 Super served by Ollama Cloud for reasoning and coding benchmark coverage."
     },
     {
-      "slug": "gemma4_ollama_cloud",
+      "slug": "gemma4",
       "label": "Gemma 4 31B (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "gemma4:31b-cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "Google Gemma 4 31B served by Ollama Cloud for agentic workflow and multimodal benchmark coverage."
     },
     {
-      "slug": "minimax_m2_7_ollama_cloud",
+      "slug": "minimax_m2_7",
       "label": "MiniMax M2.7 (Ollama Cloud)",
       "provider": "ollama_cloud",
       "id": "minimax-m2.7:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "MiniMax M2.7 served by Ollama Cloud as a mid-tier Python-stack benchmark model."
     }

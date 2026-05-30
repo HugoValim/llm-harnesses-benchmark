@@ -27,9 +27,44 @@ class TestExpectedBenchmarkLeaves(unittest.TestCase):
         slugs = {leaf.slug for leaf in leaves}
         self.assertIn("codex-codex_gpt_5_5/run_01", slugs)
         self.assertNotIn("codex-codex_gpt_5_5/run_02", slugs)
-        self.assertIn("opencode-kimi_k2_6_ollama_cloud/run_01", slugs)
-        self.assertIn("opencode-kimi_k2_6_ollama_cloud/run_02", slugs)
-        self.assertIn("opencode-kimi_k2_6_ollama_cloud/run_03", slugs)
+        self.assertIn("opencode-kimi_k2_6/run_01", slugs)
+        self.assertIn("opencode-kimi_k2_6/run_02", slugs)
+        self.assertIn("opencode-kimi_k2_6/run_03", slugs)
+
+    def test_expected_leaves_per_harness_num_runs(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = self._write_registry_config(
+                Path(tmp),
+                [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": [
+                            "ollama_claude",
+                            "ollama_codex",
+                            "ollama_opencode",
+                        ],
+                        "num_runs": 2,
+                    }
+                ],
+            )
+            leaves = expected_benchmark_leaves(config_path)
+            self.assertEqual(len(leaves), 6)
+            slugs = {leaf.slug for leaf in leaves}
+            self.assertEqual(
+                slugs,
+                {
+                    "claude-kimi_k2_6/run_01",
+                    "claude-kimi_k2_6/run_02",
+                    "codex-kimi_k2_6/run_01",
+                    "codex-kimi_k2_6/run_02",
+                    "opencode-kimi_k2_6/run_01",
+                    "opencode-kimi_k2_6/run_02",
+                },
+            )
 
     def test_custom_config_mixed_num_runs(self) -> None:
         import tempfile
@@ -42,12 +77,14 @@ class TestExpectedBenchmarkLeaves(unittest.TestCase):
                         "slug": "solo",
                         "provider": "openai",
                         "id": "gpt-5",
+                        "harness": "codex",
                         "num_runs": 1,
                     },
                     {
                         "slug": "triple",
                         "provider": "openai",
                         "id": "gpt-5",
+                        "harness": "codex",
                         "num_runs": 3,
                     },
                 ],
@@ -160,6 +197,7 @@ class TestAssertReplicateCoverage(unittest.TestCase):
                         "slug": "demo",
                         "provider": "openai",
                         "id": "gpt-5",
+                        "harness": "codex",
                         "num_runs": 2,
                     }
                 ],

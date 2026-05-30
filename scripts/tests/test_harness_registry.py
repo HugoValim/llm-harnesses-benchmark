@@ -16,9 +16,12 @@ from benchmark.harnesses import (  # noqa: E402
     UnknownHarnessError,
     canonical_harness_name,
     check_harness_cli_requirements,
+    dispatch_harness,
     get_harness,
     list_harnesses,
     model_matches_harness,
+    ollama_launch_integration,
+    route_registry_model,
 )
 
 
@@ -69,6 +72,45 @@ class TestHarnessRegistry(unittest.TestCase):
     def test_model_runner_types_are_harness_owned(self) -> None:
         self.assertTrue(model_matches_harness({"runner_type": "ollama"}, "codex"))
         self.assertFalse(model_matches_harness({"runner_type": "ollama"}, "opencode"))
+
+    def test_dispatch_harness_strips_ollama_prefix(self) -> None:
+        self.assertEqual(dispatch_harness("ollama_claude"), "claude")
+        self.assertEqual(dispatch_harness("ollama_codex"), "codex")
+        self.assertEqual(dispatch_harness("codex"), "codex")
+
+    def test_ollama_launch_integration_from_registry_harness(self) -> None:
+        self.assertEqual(ollama_launch_integration("ollama_opencode"), "opencode")
+        self.assertIsNone(ollama_launch_integration("claude"))
+
+    def test_route_registry_model_matches_explicit_harness(self) -> None:
+        model = {
+            "slug": "kimi_claude",
+            "provider": "ollama_cloud",
+            "id": "kimi:cloud",
+            "harness": "ollama_claude",
+        }
+        row = route_registry_model(model, "claude")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["command_prefix"], ["ollama", "launch", "--yes", "claude"])
+        self.assertIsNone(route_registry_model(model, "codex"))
+
+    def test_route_registry_model_picks_matching_harness_from_list(self) -> None:
+        model = {
+            "slug": "kimi_k2_6",
+            "provider": "ollama_cloud",
+            "id": "kimi-k2.6:cloud",
+            "harness": [
+                "ollama_claude",
+                "ollama_codex",
+                "ollama_opencode",
+            ],
+        }
+        row = route_registry_model(model, "codex")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["registry_harness"], "ollama_codex")
+        self.assertEqual(row["harness"], "codex")
+        self.assertEqual(row["runner_type"], "ollama")
+        self.assertIsNone(route_registry_model(model, "cursor"))
 
     def test_codex_ollama_model_requires_ollama_binary(self) -> None:
         with patch("benchmark.harnesses.shutil.which", return_value=None):

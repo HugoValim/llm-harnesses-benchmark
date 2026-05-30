@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Sequence
 
 from benchmark.audit_meta import audit_model_harness
-from benchmark.config import resolve_build_harness_config
+from benchmark.config import _normalize_registry_models, registry_harness_values, resolve_build_harness_config
 from benchmark.defaults import DEFAULT_JOBS
-from benchmark.harnesses import list_harnesses
+from benchmark.harnesses import dispatch_harness
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
@@ -44,27 +44,21 @@ class BuildBatch:
 
 
 def build_matrix(models_config_path: Path) -> list[BuildStep]:
-    """Every registry model on each harness it resolves for."""
+    """Every registry model row expanded per harness entry."""
     config = load_json(models_config_path)
-    registry = config.get("models", [])
-    if not isinstance(registry, list):
+    registry = _normalize_registry_models(config.get("models"))
+    if not registry and config.get("models") is not None:
         raise ValueError(f"{models_config_path} must contain a models array")
 
     steps: list[BuildStep] = []
-    seen: set[tuple[str, str]] = set()
-
-    for harness in list_harnesses():
-        resolved = resolve_build_harness_config(config, models_config_path, harness)
-        for model in resolved.get("models", []):
-            slug = model.get("slug")
-            if not slug:
-                continue
-            key = (harness, slug)
-            if key in seen:
-                continue
-            seen.add(key)
-            steps.append(BuildStep(harness, str(slug)))
-
+    for model in registry:
+        slug = model.get("slug")
+        if not slug:
+            continue
+        for registry_harness in registry_harness_values(model):
+            steps.append(
+                BuildStep(dispatch_harness(registry_harness), str(slug))
+            )
     return steps
 
 

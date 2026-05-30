@@ -18,20 +18,39 @@ Common fields:
 
 - `slug`: filesystem-safe model key.
 - `label`: display name used in reports.
-- `provider`: routing key.
+- `provider`: billing/provider channel key (see `docs/PRICING.md`).
+- `harness`: list of runners that execute this model (see below). The benchmark
+  runs `num_runs` replicates for each harness in the list.
 - `id`: provider or CLI model id.
-- `opencode_id`: optional opencode-specific id, commonly an OpenRouter path.
+- `opencode_id`: optional opencode-specific id when `harness` is `opencode`.
 - `selection_reason`: maintainer note shown in audit comparison tables.
 - `known_issues`: optional warning for model-specific behavior.
 - `skip_by_default`: optional flag used by preview-speed handling.
 
-Provider routing:
+Allowed `harness` list entries:
 
-- `anthropic` -> Claude harness.
-- `openai` -> Codex harness.
-- `cursor` -> Cursor harness.
-- `ollama_cloud` -> Claude, Codex, or opencode via `ollama launch`.
-- Any row with `opencode_id` can also run on opencode.
+| Value | CLI / result prefix | Launch |
+| --- | --- | --- |
+| `claude` | `claude` | direct Claude Code CLI |
+| `codex` | `codex` | direct Codex CLI |
+| `opencode` | `opencode` | direct OpenCode CLI |
+| `cursor` | `cursor` | Cursor Agent CLI |
+| `ollama_claude` | `claude` | `ollama launch --yes claude` |
+| `ollama_codex` | `codex` | `ollama launch --yes codex` |
+| `ollama_opencode` | `opencode` | `ollama launch --yes opencode` |
+
+Example — one Ollama Cloud model on all three contest harnesses:
+
+```json
+{
+  "slug": "kimi_k2_6",
+  "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
+  "num_runs": 3
+}
+```
+
+That dispatches nine benchmark leaves: `claude-kimi_k2_6/run_01` …
+`opencode-kimi_k2_6/run_03`.
 
 ## Harness registry
 
@@ -65,9 +84,10 @@ python3 scripts/run_benchmark.py --harness codex --models-config /path/to/models
 
 ## Adding a model
 
-1. Add a row to `config/models.json` with a unique `slug`.
-2. Set `provider` so the row routes to the intended harness.
-3. Add `opencode_id` if the row should be runnable by opencode.
+1. Add a row to `config/models.json` with a unique `slug` and a `harness` list.
+2. For Ollama Cloud contest coverage, include
+   `["ollama_claude", "ollama_codex", "ollama_opencode"]` on one base slug row.
+3. Add pricing for the base slug in `docs/PRICING.md` when billable.
 4. Run one selected benchmark:
 
 ```bash

@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.backends import LocalModelBackend
-from benchmark.harnesses import registry_models_for_harness
+from benchmark.harnesses import (
+    MODEL_HARNESS_VALUES,
+    dispatch_harness,
+    registry_models_for_harness,
+)
 from benchmark.rate_limit import RateLimitWaitPolicy
 from benchmark.run_status import TERMINAL_STATUSES
 from benchmark.workspace import summarize_project
@@ -211,6 +215,55 @@ def _resolve_model_num_runs(model: dict[str, Any]) -> int:
     return _validate_registry_model_num_runs(model)
 
 
+def _validate_registry_harness_value(slug: str, value: str) -> None:
+    if value not in MODEL_HARNESS_VALUES:
+        raise ValueError(
+            f"models.json model {slug!r} has unsupported harness {value!r}; "
+            f"expected one of {sorted(MODEL_HARNESS_VALUES)}"
+        )
+
+
+def registry_harness_values(model: dict[str, Any]) -> list[str]:
+    """Return validated harness list; accept legacy single string."""
+    slug = model.get("slug", "<unknown>")
+    raw = model.get("harness")
+    if isinstance(raw, str):
+        if not raw:
+            raise ValueError(
+                f"models.json model {slug!r} requires non-empty harness, got {raw!r}"
+            )
+        values = [raw]
+    elif isinstance(raw, list):
+        if not raw:
+            raise ValueError(
+                f"models.json model {slug!r} requires non-empty harness list, "
+                f"got {raw!r}"
+            )
+        values = []
+        for entry in raw:
+            if not isinstance(entry, str) or not entry:
+                raise ValueError(
+                    f"models.json model {slug!r} requires string harness entries, "
+                    f"got {entry!r} in {raw!r}"
+                )
+            values.append(entry)
+    else:
+        raise ValueError(
+            f"models.json model {slug!r} requires string or list harness, "
+            f"got {raw!r}"
+        )
+    for value in values:
+        _validate_registry_harness_value(slug, value)
+    return values
+
+
+def _validate_registry_model_harness(model: dict[str, Any]) -> list[str]:
+    """Require a supported ``harness`` list on each registry model row."""
+    values = registry_harness_values(model)
+    model["harness"] = values
+    return values
+
+
 def _normalize_registry_models(models: Any) -> list[dict[str, Any]]:
     if not isinstance(models, list):
         return []
@@ -219,9 +272,19 @@ def _normalize_registry_models(models: Any) -> list[dict[str, Any]]:
         if not isinstance(model, dict):
             continue
         row = clone_json(model)
+        _validate_registry_model_harness(row)
         row["num_runs"] = _resolve_model_num_runs(row)
         out.append(row)
     return out
+
+
+def ollama_cloud_registry_slugs(models: list[dict[str, Any]]) -> frozenset[str]:
+    """Return registry slugs for Ollama Cloud provider models."""
+    return frozenset(
+        str(m["slug"])
+        for m in models
+        if isinstance(m, dict) and m.get("provider") == "ollama_cloud" and m.get("slug")
+    )
 
 
 def registry_by_slug(models: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -302,12 +365,8 @@ def resolve_harness_config(
 ) -> dict[str, Any]:
     """Return a normal models config for one harness.
 
-    Routing is derived from each model's provider:
-    - anthropic  -> claude harness
-    - openai     -> codex harness (runner_type=codex)
-    - cursor     -> cursor harness
-    - ollama_cloud -> claude + codex (ollama launch <harness>)
-    - opencode_id field present -> also included in opencode harness
+    Routing is derived from each model row's ``harness`` field. Values prefixed
+    with ``ollama_`` dispatch to the base harness CLI via ``ollama launch``.
 
     Example:
         ``resolve_harness_config(config, Path("config/models.json"), "codex")``

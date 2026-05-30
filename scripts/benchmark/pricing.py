@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmark.audit_rollup import cohort_slug
 from benchmark.result_layout import split_target_slug
 from benchmark.util import load_json, migrate_to_v2
 
@@ -23,11 +24,11 @@ _TABLE_HEADER = (
 OPENROUTER_ID_TO_SLUG: dict[str, str] = {
     "openrouter/anthropic/claude-sonnet-4.6": "claude_sonnet_4_6",
     "openrouter/anthropic/claude-opus-4.7": "claude_opus_4_7",
-    "moonshotai/kimi-k2.6": "kimi_k2_6_ollama_cloud",
-    "deepseek/deepseek-v4-flash": "deepseek_v4_flash_ollama_cloud",
-    "z-ai/glm-5.1": "glm_5_1_ollama_cloud",
-    "qwen/qwen3.5-plus-02-15": "qwen3_5_ollama_cloud",
-    "minimax/minimax-m2.7": "minimax_m2_7_ollama_cloud",
+    "moonshotai/kimi-k2.6": "kimi_k2_6",
+    "deepseek/deepseek-v4-flash": "deepseek_v4_flash",
+    "z-ai/glm-5.1": "glm_5_1",
+    "qwen/qwen3.5-plus-02-15": "qwen3_5",
+    "minimax/minimax-m2.7": "minimax_m2_7",
 }
 
 
@@ -162,8 +163,15 @@ def pricing_row_for_target(
     key = (model_slug, channel)
     if key in table:
         return table[key]
+    cohort_key = (cohort_slug(model_slug), channel)
+    if cohort_key in table:
+        return table[cohort_key]
     # Fallback: any row for slug (e.g. unknown harness)
     matches = [r for (s, _), r in table.items() if s == model_slug]
+    if not matches:
+        matches = [
+            r for (s, _), r in table.items() if s == cohort_slug(model_slug)
+        ]
     if len(matches) == 1:
         return matches[0]
     if matches:
@@ -186,11 +194,19 @@ def assert_registry_coverage(
     if table is None:
         table = load_pricing_table(pricing_path)
     slugs_in_table = {slug for slug, _ in table}
-    missing = [
-        m["slug"]
-        for m in models
-        if isinstance(m, dict) and m.get("slug") and m["slug"] not in slugs_in_table
-    ]
+    missing = []
+    for m in models:
+        if not isinstance(m, dict) or not m.get("slug"):
+            continue
+        slug = str(m["slug"])
+        pricing_slug = cohort_slug(slug)
+        if slug in slugs_in_table or pricing_slug in slugs_in_table:
+            continue
+        if slug.endswith("_opencode"):
+            base = slug[: -len("_opencode")]
+            if base in slugs_in_table:
+                continue
+        missing.append(slug)
     if missing:
         raise PricingError(
             f"models.json slugs missing from PRICING.md: {sorted(missing)}"

@@ -171,7 +171,7 @@ def test_harness_reported_cost_precedence() -> None:
 def test_format_generation_metrics_block_includes_cli_versions() -> None:
     block = format_generation_metrics_block(
         {
-            "model_slug": "kimi_k2_6_ollama_cloud",
+            "model_slug": "kimi_k2_6_claude",
             "harness": "claude",
             "harness_cli_version": "claude 2.0.0",
             "command_shim_version": "ollama 0.5.0",
@@ -193,7 +193,7 @@ def test_format_generation_metrics_block_includes_cli_versions() -> None:
 def test_format_generation_metrics_block_includes_cost() -> None:
     block = format_generation_metrics_block(
         {
-            "model_slug": "kimi_k2_6_ollama_cloud",
+            "model_slug": "kimi_k2_6_claude",
             "harness": "claude",
             "generation_time_seconds": 120,
             "input_tokens": 100,

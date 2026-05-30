@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from benchmark.harnesses import (
-    PROVIDER_HARNESS_MAP,
     canonical_harness_name,
+    dispatch_harness,
     get_harness,
 )
+from benchmark.config import registry_harness_values
 from benchmark.result_layout import HARNESS_PREFIXES
 from benchmark.timeouts import (
     DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
@@ -29,11 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover
 def audit_model_harness(
     config: dict, slug: str, models_config: dict | None = None
 ) -> str:
-    """Return the first registry harness containing model slug.
-
-    Falls back to auto-derived routing for ollama_cloud models: those are
-    auto-included in the claude harness without an explicit harnesses.json entry.
-    """
+    """Return the dispatch harness for a registry model slug."""
     preferred = ["claude", "codex", "opencode", "cursor"]
     harnesses = preferred + [h for h in config if h not in preferred]
     for harness in harnesses:
@@ -45,19 +42,17 @@ def audit_model_harness(
             return str(harness)
     if models_config is not None:
         registry = models_config.get("models") or []
-        _preferred = ["claude", "codex", "opencode", "cursor"]
         for model in registry:
             if not isinstance(model, dict) or model.get("slug") != slug:
                 continue
-            provider = model.get("provider", "")
-            harnesses = PROVIDER_HARNESS_MAP.get(provider, frozenset())
-            if harnesses:
-                return min(
-                    harnesses,
-                    key=lambda h: _preferred.index(h) if h in _preferred else 99,
-                )
-            if model.get("opencode_id"):
-                return "opencode"
+            try:
+                harness_values = registry_harness_values(model)
+            except ValueError:
+                continue
+            for preferred_harness in preferred:
+                for registry_harness in harness_values:
+                    if dispatch_harness(registry_harness) == preferred_harness:
+                        return preferred_harness
     raise ValueError(f"No harness model with slug={slug!r}")
 
 
