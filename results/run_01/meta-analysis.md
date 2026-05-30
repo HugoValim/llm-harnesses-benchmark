@@ -1,12 +1,12 @@
-# Meta-analysis: codex_gpt_5_5 audit reports
+# Meta-analysis: codex_gpt_5_5(xhigh) audit reports
 
 ## 1. Executive summary
-**Best harness overall** (opencode/codex/claude contest, cross-harness cohort only): `codex` with avg total 61.1/100 (N=8 runs, std dev 17.7), narrowly ahead of opencode (60.0) and claude (59.0) on the shared Ollama grid; single-harness leader anchors (`codex_gpt_5_5`, `claude_opus_4_7`) are excluded from this comparison (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:10`). Cursor-agent Composer runs (`cursor-composer_2_5`, `cursor-composer_2_0`) avg 81.5/100 but are **model-only benchmarks** excluded from the harness contest. **Best model overall**: `deepseek_v4_pro_ollama_cloud` with avg total 74.0/100 across 3 contest harnesses; it is the highest eligible model after suppressing single-harness and cursor-only leaders and stays consistent across claude/codex/opencode. **Best open-source model**: `deepseek_v4_pro_ollama_cloud` with cross-harness avg 74.0/100 across 3 contest harnesses; its codex run leads the family at 76/100 with full D1/D3/D4/D10 (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:8`). The clearest harness-attributable pattern is opencode's relative strength on D8 secrets/config versus claude/codex, while claude uniquely owns CF#12 raw-WebSocket substitutions (`audit-reports/codex_gpt_5_5/claude-qwen3_5_ollama_cloud/report.md:31`). The single most important universal blind spot is D9 Production hardening: contest per-harness averages are claude=1.2 / codex=0.0 / opencode=0.1 on a 10-point dimension. Harness CLI versions are all `unknown` in the rollup, with no `mixed-version` cohort reported. Calibration verdict: **FAIL** because D9 floors out and median D10 is 8.0 despite common production/security gaps.
+**Best harness overall** (opencode/codex/claude contest, cross-harness cohort only): `codex` with avg total 61.1/100 (N=8 runs, std dev 17.7), narrowly ahead of opencode (60.0) and claude (59.0) on the shared Ollama grid; single-harness leader anchors (`codex_gpt_5_5(xhigh)`, `claude_opus_4_7`) are excluded from this comparison (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:10`). Cursor-agent Composer runs (`cursor-composer_2_5`, `cursor-composer_2_0`) avg 81.5/100 but are **model-only benchmarks** excluded from the harness contest. **Best model overall**: `deepseek_v4_pro_ollama_cloud` with avg total 74.0/100 across 3 contest harnesses; it is the highest eligible model after suppressing single-harness and cursor-only leaders and stays consistent across claude/codex/opencode. **Best open-source model**: `deepseek_v4_pro_ollama_cloud` with cross-harness avg 74.0/100 across 3 contest harnesses; its codex run leads the family at 76/100 with full D1/D3/D4/D10 (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:8`). The clearest harness-attributable pattern is opencode's relative strength on D8 secrets/config versus claude/codex, while claude uniquely owns CF#12 raw-WebSocket substitutions (`audit-reports/codex_gpt_5_5/claude-qwen3_5_ollama_cloud/report.md:31`). The single most important universal blind spot is D9 Production hardening: contest per-harness averages are claude=1.2 / codex=0.0 / opencode=0.1 on a 10-point dimension. Harness CLI versions are all `unknown` in the rollup, with no `mixed-version` cohort reported. Calibration verdict: **FAIL** because D9 floors out and median D10 is 8.0 despite common production/security gaps.
 
 ## 2. Best model overall
 | Rank | Harness | Model slug | Total | Tier |
 |---:|---|---|---:|---|
-| 1 | codex | codex_gpt_5_5 | 86.0 | A |
+| 1 | codex | codex_gpt_5_5(xhigh) | 86.0 | A |
 | 2 | cursor | composer_2_5 | 83.0 | A |
 | 3 | claude | claude_opus_4_7 | 82.0 | A |
 | 4 | cursor | composer_2_0 | 80.0 | B |
@@ -35,7 +35,7 @@
 | 27 | claude | nemotron_3_super_ollama_cloud | 29.0 | D |
 | 28 | codex | nemotron_3_super_ollama_cloud | 26.0 | D |
 
-Winner: `deepseek_v4_pro_ollama_cloud` (cross-harness avg 74.0/100); its codex run shows full deliverables and test coverage while keeping the best model-family total at 76/100 (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:8`; `audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:10`). Single-contest-harness leaders (`codex_gpt_5_5`, `claude_opus_4_7`) and cursor-only Composer runs (`composer_2_5`, `composer_2_0`) top the run table but are not crowned.
+Winner: `deepseek_v4_pro_ollama_cloud` (cross-harness avg 74.0/100); its codex run shows full deliverables and test coverage while keeping the best model-family total at 76/100 (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:8`; `audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:10`). Single-contest-harness leaders (`codex_gpt_5_5(xhigh)`, `claude_opus_4_7`) and cursor-only Composer runs (`composer_2_5`, `composer_2_0`) top the run table but are not crowned.
 
 ## 2a. Open-source (Ollama) model ranking
 
@@ -61,7 +61,7 @@ Winner: `deepseek_v4_pro_ollama_cloud` (74.0/100 cross-harness mean); the codex 
 
 **Cursor agent models (excluded from harness contest):** `composer_2_5` (83/100) and `composer_2_0` (80/100) under the `cursor-` prefix — N=2, cohort avg 81.5. Strong D6/D8/D10 on both runs; D9 still zero (`audit-reports/codex_gpt_5_5/cursor-composer_2_5/report.md:12`). Not comparable to the opencode/codex/claude grid without cross-agent pairing.
 
-**Single-harness leaders (excluded from harness averages):** `codex_gpt_5_5` (86/100 under codex) and `claude_opus_4_7` (82/100 under claude) — listed in section 2 but omitted from the cross-harness cohort above.
+**Single-harness leaders (excluded from harness averages):** `codex_gpt_5_5(xhigh)` (86/100 under codex) and `claude_opus_4_7` (82/100 under claude) — listed in section 2 but omitted from the cross-harness cohort above.
 
 Sample-size caveat: N=8 per contest harness on the shared Ollama grid; margins under ~3 points among codex/opencode/claude are ties on this sample.
 
@@ -143,34 +143,34 @@ Rows with Harness `cursor` are Cursor-agent model runs (not contest harnesses).
 
 | Model slug | Auditor | Harness | D1/15 | D10/10 | D1 ratio | D10 ratio | Gap | Flag |
 |---|---|---|---:|---:|---:|---:|---:|---|
-| kimi_k2_6_ollama_cloud | codex_gpt_5_5 | codex | 13 | 7 | 0.87 | 0.70 | 0.17 |  |
-| gemma4_ollama_cloud | codex_gpt_5_5 | opencode | 10 | 5 | 0.67 | 0.50 | 0.17 |  |
-| qwen3_5_ollama_cloud | codex_gpt_5_5 | codex | 12 | 7 | 0.80 | 0.70 | 0.10 |  |
-| gemma4_ollama_cloud | codex_gpt_5_5 | claude | 9 | 5 | 0.60 | 0.50 | 0.10 |  |
-| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5 | codex | 15 | 9 | 1.00 | 0.90 | 0.10 |  |
-| qwen3_5_ollama_cloud | codex_gpt_5_5 | opencode | 9 | 5 | 0.60 | 0.50 | 0.10 |  |
-| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5 | claude | 12 | 8 | 0.80 | 0.80 | 0.00 |  |
-| codex_gpt_5_5 | codex_gpt_5_5 | codex | 15 | 10 | 1.00 | 1.00 | 0.00 |  |
-| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5 | codex | 15 | 10 | 1.00 | 1.00 | 0.00 |  |
-| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5 | claude | 10 | 7 | 0.67 | 0.70 | -0.03 |  |
-| qwen3_5_ollama_cloud | codex_gpt_5_5 | claude | 9 | 7 | 0.60 | 0.70 | -0.10 |  |
-| gemma4_ollama_cloud | codex_gpt_5_5 | codex | 7 | 6 | 0.47 | 0.60 | -0.13 |  |
-| glm_5_1_ollama_cloud | codex_gpt_5_5 | claude | 10 | 8 | 0.67 | 0.80 | -0.13 |  |
-| kimi_k2_6_ollama_cloud | codex_gpt_5_5 | claude | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
-| glm_5_1_ollama_cloud | codex_gpt_5_5 | codex | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
-| composer_2_0 | codex_gpt_5_5 | cursor | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
-| composer_2_5 | codex_gpt_5_5 | cursor | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
-| glm_5_1_ollama_cloud | codex_gpt_5_5 | opencode | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
-| minimax_m2_7_ollama_cloud | codex_gpt_5_5 | claude | 9 | 8 | 0.60 | 0.80 | -0.20 |  |
-| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5 | opencode | 11 | 10 | 0.73 | 1.00 | -0.27 |  |
-| kimi_k2_6_ollama_cloud | codex_gpt_5_5 | opencode | 8 | 8 | 0.53 | 0.80 | -0.27 |  |
-| nemotron_3_super_ollama_cloud | codex_gpt_5_5 | opencode | 2 | 4 | 0.13 | 0.40 | -0.27 |  |
-| minimax_m2_7_ollama_cloud | codex_gpt_5_5 | codex | 9 | 9 | 0.60 | 0.90 | -0.30 | quality-over-completion |
-| claude_opus_4_7 | codex_gpt_5_5 | claude | 10 | 10 | 0.67 | 1.00 | -0.33 | quality-over-completion |
-| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5 | opencode | 7 | 8 | 0.47 | 0.80 | -0.33 | quality-over-completion |
-| minimax_m2_7_ollama_cloud | codex_gpt_5_5 | opencode | 6 | 8 | 0.40 | 0.80 | -0.40 | quality-over-completion |
-| nemotron_3_super_ollama_cloud | codex_gpt_5_5 | codex | 0 | 7 | 0.00 | 0.70 | -0.70 | quality-over-completion |
-| nemotron_3_super_ollama_cloud | codex_gpt_5_5 | claude | 0 | 8 | 0.00 | 0.80 | -0.80 | quality-over-completion |
+| kimi_k2_6_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 13 | 7 | 0.87 | 0.70 | 0.17 |  |
+| gemma4_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 10 | 5 | 0.67 | 0.50 | 0.17 |  |
+| qwen3_5_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 12 | 7 | 0.80 | 0.70 | 0.10 |  |
+| gemma4_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 9 | 5 | 0.60 | 0.50 | 0.10 |  |
+| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 15 | 9 | 1.00 | 0.90 | 0.10 |  |
+| qwen3_5_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 9 | 5 | 0.60 | 0.50 | 0.10 |  |
+| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 12 | 8 | 0.80 | 0.80 | 0.00 |  |
+| codex_gpt_5_5(xhigh) | codex_gpt_5_5(xhigh) | codex | 15 | 10 | 1.00 | 1.00 | 0.00 |  |
+| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 15 | 10 | 1.00 | 1.00 | 0.00 |  |
+| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 10 | 7 | 0.67 | 0.70 | -0.03 |  |
+| qwen3_5_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 9 | 7 | 0.60 | 0.70 | -0.10 |  |
+| gemma4_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 7 | 6 | 0.47 | 0.60 | -0.13 |  |
+| glm_5_1_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 10 | 8 | 0.67 | 0.80 | -0.13 |  |
+| kimi_k2_6_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
+| glm_5_1_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
+| composer_2_0 | codex_gpt_5_5(xhigh) | cursor | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
+| composer_2_5 | codex_gpt_5_5(xhigh) | cursor | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
+| glm_5_1_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 12 | 10 | 0.80 | 1.00 | -0.20 |  |
+| minimax_m2_7_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 9 | 8 | 0.60 | 0.80 | -0.20 |  |
+| deepseek_v4_pro_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 11 | 10 | 0.73 | 1.00 | -0.27 |  |
+| kimi_k2_6_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 8 | 8 | 0.53 | 0.80 | -0.27 |  |
+| nemotron_3_super_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 2 | 4 | 0.13 | 0.40 | -0.27 |  |
+| minimax_m2_7_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 9 | 9 | 0.60 | 0.90 | -0.30 | quality-over-completion |
+| claude_opus_4_7 | codex_gpt_5_5(xhigh) | claude | 10 | 10 | 0.67 | 1.00 | -0.33 | quality-over-completion |
+| deepseek_v4_flash_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 7 | 8 | 0.47 | 0.80 | -0.33 | quality-over-completion |
+| minimax_m2_7_ollama_cloud | codex_gpt_5_5(xhigh) | opencode | 6 | 8 | 0.40 | 0.80 | -0.40 | quality-over-completion |
+| nemotron_3_super_ollama_cloud | codex_gpt_5_5(xhigh) | codex | 0 | 7 | 0.00 | 0.70 | -0.70 | quality-over-completion |
+| nemotron_3_super_ollama_cloud | codex_gpt_5_5(xhigh) | claude | 0 | 8 | 0.00 | 0.80 | -0.80 | quality-over-completion |
 
 No run crosses the `completion-over-quality` flag threshold; the largest positive gaps are `codex-kimi_k2_6_ollama_cloud` and `opencode-gemma4_ollama_cloud` at +0.17. The codex-kimi D10 justification still penalizes a receive god-method and repeated broad handlers, so this is a mild gap rather than the v3.2 failure mode (`audit-reports/codex_gpt_5_5/codex-kimi_k2_6_ollama_cloud/report.md:17`).
 
@@ -284,7 +284,7 @@ Overall verdict: **FAIL**. Recommend a Prompt-Version bump for `prompts/audit_pr
 - Prompt/benchmark version mismatches: none detected; all reports state `audit-v3.8`, `benchmark-v3.2`, and `benchmark-followup-v3.2` where follow-up is present.
 
 ### Single-harness models (contest)
-- `codex_gpt_5_5` (codex)
+- `codex_gpt_5_5(xhigh)` (codex)
 - `claude_opus_4_7` (claude)
 
 ### Cursor agent models
@@ -298,34 +298,34 @@ Excluded from harness comparison and section 2 harness counts.
 ### Full dimension score matrix
 | Auditor | Target | Harness | Model | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | D10 | Total | Tier |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| codex_gpt_5_5 | claude-claude_opus_4_7 | claude | claude_opus_4_7 | 10 | 10 | 10 | 10 | 5 | 10 | 11 | 4 | 2 | 10 | 82 | A |
-| codex_gpt_5_5 | claude-deepseek_v4_flash_ollama_cloud | claude | deepseek_v4_flash_ollama_cloud | 10 | 10 | 3 | 4 | 5 | 6 | 8 | 0 | 0 | 7 | 53 | C |
-| codex_gpt_5_5 | claude-deepseek_v4_pro_ollama_cloud | claude | deepseek_v4_pro_ollama_cloud | 12 | 10 | 10 | 7 | 5 | 10 | 9 | 0 | 0 | 8 | 71 | B |
-| codex_gpt_5_5 | claude-gemma4_ollama_cloud | claude | gemma4_ollama_cloud | 9 | 10 | 10 | 7 | 5 | 4 | 8 | 0 | 0 | 5 | 58 | C |
-| codex_gpt_5_5 | claude-glm_5_1_ollama_cloud | claude | glm_5_1_ollama_cloud | 10 | 10 | 8 | 7 | 5 | 4 | 11 | 0 | 0 | 8 | 63 | B |
-| codex_gpt_5_5 | claude-kimi_k2_6_ollama_cloud | claude | kimi_k2_6_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 10 | 11 | 0 | 0 | 10 | 78 | B |
-| codex_gpt_5_5 | claude-minimax_m2_7_ollama_cloud | claude | minimax_m2_7_ollama_cloud | 9 | 10 | 8 | 7 | 5 | 0 | 9 | 0 | 1 | 8 | 57 | C |
-| codex_gpt_5_5 | claude-nemotron_3_super_ollama_cloud | claude | nemotron_3_super_ollama_cloud | 0 | 6 | 2 | 4 | 1 | 0 | 8 | 0 | 0 | 8 | 29 | D |
-| codex_gpt_5_5 | claude-qwen3_5_ollama_cloud | claude | qwen3_5_ollama_cloud | 9 | 10 | 8 | 10 | 5 | 0 | 6 | 0 | 8 | 7 | 63 | B |
-| codex_gpt_5_5 | codex-codex_gpt_5_5 | codex | codex_gpt_5_5 | 15 | 10 | 10 | 10 | 5 | 10 | 11 | 5 | 0 | 10 | 86 | A |
-| codex_gpt_5_5 | codex-deepseek_v4_flash_ollama_cloud | codex | deepseek_v4_flash_ollama_cloud | 15 | 10 | 10 | 10 | 5 | 7 | 8 | 0 | 0 | 9 | 74 | B |
-| codex_gpt_5_5 | codex-deepseek_v4_pro_ollama_cloud | codex | deepseek_v4_pro_ollama_cloud | 15 | 10 | 10 | 10 | 3 | 5 | 13 | 0 | 0 | 10 | 76 | B |
-| codex_gpt_5_5 | codex-gemma4_ollama_cloud | codex | gemma4_ollama_cloud | 7 | 9 | 8 | 5 | 5 | 0 | 4 | 0 | 0 | 6 | 44 | C |
-| codex_gpt_5_5 | codex-glm_5_1_ollama_cloud | codex | glm_5_1_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 7 | 9 | 0 | 0 | 10 | 73 | B |
-| codex_gpt_5_5 | codex-kimi_k2_6_ollama_cloud | codex | kimi_k2_6_ollama_cloud | 13 | 10 | 10 | 10 | 5 | 7 | 8 | 0 | 0 | 7 | 70 | B |
-| codex_gpt_5_5 | codex-minimax_m2_7_ollama_cloud | codex | minimax_m2_7_ollama_cloud | 9 | 10 | 8 | 10 | 2 | 4 | 6 | 0 | 0 | 9 | 58 | C |
-| codex_gpt_5_5 | codex-nemotron_3_super_ollama_cloud | codex | nemotron_3_super_ollama_cloud | 0 | 7 | 8 | 1 | 1 | 0 | 2 | 0 | 0 | 7 | 26 | D |
-| codex_gpt_5_5 | codex-qwen3_5_ollama_cloud | codex | qwen3_5_ollama_cloud | 12 | 10 | 10 | 10 | 3 | 7 | 9 | 0 | 0 | 7 | 68 | B |
-| codex_gpt_5_5 | cursor-composer_2_0 | cursor | composer_2_0 | 12 | 10 | 10 | 7 | 5 | 10 | 11 | 5 | 0 | 10 | 80 | B |
-| codex_gpt_5_5 | cursor-composer_2_5 | cursor | composer_2_5 | 12 | 10 | 10 | 10 | 5 | 10 | 11 | 5 | 0 | 10 | 83 | A |
-| codex_gpt_5_5 | opencode-deepseek_v4_flash_ollama_cloud | opencode | deepseek_v4_flash_ollama_cloud | 7 | 9 | 8 | 10 | 5 | 8 | 8 | 5 | 0 | 8 | 68 | B |
-| codex_gpt_5_5 | opencode-deepseek_v4_pro_ollama_cloud | opencode | deepseek_v4_pro_ollama_cloud | 11 | 10 | 8 | 10 | 5 | 8 | 8 | 5 | 0 | 10 | 75 | B |
-| codex_gpt_5_5 | opencode-gemma4_ollama_cloud | opencode | gemma4_ollama_cloud | 10 | 10 | 8 | 7 | 5 | 4 | 4 | 0 | 0 | 5 | 53 | C |
-| codex_gpt_5_5 | opencode-glm_5_1_ollama_cloud | opencode | glm_5_1_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 10 | 9 | 0 | 0 | 10 | 76 | B |
-| codex_gpt_5_5 | opencode-kimi_k2_6_ollama_cloud | opencode | kimi_k2_6_ollama_cloud | 8 | 10 | 3 | 10 | 5 | 2 | 8 | 0 | 0 | 8 | 54 | C |
-| codex_gpt_5_5 | opencode-minimax_m2_7_ollama_cloud | opencode | minimax_m2_7_ollama_cloud | 6 | 8 | 8 | 4 | 1 | 8 | 6 | 5 | 0 | 8 | 54 | C |
-| codex_gpt_5_5 | opencode-nemotron_3_super_ollama_cloud | opencode | nemotron_3_super_ollama_cloud | 2 | 9 | 3 | 7 | 5 | 3 | 8 | 0 | 0 | 4 | 41 | C |
-| codex_gpt_5_5 | opencode-qwen3_5_ollama_cloud | opencode | qwen3_5_ollama_cloud | 9 | 10 | 8 | 10 | 5 | 3 | 8 | 0 | 1 | 5 | 59 | C |
+| codex_gpt_5_5(xhigh) | claude-claude_opus_4_7 | claude | claude_opus_4_7 | 10 | 10 | 10 | 10 | 5 | 10 | 11 | 4 | 2 | 10 | 82 | A |
+| codex_gpt_5_5(xhigh) | claude-deepseek_v4_flash_ollama_cloud | claude | deepseek_v4_flash_ollama_cloud | 10 | 10 | 3 | 4 | 5 | 6 | 8 | 0 | 0 | 7 | 53 | C |
+| codex_gpt_5_5(xhigh) | claude-deepseek_v4_pro_ollama_cloud | claude | deepseek_v4_pro_ollama_cloud | 12 | 10 | 10 | 7 | 5 | 10 | 9 | 0 | 0 | 8 | 71 | B |
+| codex_gpt_5_5(xhigh) | claude-gemma4_ollama_cloud | claude | gemma4_ollama_cloud | 9 | 10 | 10 | 7 | 5 | 4 | 8 | 0 | 0 | 5 | 58 | C |
+| codex_gpt_5_5(xhigh) | claude-glm_5_1_ollama_cloud | claude | glm_5_1_ollama_cloud | 10 | 10 | 8 | 7 | 5 | 4 | 11 | 0 | 0 | 8 | 63 | B |
+| codex_gpt_5_5(xhigh) | claude-kimi_k2_6_ollama_cloud | claude | kimi_k2_6_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 10 | 11 | 0 | 0 | 10 | 78 | B |
+| codex_gpt_5_5(xhigh) | claude-minimax_m2_7_ollama_cloud | claude | minimax_m2_7_ollama_cloud | 9 | 10 | 8 | 7 | 5 | 0 | 9 | 0 | 1 | 8 | 57 | C |
+| codex_gpt_5_5(xhigh) | claude-nemotron_3_super_ollama_cloud | claude | nemotron_3_super_ollama_cloud | 0 | 6 | 2 | 4 | 1 | 0 | 8 | 0 | 0 | 8 | 29 | D |
+| codex_gpt_5_5(xhigh) | claude-qwen3_5_ollama_cloud | claude | qwen3_5_ollama_cloud | 9 | 10 | 8 | 10 | 5 | 0 | 6 | 0 | 8 | 7 | 63 | B |
+| codex_gpt_5_5(xhigh) | codex-codex_gpt_5_5 | codex | codex_gpt_5_5(xhigh) | 15 | 10 | 10 | 10 | 5 | 10 | 11 | 5 | 0 | 10 | 86 | A |
+| codex_gpt_5_5(xhigh) | codex-deepseek_v4_flash_ollama_cloud | codex | deepseek_v4_flash_ollama_cloud | 15 | 10 | 10 | 10 | 5 | 7 | 8 | 0 | 0 | 9 | 74 | B |
+| codex_gpt_5_5(xhigh) | codex-deepseek_v4_pro_ollama_cloud | codex | deepseek_v4_pro_ollama_cloud | 15 | 10 | 10 | 10 | 3 | 5 | 13 | 0 | 0 | 10 | 76 | B |
+| codex_gpt_5_5(xhigh) | codex-gemma4_ollama_cloud | codex | gemma4_ollama_cloud | 7 | 9 | 8 | 5 | 5 | 0 | 4 | 0 | 0 | 6 | 44 | C |
+| codex_gpt_5_5(xhigh) | codex-glm_5_1_ollama_cloud | codex | glm_5_1_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 7 | 9 | 0 | 0 | 10 | 73 | B |
+| codex_gpt_5_5(xhigh) | codex-kimi_k2_6_ollama_cloud | codex | kimi_k2_6_ollama_cloud | 13 | 10 | 10 | 10 | 5 | 7 | 8 | 0 | 0 | 7 | 70 | B |
+| codex_gpt_5_5(xhigh) | codex-minimax_m2_7_ollama_cloud | codex | minimax_m2_7_ollama_cloud | 9 | 10 | 8 | 10 | 2 | 4 | 6 | 0 | 0 | 9 | 58 | C |
+| codex_gpt_5_5(xhigh) | codex-nemotron_3_super_ollama_cloud | codex | nemotron_3_super_ollama_cloud | 0 | 7 | 8 | 1 | 1 | 0 | 2 | 0 | 0 | 7 | 26 | D |
+| codex_gpt_5_5(xhigh) | codex-qwen3_5_ollama_cloud | codex | qwen3_5_ollama_cloud | 12 | 10 | 10 | 10 | 3 | 7 | 9 | 0 | 0 | 7 | 68 | B |
+| codex_gpt_5_5(xhigh) | cursor-composer_2_0 | cursor | composer_2_0 | 12 | 10 | 10 | 7 | 5 | 10 | 11 | 5 | 0 | 10 | 80 | B |
+| codex_gpt_5_5(xhigh) | cursor-composer_2_5 | cursor | composer_2_5 | 12 | 10 | 10 | 10 | 5 | 10 | 11 | 5 | 0 | 10 | 83 | A |
+| codex_gpt_5_5(xhigh) | opencode-deepseek_v4_flash_ollama_cloud | opencode | deepseek_v4_flash_ollama_cloud | 7 | 9 | 8 | 10 | 5 | 8 | 8 | 5 | 0 | 8 | 68 | B |
+| codex_gpt_5_5(xhigh) | opencode-deepseek_v4_pro_ollama_cloud | opencode | deepseek_v4_pro_ollama_cloud | 11 | 10 | 8 | 10 | 5 | 8 | 8 | 5 | 0 | 10 | 75 | B |
+| codex_gpt_5_5(xhigh) | opencode-gemma4_ollama_cloud | opencode | gemma4_ollama_cloud | 10 | 10 | 8 | 7 | 5 | 4 | 4 | 0 | 0 | 5 | 53 | C |
+| codex_gpt_5_5(xhigh) | opencode-glm_5_1_ollama_cloud | opencode | glm_5_1_ollama_cloud | 12 | 10 | 10 | 10 | 5 | 10 | 9 | 0 | 0 | 10 | 76 | B |
+| codex_gpt_5_5(xhigh) | opencode-kimi_k2_6_ollama_cloud | opencode | kimi_k2_6_ollama_cloud | 8 | 10 | 3 | 10 | 5 | 2 | 8 | 0 | 0 | 8 | 54 | C |
+| codex_gpt_5_5(xhigh) | opencode-minimax_m2_7_ollama_cloud | opencode | minimax_m2_7_ollama_cloud | 6 | 8 | 8 | 4 | 1 | 8 | 6 | 5 | 0 | 8 | 54 | C |
+| codex_gpt_5_5(xhigh) | opencode-nemotron_3_super_ollama_cloud | opencode | nemotron_3_super_ollama_cloud | 2 | 9 | 3 | 7 | 5 | 3 | 8 | 0 | 0 | 4 | 41 | C |
+| codex_gpt_5_5(xhigh) | opencode-qwen3_5_ollama_cloud | opencode | qwen3_5_ollama_cloud | 9 | 10 | 8 | 10 | 5 | 3 | 8 | 0 | 1 | 5 | 59 | C |
 
 ### Per-harness std dev by dimension (contest harnesses only)
 | Harness | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | D10 |
