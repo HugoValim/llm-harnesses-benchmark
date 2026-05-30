@@ -28,13 +28,12 @@ class TestNumRunsConfig(unittest.TestCase):
         import json
 
         config_path = REPO_ROOT / "config" / "models.json"
-        config = resolve_build_harness_config(
-            json.loads(config_path.read_text()),
-            config_path,
-            "codex",
-        )
+        raw = json.loads(config_path.read_text())
+        expected = {m["slug"]: m["num_runs"] for m in raw["models"]}
+        config = resolve_build_harness_config(raw, config_path, "codex")
         self.assertTrue(config["models"])
-        self.assertTrue(all(m.get("num_runs") == 3 for m in config["models"]))
+        for model in config["models"]:
+            self.assertEqual(model.get("num_runs"), expected[model["slug"]])
 
 
 class TestReplicateHelpers(unittest.TestCase):

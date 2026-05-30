@@ -1,21 +1,12 @@
 {
   "models": [
     {
-      "slug": "claude_sonnet_4_6",
-      "label": "Claude Sonnet 4.6",
-      "provider": "anthropic",
-      "id": "claude-sonnet-4-6",
-      "opencode_id": "openrouter/anthropic/claude-sonnet-4.6",
-      "num_runs": 3,
-      "selection_reason": "Reference Claude Sonnet model for build, audit, and meta-analysis runs."
-    },
-    {
       "slug": "claude_opus_4_7",
       "label": "Claude Opus 4.7",
       "provider": "anthropic",
       "id": "claude-opus-4-7",
       "opencode_id": "openrouter/anthropic/claude-opus-4.7",
-      "num_runs": 3,
+      "num_runs": 1,
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
     },
     {
@@ -24,24 +15,8 @@
       "provider": "openai",
       "id": "gpt-5.5",
       "codex_reasoning_effort": "xhigh",
-      "num_runs": 3,
+      "num_runs": 1,
       "selection_reason": "Codex GPT-5.5 with extra-high reasoning. Verify availability with `codex debug models`."
-    },
-    {
-      "slug": "codex_gpt_5_4",
-      "label": "GPT-5.4 (Codex / ChatGPT)",
-      "provider": "openai",
-      "id": "gpt-5.4",
-      "num_runs": 3,
-      "selection_reason": "Codex CLI baseline model. Edit the harness mapping if your catalog uses a different tag."
-    },
-    {
-      "slug": "codex_gpt_5_3_codex",
-      "label": "GPT-5.3-Codex (Codex CLI)",
-      "provider": "openai",
-      "id": "gpt-5.3-codex",
-      "num_runs": 3,
-      "selection_reason": "Codex-tuned baseline model; confirm with `codex debug models`."
     },
     {
       "slug": "composer_2_5",
