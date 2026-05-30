@@ -21,7 +21,7 @@ from benchmark.result_validation import rederive_status  # noqa: E402
 from benchmark.stream_state import ActionKind, EventStreamState  # noqa: E402
 from benchmark.rate_limit import RateLimitWaitPolicy  # noqa: E402
 from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit  # noqa: E402
-from run_benchmark import _phase_hit_usage_limit  # noqa: E402
+from benchmark.campaign_dispatch import phase_hit_usage_limit  # noqa: E402
 
 
 class TestContainsUsageLimit(unittest.TestCase):
@@ -81,12 +81,12 @@ class TestDerivePhaseStatusUsageLimit(unittest.TestCase):
 class TestPhaseHitUsageLimit(unittest.TestCase):
     def test_top_level_status(self) -> None:
         self.assertTrue(
-            _phase_hit_usage_limit({"status": USAGE_LIMIT_REACHED, "phases": []})
+            phase_hit_usage_limit({"status": USAGE_LIMIT_REACHED, "phases": []})
         )
 
     def test_nested_phase(self) -> None:
         self.assertTrue(
-            _phase_hit_usage_limit(
+            phase_hit_usage_limit(
                 {
                     "status": "failed",
                     "phases": [{"status": USAGE_LIMIT_REACHED}],
@@ -95,8 +95,8 @@ class TestPhaseHitUsageLimit(unittest.TestCase):
         )
 
     def test_empty_payload(self) -> None:
-        self.assertFalse(_phase_hit_usage_limit(None))
-        self.assertFalse(_phase_hit_usage_limit({}))
+        self.assertFalse(phase_hit_usage_limit(None))
+        self.assertFalse(phase_hit_usage_limit({}))
 
 
 class TestRunVariantUsageLimitStatus(unittest.TestCase):
