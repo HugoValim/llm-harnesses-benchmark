@@ -1,7 +1,14 @@
 # Meta-analysis: codex_gpt_5_5(xhigh) audit reports
 
 ## 1. Executive summary
-**Best harness overall** (opencode/codex/claude contest, cross-harness cohort only): `codex` with avg total 61.1/100 (N=8 runs, std dev 17.7), narrowly ahead of opencode (60.0) and claude (59.0) on the shared Ollama grid; single-harness leader anchors (`codex_gpt_5_5(xhigh)`, `claude_opus_4_7`) are excluded from this comparison (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:10`). Cursor-agent Composer runs (`cursor-composer_2_5`, `cursor-composer_2_0`) avg 81.5/100 but are **model-only benchmarks** excluded from the harness contest. **Best model overall**: `deepseek_v4_pro_ollama_cloud` with avg total 74.0/100 across 3 contest harnesses; it is the highest eligible model after suppressing single-harness and cursor-only leaders and stays consistent across claude/codex/opencode. **Best open-source model**: `deepseek_v4_pro_ollama_cloud` with cross-harness avg 74.0/100 across 3 contest harnesses; its codex run leads the family at 76/100 with full D1/D3/D4/D10 (`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md:8`). The clearest harness-attributable pattern is opencode's relative strength on D8 secrets/config versus claude/codex, while claude uniquely owns CF#12 raw-WebSocket substitutions (`audit-reports/codex_gpt_5_5/claude-qwen3_5_ollama_cloud/report.md:31`). The single most important universal blind spot is D9 Production hardening: contest per-harness averages are claude=1.2 / codex=0.0 / opencode=0.1 on a 10-point dimension. Harness CLI versions are all `unknown` in the rollup, with no `mixed-version` cohort reported. Calibration verdict: **FAIL** because D9 floors out and median D10 is 8.0 despite common production/security gaps.
+
+- **Best harness overall**: `codex` — 61.1/100 avg (N=8, std dev 17.7). Runners-up: opencode 60.0, claude 59.0. *Statistical tie* (margin ≤3 on N≤8).
+- **Best model overall**: `codex_gpt_5_5(xhigh)` — 86.0/100 under `codex` (top contest-harness run; single-harness anchor — not on the shared Ollama grid).
+- **Best open-source model overall**: `deepseek_v4_pro_ollama_cloud` — 74.0/100 cross-harness avg across 3 contest harnesses (std dev 2.6; best on the shared Ollama Cloud grid).
+- **Cursor agent runs**: N=2, avg 81.5 — model-only benchmarks; excluded from harness contest.
+- **Universal blind spot candidate**: D9 Production hardening — claude 1.2 / codex 0.0 / opencode 0.1 on a 10-point dimension.
+- **Harness-attributable pattern**: opencode leads on D8 secrets/config vs claude/codex; claude uniquely owns CF#12 raw-WebSocket substitutions (see sections 5 and 7).
+- **Calibration**: **FAIL** — D9 floors out; median D10 is 8.0 despite common production/security gaps (section 8).
 
 ## 2. Best model overall
 | Rank | Harness | Model slug | Total | Tier |
