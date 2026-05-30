@@ -204,6 +204,7 @@ def run_ai_meta_analysis(
     force: bool = False,
     rate_limit_policy: RateLimitWaitPolicy | None = None,
     meta_runs_dir: Path | None = None,
+    benchmark_projects_root: Path | None = None,
 ) -> dict:
     """Dispatch an LLM to write the meta-analysis markdown file.
 
@@ -241,6 +242,7 @@ def run_ai_meta_analysis(
     precomputed_rollup = build_precomputed_rollup(
         source_dirs=resolved_inputs,
         display_slug_map=display_slug_map,
+        benchmark_projects_root=benchmark_projects_root,
     )
     prompt = build_meta_prompt(
         prompt_template,

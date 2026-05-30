@@ -361,6 +361,36 @@ def test_build_precomputed_rollup_includes_ollama_ranking(tmp_path: Path) -> Non
     assert "deepseek_v4_pro_ollama_cloud" in rollup
 
 
+def test_build_precomputed_rollup_includes_d9_subcheck(tmp_path: Path) -> None:
+    run_root = tmp_path / "run_01"
+    input_dir = run_root / "audit-reports" / "auditor_a"
+    input_dir.mkdir(parents=True)
+    target = input_dir / "codex-demo"
+    target.mkdir()
+    (target / "report.md").write_text(
+        "\n".join(
+            [
+                "C. **Total score / 100**",
+                "",
+                "**70 / 100**",
+            ]
+        )
+    )
+    project = run_root / "projects" / "codex-demo" / "project"
+    project.mkdir(parents=True)
+    (project / "docker-compose.yml").write_text(
+        "services:\n  web:\n    restart: unless-stopped\n"
+    )
+    (project / "settings.py").write_text("LOGGING = {}\n")
+
+    rollup = build_precomputed_rollup(
+        source_dirs=[input_dir],
+        benchmark_projects_root=run_root / "projects",
+    )
+    assert "## D9 sub-check cohort" in rollup
+    assert "D9.3 restart" in rollup
+
+
 def test_validate_meta_analysis_ollama_ranking_detects_mismatch(
     tmp_path: Path,
 ) -> None:

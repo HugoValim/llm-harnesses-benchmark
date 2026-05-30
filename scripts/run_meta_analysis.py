@@ -320,6 +320,9 @@ def main() -> int:
             force=args.force,
             rate_limit_policy=rate_limit_policy_from_args(args),
             meta_runs_dir=meta_runs_dir,
+            benchmark_projects_root=(
+                run_layout.projects_root if run_layout is not None else None
+            ),
         )
     except NotImplementedError as exc:
         print(f"Meta-analysis dispatch failed: {exc}", file=sys.stderr)

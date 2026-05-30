@@ -1206,6 +1206,7 @@ def build_precomputed_rollup(
     *,
     source_dirs: list[Path] | None = None,
     display_slug_map: dict[str, str] | None = None,
+    benchmark_projects_root: Path | None = None,
 ) -> str:
     """Full deterministic rollup injected into the meta-analysis prompt."""
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
@@ -1253,6 +1254,14 @@ def build_precomputed_rollup(
             display_slug_map=display_slug_map,
         ).rstrip(),
     ]
+    from benchmark.d9_preflight import build_d9_subcheck_cohort_section  # noqa: PLC0415
+
+    d9_section = build_d9_subcheck_cohort_section(
+        benchmark_projects_root=benchmark_projects_root,
+        source_dirs=source_dirs,
+    ).rstrip()
+    if d9_section:
+        parts.extend(["", d9_section])
     return "\n".join(parts) + "\n"
 
 
