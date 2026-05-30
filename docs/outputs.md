@@ -1,6 +1,9 @@
 # Outputs
 
-## Benchmark Results
+Runtime paths used during benchmark runs. For git-published campaign artifacts see
+[`published-data.md`](published-data.md).
+
+## Benchmark results
 
 Each benchmark run writes to:
 
@@ -10,36 +13,33 @@ results/<harness>-<slug>/
 
 Common files:
 
-- `project/`: generated Django project.
-- `result.json`: status, timing, tokens, and summary metadata (no USD cost — see audit `generation-metrics.json`).
-- `prompt.txt`: prompt copy when the harness records it.
-- `stream.ndjson`: stream events for Claude-style runs.
-- `stderr.log`: captured stderr for Claude-style runs.
-- `opencode-output.ndjson`: opencode/codex stream events.
-- `opencode-stderr.log`: opencode/codex stderr.
-- `session-export.json`: optional opencode session export.
-- `followup-*`: optional phase 2 artifacts.
+- `project/` — generated Django project (untrusted code)
+- `result.json` — status, timing, tokens (no USD cost)
+- `prompt.txt` — prompt copy when recorded
+- `stream.ndjson` / `opencode-output.ndjson` — agent stream events
+- `stderr.log` / `opencode-stderr.log` — captured stderr
+- `session-export.json` — optional opencode session export
+- `followup-*` — optional phase 2 artifacts
 
-Generated projects are untrusted code. Prefer harness scripts for verification
-and avoid running generated commands against shared services.
+Generated projects may contain unsafe commands. Prefer harness scripts for verification.
 
-## Runtime Verification
+## Runtime verification
 
-Runtime verification writes per-project artifacts under:
+Per-project artifacts:
 
 ```text
 results/<harness>-<slug>/project/_runtime_verification/
 ```
 
-The aggregate runtime summary is:
+Aggregate summary:
 
 ```text
 results/runtime_verification_summary.json
 ```
 
-## Audit Reports
+## Audit reports
 
-Each audit pair writes to:
+Each `(auditor, target)` pair writes to:
 
 ```text
 audit-reports/<auditor_slug>/<target_slug>/
@@ -47,17 +47,27 @@ audit-reports/<auditor_slug>/<target_slug>/
 
 Common files:
 
-- `report.md`: markdown rubric report.
-- `result.json`: audit run metadata.
-- `generation-metrics.json`: precomputed generation time, tokens, and `estimated_cost_usd` from `docs/PRICING.md` + benchmark `result.json`.
-- `stream.ndjson`: raw auditor stream.
-- `stderr.log`: auditor stderr.
+- `report.md` — markdown rubric report (sections A–I)
+- `result.json` — audit run metadata
+- `generation-metrics.json` — generation time, tokens, `estimated_cost_usd` from [`PRICING.md`](PRICING.md)
+- `stream.ndjson`, `stderr.log` — raw auditor stream (excluded from published campaigns)
 
-Comparison outputs are generated from existing audit reports and should not be
-hand-edited.
+Auditor-level outputs:
+
+```text
+audit-reports/<auditor_slug>/comparison.md
+audit-reports/<auditor_slug>/meta-analysis.md
+audit-reports/latest/meta-analysis.md   # symlink → current auditor dir
+```
+
+Comparison and meta-analysis files are generated — do not hand-edit.
+
+## Published campaigns
+
+After `publish_campaign.py`, git tracks a curated subset documented in
+`data/campaigns/<id>/manifest.json`. See [`data/README.md`](../data/README.md).
 
 ## Cleanup
 
-`results/` and `audit-reports/` can be large and may contain generated code,
-logs, and environment-derived paths. Review before sharing outside the machine.
-Do not commit secrets or generated auth files.
+Unpublished `results/` and `audit-reports/` trees can be large (venv, stream logs).
+Review before sharing outside the machine. Do not commit secrets or generated auth files.

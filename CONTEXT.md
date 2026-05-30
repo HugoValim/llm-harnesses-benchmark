@@ -54,4 +54,12 @@ Post-run validation performed by `scripts/analyze_results_runtime.py`. Discovers
 
 ## meta-analysis
 
-Role 2 output produced by `scripts/run_meta_analysis.py`. Reads every `audit-reports/<auditor>/<target>/report.md` and writes `audit-reports/meta-analysis.md` with cross-auditor verdicts: best harness, best model, cost, and per-dimension winners.
+Role 2 output produced by `scripts/run_meta_analysis.py`. Reads every `audit-reports/<auditor>/<target>/report.md` and writes `audit-reports/<auditor>/meta-analysis.md` with cross-run verdicts: best harness, best model, cost, and per-dimension winners. The stable entry point is `audit-reports/latest/meta-analysis.md` (symlink to the current auditor directory).
+
+## campaign
+
+A published benchmark round indexed under `data/campaigns/<id>/manifest.json`. Documents prompt versions, auditor slug, target list, and paths to published audit/benchmark artifacts. `data/campaigns/latest` symlinks to the current campaign.
+
+## published data
+
+Curated subset of `results/` and `audit-reports/` tracked in git after `scripts/publish_campaign.py` strips ephemeral artifacts (venv, stream logs, tool caches) and updates `.gitignore` allowlists. See `docs/published-data.md`.

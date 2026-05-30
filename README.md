@@ -1,189 +1,232 @@
 # LLM Python Coding Benchmark
 
-Benchmark harness for autonomous coding agents building the same Python app: a
-Django + Channels chat SPA that streams responses from a local Ollama model.
+Autonomous coding agents receive the same fixed brief — a Django + Channels chat SPA
+that streams from a local Ollama model — and run through four harness backends
+(opencode, codex, claude, cursor). This project measures **how well each harness and
+model delivers spec-compliant code**, using a structured LLM audit rubric and a
+cross-run meta-analysis.
 
-The benchmark records how each agent/harness performs, then supports automated
-runtime verification and LLM-based audit passes over the generated projects.
+## Latest results
 
-## What agents build
+| Field | Link |
+|-------|------|
+| Campaign | [`2026-05-ollama-cloud-v3.2`](data/campaigns/2026-05-ollama-cloud-v3.2/manifest.json) |
+| Meta-analysis | [`audit-reports/latest/meta-analysis.md`](audit-reports/latest/meta-analysis.md) |
+| Score index | [`audit-reports/codex_gpt_5_5/comparison.md`](audit-reports/codex_gpt_5_5/comparison.md) |
+| Generated code | [`results/`](results/) (28 targets listed in manifest) |
+| Auditor | `codex_gpt_5_5` |
 
-Each model receives `prompts/benchmark_prompt.txt` and is asked to build:
+Headline from the latest meta-analysis: **best open-source model**
+`deepseek_v4_pro_ollama_cloud` (74.0/100 cross-harness mean); **best contest harness**
+`codex` (61.1/100 avg on the shared Ollama grid). See the full report for harness
+pairings, dimension breakdown, cost, and calibration checks.
 
-- Django + Django Channels with an ASGI WebSocket consumer.
-- A real local Ollama integration using `OLLAMA_HOST` and `OLLAMA_MODEL`.
-- HTMX + WebSocket extension or small vanilla JavaScript for streaming UI.
-- Tailwind styling.
-- pytest, ruff, mypy, bandit, coverage.py, and pip-audit setup.
-- Dockerfile + Docker Compose running Daphne or Uvicorn.
+Symlinks [`data/campaigns/latest`](data/campaigns/latest) and
+[`audit-reports/latest`](audit-reports/latest) are retargeted by
+[`scripts/publish_campaign.py`](scripts/publish_campaign.py) on each publish — README
+links stay stable across campaigns.
 
-The follow-up prompt in `prompts/benchmark_followup_prompt.txt` asks the agent
-to boot the app and validate Docker when that phase is enabled for the model.
+## Artifact map
 
-## Project layout
+Every published campaign is documented in a manifest under `data/campaigns/<id>/`.
+The manifest lists target slugs and points at the audit tree; generated code lives
+under `results/` with the **same target slug**.
 
-```text
-python-benchmark/
-├── README.md
-├── CONTEXT.md
-├── AGENTS.md
-├── CLAUDE.md
-├── config/
-│   ├── harnesses.json
-│   └── models.json
-├── prompts/
-│   ├── benchmark_prompt.txt
-│   ├── benchmark_followup_prompt.txt
-│   ├── audit_prompt_template.txt
-│   └── audit_meta_analysis_prompt.txt
-├── scripts/
-│   ├── run_benchmark.py
-│   ├── run_full_benchmark.py
-│   ├── run_audit.py
-│   ├── run_meta_analysis.py
-│   ├── validate_results.py
-│   ├── analyze_results_runtime.py
-│   ├── browser_probe.mjs
-│   └── benchmark/
-├── scripts/tests/
-├── docs/
-│   ├── configuration.md
-│   ├── workflows.md
-│   ├── outputs.md
-│   └── troubleshooting.md
-├── results/
-└── audit-reports/
+```mermaid
+flowchart TB
+  manifest["data/campaigns/latest/manifest.json"]
+  manifest --> meta["audit-reports/latest/meta-analysis.md"]
+  manifest --> comparison["comparison.md per-target scores"]
+  manifest --> targets["target slug: harness-model"]
+  targets --> results["results/harness-model/project/"]
+  targets --> report["audit-reports/auditor/harness-model/report.md"]
 ```
 
-`results/` and `audit-reports/` are runtime output locations. Treat generated
-projects under `results/<harness>-<slug>/project/` as untrusted code.
+**Join key:** target slug `<harness>-<model>` (e.g. `codex-deepseek_v4_pro_ollama_cloud`)
+is identical in `results/` and `audit-reports/<auditor>/`.
 
-## Prerequisites
+**Per-target index:** [`comparison.md`](audit-reports/codex_gpt_5_5/comparison.md) lists
+all targets with dimension scores — use it to find a run, then open `report.md` (rubric)
+or `results/<target>/project/` (source).
 
-- Python 3.10+ available as `python3`.
-- `pytest` for the harness regression suite.
-- Docker + Docker Compose for runtime verification.
-- Node for `scripts/browser_probe.mjs`.
-- Ollama reachable through `OLLAMA_HOST` for runtime verification.
-- One or more agent CLIs on `PATH`: `opencode`, `codex`, `claude`, or `agent`
-  for Cursor CLI.
-- Required auth for the selected harness/provider, such as `OPENROUTER_API_KEY`
-  for OpenRouter-backed opencode runs or CLI login for subscription-backed
-  Codex, Claude, and Cursor runs.
+**Example:** `codex-deepseek_v4_pro_ollama_cloud` →
+[`report.md`](audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md) ·
+[`project/`](results/codex-deepseek_v4_pro_ollama_cloud/project/)
 
-Do not commit API keys, generated home config, or benchmark credentials.
+**Campaign history:** [`data/README.md`](data/README.md)
 
-## Quickstart
+## How we assess models and harnesses
 
-Run one benchmark model:
+This harness compares autonomous coding agents on a **fixed implementation brief**.
+Every `(harness, model)` pair receives the same prompts and is scored with the same
+rubric. Cross-harness verdicts come from a second LLM pass that reads all audit
+reports — it does not re-grade the generated code.
 
-```bash
-python3 scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
+### Pipeline overview
+
+```mermaid
+flowchart LR
+  brief["benchmark_prompt.txt"] --> gen["Phase 1+2 generation"]
+  gen --> results["results/harness-slug"]
+  results --> audit["Role 1: run_audit.py"]
+  audit --> reports["audit-reports/auditor/target/report.md"]
+  reports --> meta["Role 2: run_meta_analysis.py"]
+  meta --> verdict["meta-analysis.md"]
+  results --> runtime["analyze_results_runtime.py"]
+  runtime --> boot["boot / Docker / browser probe"]
 ```
 
-Check whether a benchmark run finished cleanly (harness status + project scaffold):
+| Phase | Script | Input | Output |
+|-------|--------|-------|--------|
+| Generation | `run_benchmark.py` | [`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt) + optional follow-up | `results/<harness>-<slug>/project/` |
+| Role 1 audit | `run_audit.py` | Generated `project/` + [`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt) | `audit-reports/<auditor>/<target>/report.md` |
+| Role 2 meta-analysis | `run_meta_analysis.py` | All Role 1 reports + [`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt) | `audit-reports/<auditor>/meta-analysis.md` |
+| Runtime verification (optional) | `analyze_results_runtime.py` | Generated `project/` | Boot/Docker/browser pass-fail under `_runtime_verification/` |
 
-```bash
-python3 scripts/validate_results.py --only opencode-claude_sonnet_4_6
-python3 scripts/validate_results.py --remove-on-fail
-```
+### Fixed task (generation)
 
-`run_benchmark.py` runs the same checks after each model and retries from scratch
-up to three times on failure (see `--max-validation-retries` / `--no-result-validation`).
+**Prompt version:** `benchmark-v3.2` ([`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt))
 
-Validate generated projects boot locally and in Docker:
+Each agent must build, in the current working directory:
 
-```bash
-python3 scripts/analyze_results_runtime.py --only opencode-claude_sonnet_4_6
-```
+- Django + Django Channels ASGI app with an `AsyncWebsocketConsumer`
+- HTMX WebSocket extension for streaming UI (no raw `new WebSocket(...)` path)
+- `langchain-ollama` `ChatOllama` as the only LLM client (no direct `ollama` package)
+- Tailwind via the official CLI (source CSS + built static CSS)
+- `OLLAMA_HOST` / `OLLAMA_MODEL` from environment (defaults documented in `.env.example`)
+- pytest, ruff, mypy, bandit, coverage.py, pip-audit
+- Dockerfile + Docker Compose with Daphne or Uvicorn
+- Real README with setup, Tailwind build, tests, and Docker commands
 
-Run one audit pass:
+**Phase 2** ([`prompts/benchmark_followup_prompt.txt`](prompts/benchmark_followup_prompt.txt),
+`benchmark-followup-v3.2`) asks the agent to boot the app, run tests and static checks,
+validate Docker, and record results in README or `VERIFY.md`.
 
-```bash
-python3 scripts/run_audit.py \
-  --harness claude \
-  --model claude_opus_4_7 \
-  --target opencode-claude_sonnet_4_6
-```
+Four harness backends run the same brief: **opencode**, **codex**, **claude**, **cursor**
+(see [`docs/configuration.md`](docs/configuration.md)).
 
-Run harness tests:
+### Role 1 audit (rubric scoring)
 
-```bash
-pytest scripts/tests
-```
+**Prompt version:** `audit-v3.8` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
 
-## Core commands
+An LLM **auditor** reads one generated `project/` and writes a structured report with
+sections A–I. The auditor verifies API claims against the project's own installed
+packages (venv glob) before calling anything "hallucinated."
 
-```bash
-# Benchmark by harness. Model rows come from config/models.json.
-python3 scripts/run_benchmark.py --harness opencode
-python3 scripts/run_benchmark.py --harness codex
-python3 scripts/run_benchmark.py --harness claude
-python3 scripts/run_benchmark.py --harness cursor
+#### Dimension weights (100 points total)
 
-# Select models. Repeat --model for more than one slug.
-python3 scripts/run_benchmark.py --harness codex --model codex_gpt_5_5
+| # | Dimension | Max |
+|---|-----------|----:|
+| D1 | Deliverable completeness | 15 |
+| D2 | LLM integration correctness | 10 |
+| D3 | Test quality | 10 |
+| D4 | Error handling | 10 |
+| D5 | Persistence / multi-turn | 5 |
+| D6 | Streaming & frontend | 10 |
+| D7 | Architecture | 15 |
+| D8 | Secrets & config hygiene | 5 |
+| D9 | Production hardening | 10 |
+| D10 | Code quality | 10 |
 
-# Use a non-default model registry.
-python3 scripts/run_benchmark.py --harness codex --models-config config/models.json
+Deduction triggers are defined per dimension in the audit prompt. Universal blind spots
+(U1–U8) map to specific dimensions.
 
-# Force a rerun even when result.json has a terminal status.
-python3 scripts/run_benchmark.py --harness opencode --model kimi_k2_6_ollama_cloud --force
+#### Critical failures
 
-# Full build + audit + meta-analysis pipeline.
-python3 scripts/run_full_benchmark.py --list-steps
-python3 scripts/run_full_benchmark.py -- --force
-```
+Section **F** lists auto-classified critical failures (CF#1–CF#13), for example:
 
-See `docs/workflows.md` for the benchmark, audit, meta-analysis, and runtime
-verification flows.
+- CF#1 — hardcoded secrets or insecure `SECRET_KEY` fallbacks (caps D8 at 0)
+- CF#11 — missing or bare-`pass` WebSocket `disconnect` handler
+- CF#13 — deprecated patterns that cap D10 at 0
 
-## Configuration
+When section F lists **≥3 distinct CF types**, the practical tier is capped at **B**
+even if the numeric total would be higher.
 
-The active source of truth is:
+#### Practical tiers
 
-- `config/models.json`: shared model registry.
-- `config/harnesses.json`: harness command metadata.
+| Tier | Score | Meaning |
+|------|------:|---------|
+| A | 81–100 | Ship as-is or with trivial patches |
+| B | 61–80 | Sound architecture; minor gaps |
+| C | 41–60 | Major rework needed |
+| D | 0–40 | Non-viable or inspiration only |
 
-Routing is derived from each model's `provider` and selected `--harness`. For
-example, `provider: "openai"` runs on Codex, `provider: "anthropic"` runs on
-Claude, `provider: "cursor"` runs on Cursor, and `provider: "ollama_cloud"` can
-run through Claude, Codex, or opencode with `ollama launch` routing.
+#### Calibration anchors
 
-See `docs/configuration.md` for field-level details.
+Reference runs from **`gpt_5_5`** and **`claude_opus_4_7`** are expected in the
+**95–97 / 100** band for near-perfect submissions — not 100 by default. Scores above
+92 for non-leader runs require zero critical failures and evidence that all universal
+blind spots were checked.
 
-## Outputs
+#### Cost and generation metrics
 
-- `results/<harness>-<slug>/`: generated project, logs, prompts, and result
-  metadata for one benchmark run.
-- `audit-reports/<auditor>/<target>/`: one audit report and audit metadata.
-- `results/runtime_verification_summary.json`: runtime verification summary.
+Before audit dispatch, the harness writes `generation-metrics.json` from
+[`docs/PRICING.md`](docs/PRICING.md) and the benchmark `result.json`. Section **H** of
+`report.md` copies those values verbatim (tokens, wall time, estimated USD).
 
-See `docs/outputs.md` for artifact ownership and cleanup guidance.
+Example report:
+[`audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md`](audit-reports/codex_gpt_5_5/codex-deepseek_v4_pro_ollama_cloud/report.md).
 
-## Result tiers
+### Role 2 meta-analysis (cross-run verdicts)
 
-Use audit reports and runtime verification to classify generated projects:
+**Prompt version:** `meta-v3.11`
+([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
-- Tier 1: correct Ollama + Channels wiring, tests, local boot, Docker boot, and
-  browser probe success.
-- Tier 2: mostly correct primary path with integration, Docker, test, or routing
-  defects.
-- Tier 3: hallucinated or non-working primary integration.
+The meta-analyst reads every `report.md` under one auditor directory and produces
+[`meta-analysis.md`](audit-reports/latest/meta-analysis.md) with:
 
-Tier classification requires reading generated code or running the audit workflow.
+- **Best harness overall** — opencode / codex / claude contest only (same model grid)
+- **Best model overall** — cross-harness averages on shared Ollama Cloud models
+- **Open-source model ranking** — Ollama Cloud slugs averaged across contest harnesses
+- **Cross-harness pairings** — same model, different harness (dimension deltas)
+- **Critical-failure inventory** — universal vs harness-attributable patterns
+- **Calibration check** — rubric sanity (e.g. D9 production hardening floor)
+
+Numeric tables in sections 2, 2a, 3, and 4 are **precomputed** by
+[`scripts/benchmark/audit_rollup.py`](scripts/benchmark/audit_rollup.py) before LLM
+dispatch. The meta-analyst must copy rollup values exactly; it reads individual reports
+only for citations and narrative.
+
+**Excluded from harness contest:**
+
+- **Cursor** runs (`cursor-<model>`) — model-only benchmarks, not a fourth harness entrant
+- **Single-harness leaders** (`codex_gpt_5_5`, `claude_opus_4_7`) — not run on every contest harness
+
+### Runtime verification (supplementary)
+
+[`scripts/analyze_results_runtime.py`](scripts/analyze_results_runtime.py) is **not** the
+rubric score. It validates whether a project actually boots:
+
+1. Discover `manage.py`, create isolated venv, install deps, migrate
+2. Run `runserver`, headless Chromium browser probe (send message, check stream)
+3. `docker build`, `docker compose up`, repeat browser probe
+
+Use this for operational Tier 1/2/3 classification alongside audit scores:
+
+- **Tier 1** — correct wiring, tests, local boot, Docker boot, browser probe success
+- **Tier 2** — mostly correct with integration, Docker, or test defects
+- **Tier 3** — hallucinated or non-working primary integration
+
+Extended notes and prompt version history:
+[`docs/methodology.md`](docs/methodology.md)
+
+## Documentation
+
+| Topic | Doc |
+|-------|-----|
+| Assessment methodology (detailed reference) | [docs/methodology.md](docs/methodology.md) |
+| Running the harness | [docs/running.md](docs/running.md) |
+| Published campaigns & git data | [docs/published-data.md](docs/published-data.md) · [data/README.md](data/README.md) |
+| Configuration | [docs/configuration.md](docs/configuration.md) |
+| Workflows | [docs/workflows.md](docs/workflows.md) |
+| Output artifacts | [docs/outputs.md](docs/outputs.md) |
+| Pricing | [docs/PRICING.md](docs/PRICING.md) |
+| Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Domain glossary | [CONTEXT.md](CONTEXT.md) |
 
 ## Safety
 
-Generated projects may contain unsafe commands, dependency choices, or broken
-configuration. Prefer `scripts/analyze_results_runtime.py` over ad hoc manual
-execution. Do not run generated migrations, shell scripts, or installers against
-shared services.
-
-Secrets must stay in environment variables, CLI auth stores, or ignored local
-files. If a secret appears in logs or generated files, rotate it.
-
-## Troubleshooting
-
-See `docs/troubleshooting.md` for common issues: missing `python`, missing CLIs,
-agent auth, Docker/Ollama failures, stale opencode locks, and slow runs.
+Generated projects under `results/<harness>-<slug>/project/` are **untrusted code**.
+Prefer `scripts/analyze_results_runtime.py` over ad hoc execution. Do not run generated
+migrations, shell scripts, or installers against shared services. Secrets must stay in
+environment variables or ignored local files — rotate any credential that appears in logs.
