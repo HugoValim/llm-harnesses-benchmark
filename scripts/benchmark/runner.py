@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
+from benchmark.codex_home import codex_env_for_phase, uses_isolated_codex_home
 from benchmark.commands import (
     build_codex_command,
     build_opencode_command,
@@ -597,8 +598,15 @@ def run_codex_phase(
     )
     wall_start = time.monotonic()
 
-    process_env = os.environ.copy()
-    # Codex uses OPENAI_API_KEY directly — no opencode config needed.
+    result_dir = prompt_path.parent
+    process_env = codex_env_for_phase(
+        os.environ.copy(),
+        result_dir=result_dir,
+        command_prefix=command_prefix,
+    )
+    log_tag = stream_log_prefix(bench.harness, model_slug, phase_name)
+    if uses_isolated_codex_home(command_prefix):
+        print_line(f"[{log_tag}] CODEX_HOME={process_env['CODEX_HOME']}")
 
     process = subprocess.Popen(
         command,
