@@ -5,14 +5,15 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import deque
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from benchmark.config import BenchmarkConfig
 from benchmark.rate_limit import RateLimitWaitPolicy
-from benchmark.replicates import run_replicate_attempts
+from benchmark.replicates import model_num_runs, replicate_log_suffix, run_replicate_attempts
 from benchmark.result_validation import (
     followup_expected,
     validate_benchmark_result,
@@ -87,6 +88,43 @@ class DispatchModelFn(Protocol):
     ) -> dict[str, Any] | None: ...
 
 
+class DispatchReplicateFn(Protocol):
+    """Callable used by parallel dispatch to run one replicate attempt.
+
+    Example:
+        ``dispatch(model, 1, replicate_index=2, num_runs=3)`` returns a payload.
+    """
+
+    def __call__(
+        self,
+        model: dict[str, Any],
+        index: int,
+        replicate_index: int,
+        num_runs: int,
+        *,
+        skip_stale_kill: bool = False,
+    ) -> dict[str, Any] | None: ...
+
+
+@dataclass(frozen=True)
+class ModelReplicateJob:
+    """One parallel work item: a single replicate attempt for one model."""
+
+    model_index: int
+    model: dict[str, Any]
+    replicate_index: int
+    num_runs: int
+
+
+@dataclass(frozen=True)
+class VariantReplicateJob:
+    """One parallel work item: a single replicate attempt for one variant."""
+
+    variant: dict[str, Any]
+    replicate_index: int
+    num_runs: int
+
+
 class RunModelFn(Protocol):
     """Callable shape for opencode/codex model execution.
 
@@ -129,6 +167,43 @@ def benchmark_job_workers(total_models: int, jobs: int) -> int:
     return max(1, min(jobs, total_models))
 
 
+def expand_model_jobs_to_replicate_jobs(
+    job_items: list[tuple[int, dict[str, Any]]],
+) -> list[ModelReplicateJob]:
+    """Expand model-level jobs into one queue item per replicate attempt."""
+    expanded: list[ModelReplicateJob] = []
+    for model_index, model in job_items:
+        num_runs = model_num_runs(model)
+        for replicate_index in range(1, num_runs + 1):
+            expanded.append(
+                ModelReplicateJob(
+                    model_index=model_index,
+                    model=model,
+                    replicate_index=replicate_index,
+                    num_runs=num_runs,
+                )
+            )
+    return expanded
+
+
+def expand_variants_to_replicate_jobs(
+    variants: list[dict[str, Any]],
+) -> list[VariantReplicateJob]:
+    """Expand variant jobs into one queue item per replicate attempt."""
+    expanded: list[VariantReplicateJob] = []
+    for variant in variants:
+        num_runs = model_num_runs(variant)
+        for replicate_index in range(1, num_runs + 1):
+            expanded.append(
+                VariantReplicateJob(
+                    variant=variant,
+                    replicate_index=replicate_index,
+                    num_runs=num_runs,
+                )
+            )
+    return expanded
+
+
 def needs_local_gpu_lock(models: list[dict[str, Any]]) -> bool:
     """True when selected campaign models include local Ollama.
 
@@ -155,8 +230,12 @@ def run_model_job_batch(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
+    dispatch_replicate: DispatchReplicateFn,
 ) -> None:
     """Run model jobs with local GPU serialization and usage-limit aborts.
+
+    Parallel mode schedules individual replicate attempts so a finishing run
+    immediately backfills a worker up to ``workers`` concurrent jobs.
 
     Example:
         ``run_model_job_batch(..., workers=2, harness="codex")`` runs up to two jobs.
@@ -165,7 +244,12 @@ def run_model_job_batch(
     skip_stale_kill = parallel
     if parallel:
         _run_parallel_model_jobs(
-            job_items, workers, harness, abort_flag, local_gpu_lock, dispatch_model
+            job_items,
+            workers,
+            harness,
+            abort_flag,
+            local_gpu_lock,
+            dispatch_replicate,
         )
         return
     _run_sequential_model_jobs(
@@ -206,6 +290,22 @@ def run_model_campaign(
             validate_results,
             max_validation_retries,
             run_model_fn,
+        ),
+        dispatch_replicate=lambda model,
+        index,
+        replicate_index,
+        num_runs,
+        skip_stale_kill=False: _run_model_replicate(
+            model,
+            bench,
+            index,
+            total_models,
+            skip_stale_kill,
+            validate_results,
+            max_validation_retries,
+            run_model_fn,
+            replicate_index,
+            num_runs,
         ),
     )
     return CampaignDispatchResult(usage_limit_aborted=abort_flag.is_set())
@@ -381,13 +481,43 @@ def _run_sequential_variant_jobs(
 def _run_parallel_variant_jobs(
     config: VariantCampaignConfig, jobs: int, abort_flag: threading.Event
 ) -> None:
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [
-            pool.submit(_run_variant_job, config, variant, abort_flag)
-            for variant in config.variants
-        ]
-        for fut in as_completed(futures):
-            _print_model_job_result(*fut.result())
+    replicate_jobs = expand_variants_to_replicate_jobs(config.variants)
+
+    def run_job(job: VariantReplicateJob) -> tuple[str, dict[str, Any] | None, str | None]:
+        return _run_variant_replicate_job(
+            config,
+            job.variant,
+            job.replicate_index,
+            job.num_runs,
+            abort_flag,
+        )
+
+    _run_job_pool(replicate_jobs, jobs, run_job)
+
+
+def _run_variant_replicate_job(
+    config: VariantCampaignConfig,
+    variant: dict[str, Any],
+    replicate_index: int,
+    num_runs: int,
+    abort_flag: threading.Event,
+) -> tuple[str, dict[str, Any] | None, str | None]:
+    slug = str(variant["slug"])
+    suffix = replicate_log_suffix(replicate_index, num_runs)
+    if suffix:
+        print_line(f"[{slug}] starting replicate{suffix}")
+    if abort_flag.is_set():
+        print_line(f"[{slug}] skipped - usage limit active")
+        return slug, None, None
+    try:
+        payload = _run_variant_replicate(
+            config, variant, replicate_index, num_runs
+        )
+        if phase_hit_usage_limit(payload):
+            abort_flag.set()
+        return slug, payload, None
+    except Exception:
+        return slug, None, traceback.format_exc()
 
 
 def _run_variant_job(
@@ -544,30 +674,74 @@ def _print_validation_failure(slug: str, summary: str, issues: list[Any]) -> Non
         print_line(f"  - {issue.code}: {issue.message}")
 
 
+def _run_job_pool(
+    jobs: list[Any],
+    workers: int,
+    run_job: Callable[[Any], tuple[str, dict[str, Any] | None, str | None]],
+) -> None:
+    """Keep up to ``workers`` replicate/model jobs running until the queue is empty."""
+    if not jobs:
+        return
+    worker_count = benchmark_job_workers(len(jobs), workers)
+    if worker_count == 1:
+        for job in jobs:
+            _print_model_job_result(*run_job(job))
+        return
+
+    pending: deque[Any] = deque(jobs)
+    in_flight: set[Future[tuple[str, dict[str, Any] | None, str | None]]] = set()
+
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        while pending or in_flight:
+            while pending and len(in_flight) < worker_count:
+                in_flight.add(pool.submit(run_job, pending.popleft()))
+
+            if not in_flight:
+                break
+
+            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+            for fut in done:
+                _print_model_job_result(*fut.result())
+
+
 def _run_parallel_model_jobs(
     job_items: list[tuple[int, dict[str, Any]]],
     workers: int,
     harness: str,
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
-    dispatch_model: DispatchModelFn,
+    dispatch_replicate: DispatchReplicateFn,
 ) -> None:
     if harness == "opencode":
         kill_stale_opencode_processes()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(
-                _run_model_job_item,
-                item,
-                True,
-                abort_flag,
-                local_gpu_lock,
-                dispatch_model,
+
+    replicate_jobs = expand_model_jobs_to_replicate_jobs(job_items)
+
+    def run_job(job: ModelReplicateJob) -> tuple[str, dict[str, Any] | None, str | None]:
+        suffix = replicate_log_suffix(job.replicate_index, job.num_runs)
+        if suffix:
+            print_line(f"[{job.model['slug']}] starting replicate{suffix}")
+
+        def dispatch_one(
+            model: dict[str, Any], index: int, *, skip_stale_kill: bool = False
+        ) -> dict[str, Any] | None:
+            return dispatch_replicate(
+                model,
+                index,
+                job.replicate_index,
+                job.num_runs,
+                skip_stale_kill=skip_stale_kill,
             )
-            for item in job_items
-        ]
-        for fut in as_completed(futures):
-            _print_model_job_result(*fut.result())
+
+        return _run_model_job_item(
+            (job.model_index, job.model),
+            True,
+            abort_flag,
+            local_gpu_lock,
+            dispatch_one,
+        )
+
+    _run_job_pool(replicate_jobs, workers, run_job)
 
 
 def _run_sequential_model_jobs(

@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.campaign_dispatch import (  # noqa: E402
     VariantCampaignConfig,
     benchmark_job_workers,
+    expand_model_jobs_to_replicate_jobs,
     needs_local_gpu_lock,
     run_model_campaign,
     run_model_job_batch,
@@ -45,15 +46,54 @@ class TestLocalGpuLock(unittest.TestCase):
         )
 
 
-class TestRunModelJobBatch(unittest.TestCase):
-    def test_parallel_submits_all_models(self) -> None:
-        calls: list[str] = []
+class TestExpandModelJobs(unittest.TestCase):
+    def test_expands_num_runs_per_model(self) -> None:
+        items = [
+            (1, {"slug": "a", "num_runs": 2}),
+            (2, {"slug": "b", "num_runs": 1}),
+        ]
+        expanded = expand_model_jobs_to_replicate_jobs(items)
+        self.assertEqual(len(expanded), 3)
+        self.assertEqual(
+            [(job.model["slug"], job.replicate_index) for job in expanded],
+            [("a", 1), ("a", 2), ("b", 1)],
+        )
 
-        def dispatch(
+
+class TestRunModelJobBatch(unittest.TestCase):
+    def _dispatch_replicate(
+        self,
+        calls: list[tuple[str, int]],
+        model: dict,
+        index: int,
+        replicate_index: int,
+        num_runs: int,
+        *,
+        skip_stale_kill: bool = False,
+    ) -> dict:
+        calls.append((model["slug"], replicate_index))
+        return {"slug": model["slug"], "status": "completed"}
+
+    def test_parallel_submits_all_models(self) -> None:
+        calls: list[tuple[str, int]] = []
+
+        def dispatch_model(
             model: dict, index: int, *, skip_stale_kill: bool = False
         ) -> dict:
-            calls.append(model["slug"])
+            calls.append((model["slug"], 1))
             return {"slug": model["slug"], "status": "completed"}
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            return self._dispatch_replicate(
+                calls, model, index, replicate_index, num_runs
+            )
 
         items = [
             (1, {"slug": "a", "provider": "openai"}),
@@ -67,13 +107,106 @@ class TestRunModelJobBatch(unittest.TestCase):
                 harness="codex",
                 abort_flag=abort,
                 local_gpu_lock=None,
-                dispatch_model=dispatch,
+                dispatch_model=dispatch_model,
+                dispatch_replicate=dispatch_replicate,
             )
         kill_mock.assert_not_called()
-        self.assertEqual(sorted(calls), ["a", "b"])
+        self.assertEqual(sorted(calls), [("a", 1), ("b", 1)])
+
+    def test_parallel_schedules_replicates_independently(self) -> None:
+        calls: list[tuple[str, int]] = []
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            return self._dispatch_replicate(
+                calls, model, index, replicate_index, num_runs
+            )
+
+        items = [
+            (1, {"slug": "a", "provider": "openai", "num_runs": 2}),
+            (2, {"slug": "b", "provider": "openai", "num_runs": 1}),
+        ]
+        run_model_job_batch(
+            job_items=items,
+            workers=2,
+            harness="codex",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        self.assertEqual(
+            sorted(calls),
+            [("a", 1), ("a", 2), ("b", 1)],
+        )
+
+    def test_parallel_keeps_worker_pool_full(self) -> None:
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            nonlocal active, max_active
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with active_lock:
+                active -= 1
+            return {"status": "completed"}
+
+        items = [
+            (1, {"slug": "a", "provider": "openai", "num_runs": 1}),
+            (2, {"slug": "b", "provider": "openai", "num_runs": 1}),
+            (3, {"slug": "c", "provider": "openai", "num_runs": 1}),
+            (4, {"slug": "d", "provider": "openai", "num_runs": 1}),
+        ]
+        run_model_job_batch(
+            job_items=items,
+            workers=3,
+            harness="codex",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        self.assertEqual(max_active, 3)
 
     def test_parallel_opencode_kills_stale_once(self) -> None:
-        def dispatch(model: dict, index: int, *, skip_stale_kill: bool = False) -> dict:
+        def dispatch_model(model: dict, index: int, *, skip_stale_kill: bool = False) -> dict:
+            return {"status": "completed"}
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
             return {"status": "completed"}
 
         items = [
@@ -87,7 +220,8 @@ class TestRunModelJobBatch(unittest.TestCase):
                 harness="opencode",
                 abort_flag=threading.Event(),
                 local_gpu_lock=None,
-                dispatch_model=dispatch,
+                dispatch_model=dispatch_model,
+                dispatch_replicate=dispatch_replicate,
             )
         kill_mock.assert_called_once()
 
@@ -97,8 +231,19 @@ class TestRunModelJobBatch(unittest.TestCase):
         in_local = threading.Event()
         calls: list[str] = []
 
-        def dispatch(
+        def dispatch_model(
             model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            calls.append(model["slug"])
+            return {"status": "completed"}
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
         ) -> dict:
             calls.append(model["slug"])
             if model["provider"] == "ollama":
@@ -122,7 +267,8 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=gpu_lock,
-            dispatch_model=dispatch,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
         )
         self.assertFalse(overlap.is_set(), "two local runs overlapped on GPU lock")
         self.assertEqual(len(calls), 3)
@@ -130,8 +276,19 @@ class TestRunModelJobBatch(unittest.TestCase):
     def test_parallel_passes_skip_stale_kill(self) -> None:
         seen: list[bool] = []
 
-        def dispatch(
+        def dispatch_model(
             model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            seen.append(skip_stale_kill)
+            return {"status": "completed"}
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
         ) -> dict:
             seen.append(skip_stale_kill)
             return {"status": "completed"}
@@ -146,7 +303,8 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=None,
-            dispatch_model=dispatch,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
         )
         self.assertEqual(seen, [True, True])
 
@@ -246,6 +404,56 @@ class TestRunVariantCampaign(unittest.TestCase):
 
         self.assertFalse(result.usage_limit_aborted)
         self.assertEqual(calls, [(1, 2, False, True), (2, 2, False, True)])
+
+    def test_parallel_runs_replicates_independently(self) -> None:
+        calls: list[tuple[int, int | None]] = []
+
+        def run_variant(**kwargs: object) -> dict[str, str]:
+            calls.append(
+                (
+                    int(kwargs["replicate_index"]),
+                    kwargs["num_runs"] if isinstance(kwargs["num_runs"], int) else None,
+                )
+            )
+            time.sleep(0.02)
+            return {"status": "completed"}
+
+        config = VariantCampaignConfig(
+            variants=[
+                {
+                    "slug": "demo_a",
+                    "provider": "anthropic",
+                    "main_model": "claude-test",
+                    "num_runs": 2,
+                },
+                {
+                    "slug": "demo_b",
+                    "provider": "anthropic",
+                    "main_model": "claude-test",
+                    "num_runs": 1,
+                },
+            ],
+            jobs=2,
+            harness_name="claude",
+            run_variant=run_variant,
+            accepts_isolate_home=True,
+            prompt="build app",
+            results_dir=REPO_ROOT / "tmp" / "variant-results-parallel",
+            timeout_seconds=60,
+            no_progress_timeout_seconds=30,
+            force=False,
+            runner_command_prefix=None,
+            isolate_home=True,
+            followup_prompt="check app",
+            rate_limit_policy=RateLimitWaitPolicy(),
+            validate_results=False,
+            max_validation_retries=0,
+        )
+
+        result = run_variant_campaign(config)
+
+        self.assertFalse(result.usage_limit_aborted)
+        self.assertEqual(sorted(calls), [(1, 1), (1, 2), (2, 2)])
 
 
 if __name__ == "__main__":
