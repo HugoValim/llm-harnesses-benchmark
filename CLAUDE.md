@@ -30,7 +30,7 @@ Run the full pipeline (build + audit + meta-analysis):
 python scripts/run_full_benchmark.py --run-id run_02
 ```
 
-Phase 1 uses a global job pool (`-j 3` default) in replicate waves: up to three `(harness, model)` jobs at the same replicate index run concurrently; the next wave starts after the current index finishes, and the same target never runs two replicates in parallel. Use `--sequential-build` for legacy harness-by-harness dispatch.
+Phase 1 uses a global job pool (`-j 3` default) with per-target pipelined replicates: up to three `(harness, model)` jobs run concurrently across the matrix; each target runs replicates sequentially (`run_02` starts when that target's `run_01` completes), and the same target never runs two replicates in parallel. Use `--sequential-build` for legacy harness-by-harness dispatch.
 
 Run the full opencode benchmark (default models from `config/models.json`):
 ```bash
@@ -180,6 +180,6 @@ Per-project artifacts land in `results/<harness>-<slug>/project/_runtime_verific
 - **Stall detection:** If no stdout/stderr activity and no file count change occur for `no_progress_timeout_seconds` (default 15 minutes), the run is aborted. Error loops (5 consecutive error events) also trigger abort. Default wall-clock timeout per agent run is 50 minutes (`scripts/benchmark/timeouts.py`).
 - **Preview TPS gating:** opencode runs can be aborted early if average output tokens/sec over the first N steps falls below a threshold (`--min-preview-output-tps`).
 - **Home isolation:** Claude Code model rows can set `isolate_home: true` to replace `$HOME` with the result dir during the run. This prevents user-level `~/.claude/agents/*.md` from leaking in, but breaks subscription auth (requires `ANTHROPIC_API_KEY`).
-- **OpenCode data isolation:** Parallel opencode runs set `XDG_DATA_HOME` to `{result_dir}/.xdg-data` so concurrent replicate waves do not contend on `~/.local/share/opencode/opencode.db`.
+- **OpenCode data isolation:** Parallel opencode runs set `XDG_DATA_HOME` to `{result_dir}/.xdg-data` so concurrent build subprocesses do not contend on `~/.local/share/opencode/opencode.db`.
 - **Build parity:** Benchmark build runs use cold phase-2 followup (no session/`--continue`), wrap the primary prompt with canonical agent rules for all harnesses, and isolate runtime state per replicate via `benchmark_env_for_harness` (`XDG_DATA_HOME`, `CODEX_HOME`, or `{result_dir}/.agent-home` for Claude/Cursor).
 - **GPU memory management:** When using local backends, the harness unloads competing backends before preflight and unloads models post-run to prevent OOM.

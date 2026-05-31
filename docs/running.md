@@ -104,7 +104,7 @@ python3 scripts/run_full_benchmark.py --run-id run_02 -- --force
 
 Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`, `--sequential-build`
 
-Phase 1 (default) runs a **global job pool** in **replicate waves**: within each wave, up to `-j` concurrent subprocesses (default 3) run different `(harness, model)` targets at the same replicate index (e.g. all `run_01` jobs). The next wave starts only after the current replicate index finishes. The same `(harness, model)` never runs two replicates in parallel. Docker prune runs once after all build jobs finish. Use `--sequential-build` to restore the legacy behavior (one harness batch at a time, `-j` per batch).
+Phase 1 (default) runs a **global job pool** with **per-target pipelined replicates**: up to `-j` concurrent subprocesses (default 3) run across all `(harness, model)` targets. Each target runs replicates one at a time — `run_02` starts when **that** target's `run_01` completes — but different targets share the pool, so workers stay busy when one target is still on an earlier replicate. At most one in-flight job per `(harness, model)`. Workers may drop below `-j` only when fewer than `-j` runnable jobs remain globally or a target fails. Docker prune runs once after all build jobs finish. Use `--sequential-build` to restore the legacy behavior (one harness batch at a time, `-j` per batch).
 
 Parallel opencode runs isolate SQLite state by setting `XDG_DATA_HOME` to `{result_dir}/.xdg-data` (alongside stale-process cleanup before each batch).
 

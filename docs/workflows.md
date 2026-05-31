@@ -16,7 +16,7 @@ The standard end-to-end flow (shared `--run-id run_XX` on every step):
 
 ## Build concurrency (Phase 1)
 
-By default, `run_full_benchmark.py` keeps up to `-j` build subprocesses running across **all harnesses** (global pool), scheduled in replicate waves so different models run the same replicate index together and the same `(harness, model)` never overlaps. Pass `--sequential-build` to run harness batches one after another instead.
+By default, `run_full_benchmark.py` keeps up to `-j` build subprocesses running across **all harnesses** (global pool). Each `(harness, model)` runs replicates sequentially — `run_02` starts when **that** target's `run_01` completes — but different targets share the pool, so workers stay busy when one target is still on an earlier replicate. At most one in-flight job per `(harness, model)`. Pass `--sequential-build` to run harness batches one after another instead.
 
 ## Runtime verification
 
