@@ -155,6 +155,87 @@ def test_max_validation_retries_constant() -> None:
     assert MAX_VALIDATION_RETRIES == 3
 
 
+def _write_run_scoped_result(
+    results_base: Path,
+    *,
+    run_id: str,
+    target_group: str,
+    model_slug: str,
+) -> None:
+    result_dir = results_base / run_id / "projects" / target_group / "run_01"
+    _write_project(result_dir / "project")
+    row = _completed_row()
+    row["model"]["slug"] = model_slug
+    (result_dir / "result.json").write_text(json.dumps(row))
+
+
+def test_validate_results_defaults_to_latest_run(tmp_path: Path) -> None:
+    import subprocess
+
+    results_base = tmp_path / "results"
+    _write_run_scoped_result(
+        results_base,
+        run_id="run_01",
+        target_group="codex-old",
+        model_slug="old",
+    )
+    _write_run_scoped_result(
+        results_base,
+        run_id="run_02",
+        target_group="codex-new",
+        model_slug="new",
+    )
+
+    script = REPO_ROOT / "scripts" / "validate_results.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--results-dir",
+            str(results_base),
+            "--no-enforce-replicates",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "codex-new" in completed.stdout
+    assert "codex-old" not in completed.stdout
+    assert "checked=1" in completed.stdout
+
+
+def test_validate_results_enforces_replicates_for_auto_resolved_run(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+
+    results_base = tmp_path / "results"
+    _write_run_scoped_result(
+        results_base,
+        run_id="run_02",
+        target_group="codex-demo",
+        model_slug="demo",
+    )
+
+    script = REPO_ROOT / "scripts" / "validate_results.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--results-dir",
+            str(results_base),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert completed.returncode == 1
+    assert "replicate_gaps=" in completed.stdout
+
+
 def test_validate_results_remove_on_fail_cli(tmp_path: Path) -> None:
     import subprocess
 

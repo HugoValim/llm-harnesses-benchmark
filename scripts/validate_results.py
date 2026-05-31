@@ -20,8 +20,9 @@ from benchmark.result_layout import (  # noqa: E402
     add_run_id_arg,
     benchmark_target_slug_from_leaf,
     discover_project_result_jsons,
-    layout_from_repo,
     matches_benchmark_only_filter,
+    resolve_default_run_id,
+    resolve_run_layout,
 )
 from benchmark.result_validation import (  # noqa: E402
     followup_expected,
@@ -66,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Require every configured replicate leaf from models.json num_runs "
-            "(default: on when --run-id is set)."
+            "(default: on when a run-scoped layout is used)."
         ),
     )
     return parser.parse_args()
@@ -86,13 +87,24 @@ def _matches_only_filter(result_path: Path, only: set[str], projects_root: Path)
     return matches_benchmark_only_filter(result_path, only, projects_root)
 
 
+def _resolve_results_scope(
+    args: argparse.Namespace,
+) -> tuple[Path, str | None, bool]:
+    """Return projects root, effective run id, and whether run id was auto-resolved."""
+    results_base = args.results_dir.resolve()
+    auto_resolved = args.run_id is None
+    effective_run_id = args.run_id or resolve_default_run_id(results_base)
+    if effective_run_id:
+        layout = resolve_run_layout(effective_run_id, results_base)
+        return layout.projects_root.resolve(), effective_run_id, auto_resolved
+    return results_base, None, False
+
+
 def main() -> int:
     args = parse_args()
-    if args.run_id:
-        layout = layout_from_repo(args.run_id, REPO_ROOT)
-        results_dir = layout.projects_root.resolve()
-    else:
-        results_dir = args.results_dir.resolve()
+    results_dir, effective_run_id, auto_resolved = _resolve_results_scope(args)
+    if auto_resolved and effective_run_id:
+        print_line(f"Using run {effective_run_id} (latest under {args.results_dir})")
     only = None
     if args.only:
         only = {part.strip() for part in args.only.split(",") if part.strip()}
@@ -114,7 +126,7 @@ def main() -> int:
     enforce_replicates = (
         args.enforce_replicates
         if args.enforce_replicates is not None
-        else bool(args.run_id)
+        else bool(effective_run_id)
     )
 
     replicate_failures = 0
@@ -129,7 +141,7 @@ def main() -> int:
             print(gap_message, file=sys.stderr)
             replicate_failures = len(gaps)
 
-    if args.run_id:
+    if effective_run_id:
         result_paths = discover_project_result_jsons(results_dir)
     else:
         result_paths = sorted(results_dir.glob("**/result.json"))
