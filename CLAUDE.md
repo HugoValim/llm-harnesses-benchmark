@@ -139,6 +139,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 
 - `prompts/benchmark_prompt.txt` — Phase 1 implementation brief (Django + Channels + Ollama chat SPA).
 - `prompts/benchmark_followup_prompt.txt` — Phase 2 validation brief (boot app, run docker build, docker compose up).
+- `prompts/agent_coding_rules.md` — Canonical AI-driver coding rules injected into every generated `project/CLAUDE.md` and `project/AGENTS.md` before agent launch (all harnesses). Opt out with `--no-agent-coding-rules`. SHA256 recorded as `agent_coding_rules_sha256` in `result.json`.
 - `prompts/audit_prompt_template.txt` — Rubric for automated code audits. Interpolated with `{project_dir}` and `{model_slug}`.
 
 ### Output directories

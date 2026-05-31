@@ -699,6 +699,7 @@ def run_codex_variant(
     harness: str = "codex",
     explicit_result_dir: Path | None = None,
     rate_limit_policy: RateLimitWaitPolicy | None = None,
+    include_agent_rules: bool = True,
 ) -> dict[str, Any]:
     """Run a single one-shot variant through the Codex CLI.
 
@@ -744,7 +745,12 @@ def run_codex_variant(
         else layout_target_dir(results_dir, harness, slug).resolve()
     )
     project_dir = result_dir
-    prepare_project_workspace(results_dir, result_dir, project_dir)
+    prepare_project_workspace(
+        results_dir,
+        result_dir,
+        project_dir,
+        include_agent_rules=include_agent_rules,
+    )
     prompt_path = result_dir / "prompt.txt"
     stdout_path = result_dir / "stream.ndjson"
     stderr_path = result_dir / "stderr.log"
@@ -1236,4 +1242,5 @@ def run_model(
         followup_session_selector=select_followup_session,
         replicate_index=replicate_index,
         num_runs=effective_num_runs,
+        include_agent_rules=bench.include_agent_rules,
     ).run()

@@ -425,6 +425,7 @@ class BenchmarkConfig:
     selected_models: list[dict[str, Any]] = field(default_factory=list)
     prompt: str = ""
     followup_prompt: str | None = None
+    include_agent_rules: bool = True
     rate_limit_policy: RateLimitWaitPolicy = field(default_factory=RateLimitWaitPolicy)
 
 

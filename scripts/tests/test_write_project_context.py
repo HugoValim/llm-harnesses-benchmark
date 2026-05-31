@@ -22,7 +22,18 @@ class TestWriteProjectContext(unittest.TestCase):
             claude = (project / "CLAUDE.md").read_text()
             agents = (project / "AGENTS.md").read_text()
             self.assertIn("Hard constraints", claude)
+            self.assertIn("Operating mode", claude)
+            self.assertIn("Never hardcode secrets", claude)
             self.assertEqual(claude, agents)
+
+    def test_opt_out_writes_workspace_only(self) -> None:
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            write_project_context(project, include_agent_rules=False)
+            claude = (project / "CLAUDE.md").read_text()
+            self.assertIn("Hard constraints", claude)
+            self.assertNotIn("Operating mode", claude)
 
     def test_overwrite_is_idempotent_for_content(self) -> None:
         with TemporaryDirectory() as tmp:

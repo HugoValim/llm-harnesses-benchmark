@@ -180,6 +180,9 @@ def validate_benchmark_workspace(
     )
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+AGENT_CODING_RULES_PATH = _REPO_ROOT / "prompts" / "agent_coding_rules.md"
+
 _WORKSPACE_CLAUDE_MD = """\
 # Project workspace
 
@@ -197,7 +200,47 @@ The directory is intentionally empty at the start of the session.
 """
 
 
-def write_project_context(project_dir: Path) -> None:
+def load_agent_coding_rules(
+    rules_path: Path | None = None,
+) -> str:
+    """Load canonical agent coding rules from ``prompts/agent_coding_rules.md``.
+
+    Example:
+        >>> "Operating mode" in load_agent_coding_rules()
+        True
+    """
+    path = rules_path if rules_path is not None else AGENT_CODING_RULES_PATH
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Agent coding rules file missing: {path} "
+            "(expected prompts/agent_coding_rules.md in repo root)"
+        )
+    text = path.read_text().strip()
+    if not text:
+        raise ValueError(f"Agent coding rules file is empty: {path}")
+    return text
+
+
+def build_project_context_text(*, include_agent_rules: bool = True) -> str:
+    """Build merged project CLAUDE.md / AGENTS.md content for benchmark runs."""
+    if not include_agent_rules:
+        return _WORKSPACE_CLAUDE_MD
+    rules = load_agent_coding_rules()
+    return f"{_WORKSPACE_CLAUDE_MD.rstrip()}\n\n---\n\n{rules}\n"
+
+
+def agent_coding_rules_sha256(*, include_agent_rules: bool = True) -> str | None:
+    """Return SHA256 of injected agent rules, or None when rules are disabled."""
+    if not include_agent_rules:
+        return None
+    return prompt_sha256(load_agent_coding_rules())
+
+
+def write_project_context(
+    project_dir: Path,
+    *,
+    include_agent_rules: bool = True,
+) -> None:
     """Write CLAUDE.md and AGENTS.md to ``project_dir``.
 
     Claude Code reads CLAUDE.md from all parent directories. Without a
@@ -216,7 +259,7 @@ def write_project_context(project_dir: Path) -> None:
         ...     write_project_context(p)
         ...     assert "Hard constraints" in (p / "CLAUDE.md").read_text()
     """
-    text = _WORKSPACE_CLAUDE_MD
+    text = build_project_context_text(include_agent_rules=include_agent_rules)
     (project_dir / "CLAUDE.md").write_text(text)
     (project_dir / "AGENTS.md").write_text(text)
 

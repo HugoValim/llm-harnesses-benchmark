@@ -536,6 +536,7 @@ def run_variant(
     rate_limit_policy: RateLimitWaitPolicy | None = None,
     replicate_index: int = 1,
     num_runs: int | None = None,
+    include_agent_rules: bool = True,
 ) -> dict[str, Any]:
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
@@ -616,4 +617,5 @@ def run_variant(
         phase_log_tag=lambda phase_name: stream_log_prefix(harness, slug, phase_name),
         replicate_index=replicate_index,
         num_runs=effective_num_runs,
+        include_agent_rules=include_agent_rules,
     ).run()

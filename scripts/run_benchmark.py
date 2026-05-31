@@ -265,6 +265,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip post-run docker builder/system prune (default: prune after a run batch).",
     )
+    parser.add_argument(
+        "--no-agent-coding-rules",
+        action="store_true",
+        help="Omit prompts/agent_coding_rules.md from project CLAUDE.md/AGENTS.md.",
+    )
     add_rate_limit_cli_args(parser)
     args = parser.parse_args()
     if args.max_validation_retries < 0:
@@ -351,6 +356,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         print_line(f"Local backend: {backend.backend_name} at {api_base}")
 
     rate_limit_policy = rate_limit_policy_from_args(args)
+    include_agent_rules = not args.no_agent_coding_rules
     bench = BenchmarkConfig(
         runner=config["runner"],
         config_path=config_path,
@@ -366,6 +372,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         selected_models=selected_models,
         prompt=prompt,
         followup_prompt=followup_prompt,
+        include_agent_rules=include_agent_rules,
         rate_limit_policy=rate_limit_policy,
     )
 
@@ -460,6 +467,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
     )
 
     rate_limit_policy = rate_limit_policy_from_args(args)
+    include_agent_rules = not args.no_agent_coding_rules
     dispatch_result = run_variant_campaign(
         VariantCampaignConfig(
             variants=variants,
@@ -475,6 +483,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             runner_command_prefix=runner_command_prefix,
             isolate_home=isolate_home,
             followup_prompt=followup_text,
+            include_agent_rules=include_agent_rules,
             rate_limit_policy=rate_limit_policy,
             validate_results=not args.no_result_validation,
             max_validation_retries=args.max_validation_retries,

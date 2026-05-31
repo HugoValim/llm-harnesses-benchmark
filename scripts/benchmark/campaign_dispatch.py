@@ -72,6 +72,7 @@ class VariantCampaignConfig:
     rate_limit_policy: RateLimitWaitPolicy
     validate_results: bool
     max_validation_retries: int
+    include_agent_rules: bool = True
 
 
 class DispatchModelFn(Protocol):
@@ -476,6 +477,7 @@ def _variant_run_kwargs(
         "rate_limit_policy": config.rate_limit_policy,
         "replicate_index": replicate_index,
         "num_runs": num_runs,
+        "include_agent_rules": config.include_agent_rules,
     }
     if config.accepts_isolate_home:
         kwargs["isolate_home"] = config.isolate_home

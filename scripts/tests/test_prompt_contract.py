@@ -42,6 +42,16 @@ def test_followup_prompt_v33_rechecks_frontend_wiring() -> None:
     assert "web liveness" in prompt.lower() or "web HTTP port" in prompt
 
 
+def test_agent_coding_rules_v10_has_core_sections() -> None:
+    rules = (PROMPTS / "agent_coding_rules.md").read_text()
+
+    assert rules.startswith("Prompt-Version: agent-coding-rules-v1.0")
+    assert "## Operating mode (AI-driver directives)" in rules
+    assert "## Safety guardrails" in rules
+    assert "## Verification gate" in rules
+    assert "caveman mode" not in rules.lower()
+
+
 def test_audit_prompt_v39_auditor_owned_d10_no_probe() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 

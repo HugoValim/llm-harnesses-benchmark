@@ -14,6 +14,7 @@ from benchmark.run_status import payload_hit_usage_limit
 from benchmark.workspace import prepare_project_workspace
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
+    agent_coding_rules_sha256,
     prompt_sha256,
     save_json,
     utc_now,
@@ -149,6 +150,7 @@ class TargetRunLifecycle:
     followup_session_selector: SessionSelector | None = None
     replicate_index: int = 1
     num_runs: int = 1
+    include_agent_rules: bool = True
     extra_payload_fields: dict[str, Any] = field(default_factory=dict)
 
     def run(self) -> dict[str, Any]:
@@ -201,6 +203,7 @@ class TargetRunLifecycle:
             self.results_dir,
             self.paths.result_dir,
             self.paths.project_dir,
+            include_agent_rules=self.include_agent_rules,
         )
 
     def _cached_payload(self) -> dict[str, Any] | None:
@@ -294,6 +297,9 @@ class TargetRunLifecycle:
             "followup_prompt_sha256": prompt_sha256(self.followup_prompt)
             if self.followup_prompt
             else None,
+            "agent_coding_rules_sha256": agent_coding_rules_sha256(
+                include_agent_rules=self.include_agent_rules
+            ),
             "phases": phases,
             **self.extra_payload_fields,
         }

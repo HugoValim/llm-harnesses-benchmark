@@ -39,12 +39,13 @@ class ProjectWorkspace:
     result_dir: Path
     project_dir: Path
 
-    def prepare(self) -> None:
+    def prepare(self, *, include_agent_rules: bool = True) -> None:
         """Create, isolate, validate, and seed the workspace context files."""
         prepare_project_workspace(
             self.results_dir,
             self.result_dir,
             self.project_dir,
+            include_agent_rules=include_agent_rules,
         )
 
     def summarize(self) -> dict[str, Any]:
@@ -56,13 +57,15 @@ def prepare_project_workspace(
     results_dir: Path,
     result_dir: Path,
     project_dir: Path,
+    *,
+    include_agent_rules: bool = True,
 ) -> None:
     """Create and validate one isolated generated-project workspace."""
     result_dir.mkdir(parents=True, exist_ok=True)
     project_dir.mkdir(parents=True, exist_ok=True)
     init_project_git(project_dir)
     validate_benchmark_workspace(results_dir, result_dir, project_dir)
-    write_project_context(project_dir)
+    write_project_context(project_dir, include_agent_rules=include_agent_rules)
 
 # File names whose appearance at the repo root indicates an agent wrote
 # outside its sandbox. Matches typical Django/Docker/JS project markers
