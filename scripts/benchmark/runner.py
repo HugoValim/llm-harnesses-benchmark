@@ -15,10 +15,11 @@ from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
 from benchmark.agent_runtime_env import (
+    benchmark_env_for_harness,
     codex_env_for_phase,
-    opencode_env_for_phase,
-    uses_isolated_codex_home,
+    runtime_isolation_for_env,
 )
+from benchmark.build_parity import FOLLOWUP_CONTINUITY_COLD
 from benchmark.commands import (
     build_codex_command,
     build_opencode_command,
@@ -93,17 +94,6 @@ class StreamResult:
 
 def kill_process_group(process: subprocess.Popen[str]) -> None:
     terminate_process_group(process)
-
-
-def build_followup_prompt(prompt: str, continue_session_id: str | None) -> str:
-    if continue_session_id:
-        return prompt
-    fallback = (
-        "\n\nIf this is running in a fresh session rather than a continued one, first inspect the existing project "
-        "in the current working directory, understand the current implementation state, and then perform the same "
-        "runtime validation work before making any additional fixes."
-    )
-    return prompt + fallback
 
 
 def _phase_capture_paths(payload: dict[str, Any]) -> list[Path | None]:
@@ -492,7 +482,8 @@ def run_opencode_phase(
     )
     wall_start = time.monotonic()
     result_dir = prompt_path.parent
-    process_env = opencode_env_for_phase(
+    process_env = benchmark_env_for_harness(
+        "opencode",
         os.environ.copy(),
         result_dir=result_dir,
         command_prefix=effective_prefix,
@@ -570,6 +561,7 @@ def run_opencode_phase(
             "preview_output_tokens_per_second_average": result.preview_average_output_tps,
         },
     )
+    payload["runtime_isolation"] = runtime_isolation_for_env(process_env)
     payload = detect_workspace_escape(
         payload,
         root_dir=root_dir,
@@ -597,6 +589,7 @@ def run_codex_phase(
     phase_name: str = "phase1",
     override_min_preview_tps: float | None = ...,  # sentinel
     command_prefix: list[str] | None = None,
+    for_benchmark_build: bool = False,
 ) -> dict[str, Any]:
     """Run a single benchmark phase using the Codex CLI."""
     root_dir = bench.results_dir.resolve().parent
@@ -613,13 +606,21 @@ def run_codex_phase(
     wall_start = time.monotonic()
 
     result_dir = prompt_path.parent
-    process_env = codex_env_for_phase(
-        os.environ.copy(),
-        result_dir=result_dir,
-        command_prefix=command_prefix,
-    )
+    if for_benchmark_build:
+        process_env = benchmark_env_for_harness(
+            "codex",
+            os.environ.copy(),
+            result_dir=result_dir,
+            command_prefix=command_prefix,
+        )
+    else:
+        process_env = codex_env_for_phase(
+            os.environ.copy(),
+            result_dir=result_dir,
+            command_prefix=command_prefix,
+        )
     log_tag = stream_log_prefix(bench.harness, model_slug, phase_name)
-    if uses_isolated_codex_home(command_prefix):
+    if process_env.get("CODEX_HOME"):
         print_line(f"[{log_tag}] CODEX_HOME={process_env['CODEX_HOME']}")
 
     process = subprocess.Popen(
@@ -698,6 +699,8 @@ def run_codex_phase(
             "preview_output_tokens_per_second_average": result.preview_average_output_tps,
         },
     )
+    if for_benchmark_build:
+        payload["runtime_isolation"] = runtime_isolation_for_env(process_env)
     payload = detect_workspace_escape(
         payload,
         root_dir=root_dir,
@@ -1109,6 +1112,8 @@ def run_model(
         }
         return payload
 
+    runtime_isolation: dict[str, str] = {}
+
     def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
         phase_func = (
             run_codex_phase if runner_type in _CODEX_RUNNERS else run_opencode_phase
@@ -1132,13 +1137,14 @@ def run_model(
             phase_kwargs["command_prefix"] = phase_command_prefix
         if runner_type not in _CODEX_RUNNERS:
             phase_kwargs["continue_session_id"] = request.continue_session_id
-        return phase_func(**phase_kwargs)
-
-    def select_followup_session(phase1: dict[str, Any]) -> str | None:
         if runner_type in _CODEX_RUNNERS:
-            return None
-        value = phase1.get("opencode_session_id")
-        return value if isinstance(value, str) else None
+            phase_kwargs["for_benchmark_build"] = True
+        result = phase_func(**phase_kwargs)
+        iso = result.get("runtime_isolation")
+        if isinstance(iso, dict):
+            runtime_isolation.clear()
+            runtime_isolation.update(iso)
+        return result
 
     def finalize_payload(
         payload: dict[str, Any],
@@ -1206,7 +1212,11 @@ def run_model(
     def export_session_artifact(session_id: Any) -> Path | None:
         if runner_type in _CODEX_RUNNERS:
             return None
-        process_env = os.environ.copy()
+        process_env = benchmark_env_for_harness(
+            "opencode",
+            os.environ.copy(),
+            result_dir=paths.result_dir,
+        )
         process_env["OPENCODE_PERMISSION"] = json.dumps(
             OPENCODE_YOLO_PERMISSION, separators=(",", ":")
         )
@@ -1256,15 +1266,15 @@ def run_model(
         followup_prompt=bench.followup_prompt,
         run_phase=run_phase,
         rate_limit_policy=bench.rate_limit_policy,
-        followup_prompt_builder=build_followup_prompt,
         before_phases=before_phases,
         final_payload_hook=finalize_payload,
         after_save=after_save,
         phase_log_tag=lambda phase_name: stream_log_prefix(
             bench.harness, model["slug"], phase_name
         ),
-        followup_session_selector=select_followup_session,
+        followup_continuity=FOLLOWUP_CONTINUITY_COLD,
         replicate_index=replicate_index,
         num_runs=effective_num_runs,
         include_agent_rules=bench.include_agent_rules,
+        extra_payload_fields={"runtime_isolation": runtime_isolation},
     ).run()

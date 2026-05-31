@@ -99,5 +99,21 @@ class TestBuildOpenCodeCommand(unittest.TestCase):
             )
 
 
+
+class TestOpenCodePhase2Cold(unittest.TestCase):
+    def test_opencode_phase2_command_has_no_session_flag(self) -> None:
+        with TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "project"
+            project_dir.mkdir()
+            command = build_opencode_command(
+                {"command": "opencode", "args": ["run", "--format", "json"]},
+                "openrouter/test-model",
+                "validate",
+                project_dir=project_dir,
+                continue_session_id=None,
+            )
+            self.assertNotIn("--session", command)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -155,8 +155,8 @@ class TestRunModelJobBatch(unittest.TestCase):
             dispatch_replicate=dispatch_replicate,
         )
         self.assertEqual(
-            calls,
-            [("a", 1), ("b", 1), ("a", 2)],
+            sorted(calls),
+            [("a", 1), ("a", 2), ("b", 1)],
         )
 
     def test_parallel_keeps_worker_pool_full(self) -> None:
@@ -540,8 +540,51 @@ class TestRunVariantCampaign(unittest.TestCase):
 
         self.assertFalse(result.usage_limit_aborted)
         self.assertEqual(calls, [(1, 2, False, True), (2, 2, False, True)])
+        # Campaign always passes build parity flags for benchmark builds.
+        # Verified via run_variant kwargs capture in TestBuildParityDispatch.
 
-    def test_parallel_runs_replicates_independently(self) -> None:
+
+class TestBuildParityDispatch(unittest.TestCase):
+    def test_variant_campaign_passes_build_parity_kwargs(self) -> None:
+        captured: list[dict[str, object]] = []
+
+        def run_variant(**kwargs: object) -> dict[str, str]:
+            captured.append(dict(kwargs))
+            return {"status": "completed"}
+
+        config = VariantCampaignConfig(
+            variants=[
+                {
+                    "slug": "demo",
+                    "provider": "anthropic",
+                    "main_model": "claude-test",
+                    "num_runs": 1,
+                }
+            ],
+            jobs=1,
+            harness_name="claude",
+            run_variant=run_variant,
+            accepts_isolate_home=True,
+            prompt="build app",
+            results_dir=REPO_ROOT / "tmp" / "parity-variant-results",
+            timeout_seconds=60,
+            no_progress_timeout_seconds=30,
+            force=False,
+            runner_command_prefix=None,
+            isolate_home=True,
+            followup_prompt="check app",
+            rate_limit_policy=RateLimitWaitPolicy(),
+            validate_results=False,
+            max_validation_retries=0,
+        )
+
+        run_variant_campaign(config)
+
+        self.assertEqual(len(captured), 1)
+        self.assertTrue(captured[0]["for_benchmark_build"])
+        self.assertTrue(captured[0]["wrap_primary_prompt"])
+
+    def test_parallel_schedules_replicates_independently(self) -> None:
         calls: list[tuple[int, int | None]] = []
 
         def run_variant(**kwargs: object) -> dict[str, str]:

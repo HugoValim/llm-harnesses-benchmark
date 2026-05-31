@@ -267,6 +267,9 @@ def _run_auditor(
         run_kwargs["runner_command_prefix"] = config.runner_command_prefix
     if harness.accepts_isolate_home:
         run_kwargs["isolate_home"] = config.isolate_home
+    if runner_type in ("claude", "cursor"):
+        run_kwargs["wrap_primary_prompt"] = False
+        run_kwargs["for_benchmark_build"] = False
     return harness.run_variant(**run_kwargs)
 
 

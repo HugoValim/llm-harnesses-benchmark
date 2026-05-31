@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from benchmark.agent_runtime_env import (
+    benchmark_env_for_harness,
+    runtime_isolation_for_env,
+)
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.pricing import merge_cursor_model_usage, model_usage_from_cursor_final
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
@@ -290,6 +294,7 @@ def _run_cursor_phase(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
     continue_session: bool = False,
+    env: dict[str, str] | None = None,
 ) -> tuple[CursorStreamResult, subprocess.Popen[str], float]:
     command = build_command(
         variant["main_model"],
@@ -298,10 +303,11 @@ def _run_cursor_phase(
         continue_session=continue_session,
     )
     wall_start = time.monotonic()
+    process_env = env if env is not None else os.environ.copy()
     process = subprocess.Popen(
         command,
         cwd=project_dir.resolve(),
-        env=os.environ.copy(),
+        env=process_env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -340,6 +346,7 @@ def _run_cursor_lifecycle_phase(
     slug: str,
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     request.prompt_path.write_text(request.prompt)
     result, process, elapsed = _run_cursor_phase(
@@ -354,7 +361,8 @@ def _run_cursor_lifecycle_phase(
         phase_name=request.phase_name,
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
-        continue_session=request.phase_name == "phase2",
+        continue_session=False,
+        env=env,
     )
     return _cursor_phase_payload(
         request=request,
@@ -387,7 +395,7 @@ def _cursor_phase_payload(
         variant["main_model"],
         request.prompt,
         command_prefix,
-        continue_session=request.phase_name == "phase2",
+        continue_session=False,
     )
     return {
         "phase": request.phase_name,
@@ -537,6 +545,8 @@ def run_variant(
     replicate_index: int = 1,
     num_runs: int | None = None,
     include_agent_rules: bool = True,
+    for_benchmark_build: bool = False,
+    wrap_primary_prompt: bool = True,
 ) -> dict[str, Any]:
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
@@ -554,6 +564,25 @@ def run_variant(
         num_runs if num_runs is not None else _resolve_model_num_runs(variant)
     )
     cli_version_fields_cache: dict[str, Any] | None = None
+    env_cache: dict[str, str] | None = None
+    runtime_isolation: dict[str, str] = {}
+
+    def get_env() -> dict[str, str]:
+        nonlocal env_cache
+        if env_cache is None:
+            if for_benchmark_build:
+                env_cache = benchmark_env_for_harness(
+                    "cursor",
+                    os.environ.copy(),
+                    result_dir=result_dir,
+                )
+                if env_cache.get("HOME"):
+                    print_line(f"[{log_tag}] HOME={env_cache['HOME']} (benchmark build isolation)")
+            else:
+                env_cache = os.environ.copy()
+            runtime_isolation.clear()
+            runtime_isolation.update(runtime_isolation_for_env(env_cache))
+        return env_cache
 
     def get_cli_version_fields() -> dict[str, Any]:
         nonlocal cli_version_fields_cache
@@ -573,9 +602,12 @@ def run_variant(
             no_progress_timeout_seconds=no_progress_timeout_seconds,
             log_tag=log_tag,
         )
+        if for_benchmark_build:
+            get_env()
         return None
 
     def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
+        phase_env = get_env() if for_benchmark_build else None
         return _run_cursor_lifecycle_phase(
             request=request,
             variant=variant,
@@ -584,6 +616,7 @@ def run_variant(
             slug=slug,
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
+            env=phase_env,
         )
 
     def finalize_payload(
@@ -618,4 +651,6 @@ def run_variant(
         replicate_index=replicate_index,
         num_runs=effective_num_runs,
         include_agent_rules=include_agent_rules,
+        wrap_primary_prompt=wrap_primary_prompt,
+        extra_payload_fields={"runtime_isolation": runtime_isolation},
     ).run()

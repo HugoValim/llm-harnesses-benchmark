@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from benchmark.agent_runtime_env import (
+    benchmark_env_for_harness,
+    runtime_isolation_for_env,
+)
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
@@ -470,7 +474,19 @@ def _build_claude_env(
     variant: dict[str, Any],
     isolate_home: bool,
     log_tag: str,
+    for_benchmark_build: bool = False,
+    harness: str = "claude",
 ) -> dict[str, str]:
+    if for_benchmark_build:
+        env = benchmark_env_for_harness(
+            harness,
+            os.environ.copy(),
+            result_dir=result_dir,
+        )
+        if env.get("HOME"):
+            print_line(f"[{log_tag}] HOME={env['HOME']} (benchmark build isolation)")
+        _apply_env_overrides(env, variant.get("env_overrides") or {}, log_tag)
+        return env
     env = os.environ.copy()
     _apply_home_isolation(env, result_dir, isolate_home, log_tag)
     _apply_env_overrides(env, variant.get("env_overrides") or {}, log_tag)
@@ -704,6 +720,8 @@ def run_variant(
     replicate_index: int = 1,
     num_runs: int | None = None,
     include_agent_rules: bool = True,
+    for_benchmark_build: bool = False,
+    wrap_primary_prompt: bool = True,
 ) -> dict[str, Any]:
     """Run a single benchmark variant.
 
@@ -736,6 +754,7 @@ def run_variant(
     )
     env_cache: dict[str, str] | None = None
     cli_version_fields_cache: dict[str, Any] | None = None
+    runtime_isolation: dict[str, str] = {}
 
     def get_env() -> dict[str, str]:
         nonlocal env_cache
@@ -745,7 +764,11 @@ def run_variant(
                 variant=variant,
                 isolate_home=isolate_home,
                 log_tag=log_tag,
+                for_benchmark_build=for_benchmark_build,
+                harness=harness,
             )
+            runtime_isolation.clear()
+            runtime_isolation.update(runtime_isolation_for_env(env_cache))
         return env_cache
 
     def get_cli_version_fields() -> dict[str, Any]:
@@ -815,4 +838,6 @@ def run_variant(
         replicate_index=replicate_index,
         num_runs=effective_num_runs,
         include_agent_rules=include_agent_rules,
+        wrap_primary_prompt=wrap_primary_prompt,
+        extra_payload_fields={"runtime_isolation": runtime_isolation},
     ).run()

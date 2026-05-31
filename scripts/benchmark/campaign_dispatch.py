@@ -705,6 +705,8 @@ def _variant_run_kwargs(
     }
     if config.accepts_isolate_home:
         kwargs["isolate_home"] = config.isolate_home
+    kwargs["for_benchmark_build"] = True
+    kwargs["wrap_primary_prompt"] = True
     return kwargs
 
 

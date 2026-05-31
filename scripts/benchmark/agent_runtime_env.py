@@ -6,6 +6,9 @@ Benchmark runs materialize a per-result ``.codex-home`` without those blocks.
 
 OpenCode stores state under ``$XDG_DATA_HOME/opencode``; parallel benchmark runs
 set ``XDG_DATA_HOME`` to ``{result_dir}/.xdg-data`` to avoid SQLite lock contention.
+
+Claude and Cursor benchmark builds isolate ``$HOME`` under ``{result_dir}/.agent-home``
+and stage subscription auth from the real home when available.
 """
 
 from __future__ import annotations
@@ -14,6 +17,8 @@ import re
 import shutil
 from pathlib import Path
 from benchmark.util import ollama_launch_integration
+
+AGENT_HOME_DIRNAME = ".agent-home"
 
 _LEGACY_PROFILE_SELECTOR = re.compile(
     r'^\s*profile\s*=\s*["\']ollama-launch["\']\s*$',
@@ -127,6 +132,68 @@ def opencode_env_for_phase(
     isolated = prepare_isolated_opencode_data_home(result_dir)
     env["XDG_DATA_HOME"] = str(isolated)
     return env
+
+
+def prepare_isolated_agent_home(result_dir: Path) -> Path:
+    """Create ``{result_dir}/.agent-home`` for Claude/Cursor benchmark runs."""
+    agent_home = result_dir / AGENT_HOME_DIRNAME
+    agent_home.mkdir(parents=True, exist_ok=True)
+    return agent_home.resolve()
+
+
+def stage_subscription_auth(
+    isolated_home: Path,
+    source_home: Path,
+    harness: str,
+) -> list[str]:
+    """Copy subscription auth dirs from source home into isolated home."""
+    copied: list[str] = []
+    if harness == "claude":
+        source = source_home / ".claude"
+        if source.is_dir():
+            dest = isolated_home / ".claude"
+            shutil.copytree(source, dest, dirs_exist_ok=True)
+            copied.append(str(dest))
+    elif harness == "cursor":
+        source = source_home / ".cursor"
+        if source.is_dir():
+            dest = isolated_home / ".cursor"
+            shutil.copytree(source, dest, dirs_exist_ok=True)
+            copied.append(str(dest))
+    return copied
+
+
+def benchmark_env_for_harness(
+    harness: str,
+    base_env: dict[str, str],
+    *,
+    result_dir: Path,
+    command_prefix: list[str] | None = None,
+    isolate_home: bool = True,
+) -> dict[str, str]:
+    """Return benchmark build env with per-replicate isolation for *harness*."""
+    if harness == "opencode":
+        return opencode_env_for_phase(
+            base_env,
+            result_dir=result_dir,
+            command_prefix=command_prefix,
+        )
+    env = dict(base_env)
+    if harness == "codex":
+        isolated = prepare_isolated_codex_home(result_dir)
+        env["CODEX_HOME"] = str(isolated)
+        return env
+    if harness in ("claude", "cursor") and isolate_home:
+        agent_home = prepare_isolated_agent_home(result_dir)
+        stage_subscription_auth(agent_home, Path.home(), harness)
+        env["HOME"] = str(agent_home)
+    return env
+
+
+def runtime_isolation_for_env(env: dict[str, str]) -> dict[str, str]:
+    """Return isolation env keys set during a benchmark build phase."""
+    keys = ("XDG_DATA_HOME", "CODEX_HOME", "HOME")
+    return {key: env[key] for key in keys if key in env}
 
 
 def uses_isolated_codex_home(command_prefix: list[str] | None) -> bool:

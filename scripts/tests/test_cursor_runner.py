@@ -30,6 +30,10 @@ class TestCursorBuildCommand(unittest.TestCase):
             ],
         )
 
+    def test_phase2_cold_command_has_no_continue(self) -> None:
+        cmd = build_command("composer-2", "validate docker", continue_session=False)
+        self.assertNotIn("--continue", cmd)
+
     def test_phase2_uses_continue(self) -> None:
         cmd = build_command("composer-2", "validate docker", continue_session=True)
         self.assertIn("--continue", cmd)

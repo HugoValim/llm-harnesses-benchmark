@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from benchmark.build_parity import (
+    FOLLOWUP_CONTINUITY_COLD,
+    build_followup_prompt,
+    build_parity_metadata,
+    wrap_primary_prompt,
+)
 from benchmark.config import existing_terminal_result
 from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.replicates import attach_replicate_fields
@@ -148,10 +154,13 @@ class TargetRunLifecycle:
     after_save: AfterSave | None = None
     phase_log_tag: PhaseLogTag | None = None
     followup_session_selector: SessionSelector | None = None
+    followup_continuity: str = FOLLOWUP_CONTINUITY_COLD
+    wrap_primary_prompt: bool = True
     replicate_index: int = 1
     num_runs: int = 1
     include_agent_rules: bool = True
     extra_payload_fields: dict[str, Any] = field(default_factory=dict)
+    _effective_prompt: str = field(default="", init=False, repr=False)
 
     def run(self) -> dict[str, Any]:
         """Execute the target lifecycle and return the final payload."""
@@ -164,9 +173,15 @@ class TargetRunLifecycle:
             self._save_payload(early_payload)
             return early_payload
 
+        effective_prompt = (
+            wrap_primary_prompt(self.prompt, include_agent_rules=self.include_agent_rules)
+            if self.wrap_primary_prompt
+            else self.prompt
+        )
+        self._effective_prompt = effective_prompt
         phase1 = self._run_phase(
             phase_name="phase1",
-            prompt=self.prompt,
+            prompt=effective_prompt,
             started_at=utc_now(),
             prompt_path=self.paths.prompt_path,
             stdout_path=self.paths.stdout_path,
@@ -187,7 +202,11 @@ class TargetRunLifecycle:
                 stdout_path=self.paths.followup_stdout_path,
                 stderr_path=self.paths.followup_stderr_path,
                 result_path=self.paths.phase2_result_path,
-                continue_session_id=self._session_id_for_followup(phase1),
+                continue_session_id=(
+                    None
+                    if self.followup_continuity == FOLLOWUP_CONTINUITY_COLD
+                    else self._session_id_for_followup(phase1)
+                ),
             )
             phases.append(phase2)
             final_phase = phase2
@@ -264,6 +283,11 @@ class TargetRunLifecycle:
 
     def _build_followup_prompt(self, phase1: dict[str, Any]) -> str:
         assert self.followup_prompt is not None
+        if self.followup_continuity == FOLLOWUP_CONTINUITY_COLD:
+            return build_followup_prompt(
+                self.followup_prompt,
+                continuity=FOLLOWUP_CONTINUITY_COLD,
+            )
         if self.followup_prompt_builder is None:
             return self.followup_prompt
         return self.followup_prompt_builder(
@@ -286,6 +310,9 @@ class TargetRunLifecycle:
             sum(float(phase.get("elapsed_seconds") or 0.0) for phase in phases),
             2,
         )
+        runtime_isolation = self.extra_payload_fields.get("runtime_isolation", {})
+        if not isinstance(runtime_isolation, dict):
+            runtime_isolation = {}
         payload = {
             **final_phase,
             "result_schema_version": RESULT_SCHEMA_VERSION,
@@ -294,11 +321,17 @@ class TargetRunLifecycle:
             "ended_at": utc_now(),
             "paths": self._build_paths_payload(),
             "primary_prompt_sha256": prompt_sha256(self.prompt),
+            "effective_primary_prompt_sha256": prompt_sha256(self._effective_prompt),
             "followup_prompt_sha256": prompt_sha256(self.followup_prompt)
             if self.followup_prompt
             else None,
             "agent_coding_rules_sha256": agent_coding_rules_sha256(
                 include_agent_rules=self.include_agent_rules
+            ),
+            "build_parity": build_parity_metadata(
+                continuity=self.followup_continuity,
+                primary_prompt_wrapped=self.wrap_primary_prompt,
+                runtime_isolation=runtime_isolation,
             ),
             "phases": phases,
             **self.extra_payload_fields,
