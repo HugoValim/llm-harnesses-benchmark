@@ -30,7 +30,7 @@ Run the full pipeline (build + audit + meta-analysis):
 python scripts/run_full_benchmark.py --run-id run_02
 ```
 
-Phase 1 uses a global job pool (`-j 3` default): up to three `(harness, model, replicate)` subprocesses run concurrently across all harnesses. Use `--sequential-build` for legacy harness-by-harness dispatch.
+Phase 1 uses a global job pool (`-j 3` default) in replicate waves: up to three `(harness, model)` jobs at the same replicate index run concurrently; the next wave starts after the current index finishes, and the same target never runs two replicates in parallel. Use `--sequential-build` for legacy harness-by-harness dispatch.
 
 Run the full opencode benchmark (default models from `config/models.json`):
 ```bash

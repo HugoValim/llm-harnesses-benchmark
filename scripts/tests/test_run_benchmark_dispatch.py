@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.campaign_dispatch import (  # noqa: E402
+    ModelSlotLocks,
     VariantCampaignConfig,
     benchmark_job_workers,
     expand_model_jobs_to_replicate_jobs,
@@ -56,7 +57,7 @@ class TestExpandModelJobs(unittest.TestCase):
         self.assertEqual(len(expanded), 3)
         self.assertEqual(
             [(job.model["slug"], job.replicate_index) for job in expanded],
-            [("a", 1), ("a", 2), ("b", 1)],
+            [("a", 1), ("b", 1), ("a", 2)],
         )
 
     def test_filters_single_replicate_index(self) -> None:
@@ -149,12 +150,13 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=None,
+            model_slot_locks=ModelSlotLocks(),
             dispatch_model=dispatch_model,
             dispatch_replicate=dispatch_replicate,
         )
         self.assertEqual(
-            sorted(calls),
-            [("a", 1), ("a", 2), ("b", 1)],
+            calls,
+            [("a", 1), ("b", 1), ("a", 2)],
         )
 
     def test_parallel_keeps_worker_pool_full(self) -> None:
@@ -313,6 +315,92 @@ class TestRunModelJobBatch(unittest.TestCase):
             dispatch_replicate=dispatch_replicate,
         )
         self.assertEqual(seen, [True, True])
+
+    def test_parallel_never_runs_same_model_replicate_overlap(self) -> None:
+        active_by_slug: dict[str, int] = {}
+        overlap = threading.Event()
+        active_lock = threading.Lock()
+        slot_locks = ModelSlotLocks()
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            slug = model["slug"]
+            with active_lock:
+                active_by_slug[slug] = active_by_slug.get(slug, 0) + 1
+                if active_by_slug[slug] > 1:
+                    overlap.set()
+            time.sleep(0.05)
+            with active_lock:
+                active_by_slug[slug] -= 1
+            return {"status": "completed"}
+
+        items = [(1, {"slug": "solo", "provider": "openai", "num_runs": 3})]
+        run_model_job_batch(
+            job_items=items,
+            workers=3,
+            harness="codex",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            model_slot_locks=slot_locks,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        self.assertFalse(overlap.is_set(), "same model ran overlapping replicates")
+
+    def test_parallel_prefers_different_models_at_same_replicate(self) -> None:
+        calls: list[tuple[str, int]] = []
+        call_lock = threading.Lock()
+        slot_locks = ModelSlotLocks()
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            with call_lock:
+                calls.append((model["slug"], replicate_index))
+            time.sleep(0.02)
+            return {"status": "completed"}
+
+        items = [
+            (1, {"slug": "a", "provider": "openai", "num_runs": 3}),
+            (2, {"slug": "b", "provider": "openai", "num_runs": 3}),
+            (3, {"slug": "c", "provider": "openai", "num_runs": 3}),
+        ]
+        run_model_job_batch(
+            job_items=items,
+            workers=3,
+            harness="codex",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            model_slot_locks=slot_locks,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        first_wave = sorted(calls[:3])
+        self.assertEqual(
+            first_wave,
+            [("a", 1), ("b", 1), ("c", 1)],
+        )
 
 
 class TestRunModelCampaign(unittest.TestCase):

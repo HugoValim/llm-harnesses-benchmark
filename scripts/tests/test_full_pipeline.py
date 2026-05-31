@@ -20,6 +20,7 @@ from benchmark.full_pipeline import (  # noqa: E402
     build_job_argv,
     build_matrix,
     dispatch_build_jobs,
+    dispatch_build_jobs_by_replicate_wave,
     expand_build_matrix_to_jobs,
     group_build_batches,
     phase_audit,
@@ -238,6 +239,45 @@ def test_expand_build_matrix_to_jobs_includes_all_replicates(tmp_path: Path) -> 
     }
 
 
+def test_expand_build_matrix_orders_replicate_first_within_harness(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_codex"],
+                        "num_runs": 3,
+                    },
+                    {
+                        "slug": "qwen3_5_plus",
+                        "provider": "openrouter",
+                        "id": "qwen/qwen3.5-plus",
+                        "harness": ["codex"],
+                        "num_runs": 3,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    steps = build_matrix(config_path)
+    jobs = expand_build_matrix_to_jobs(steps, models_config=config_path)
+    assert [(j.model_slug, j.replicate_index) for j in jobs] == [
+        ("kimi_k2_6", 1),
+        ("qwen3_5_plus", 1),
+        ("kimi_k2_6", 2),
+        ("qwen3_5_plus", 2),
+        ("kimi_k2_6", 3),
+        ("qwen3_5_plus", 3),
+    ]
+
+
 def test_build_job_argv_runs_single_replicate_with_global_pool_defaults() -> None:
     argv = build_job_argv(
         BuildJob("codex", "kimi_k2_6", 2, 3),
@@ -295,6 +335,43 @@ def test_dispatch_build_jobs_starts_second_harness_before_first_finishes() -> No
     claude_release.set()
     thread.join(timeout=5.0)
     assert set(results) == {("claude:kimi_k2_6", 0), ("codex:kimi_k2_6", 0)}
+
+
+def test_dispatch_build_jobs_never_overlaps_same_target_replicates() -> None:
+    import threading
+    import time
+
+    active: dict[tuple[str, str], int] = {}
+    overlap = threading.Event()
+    active_lock = threading.Lock()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        harness = cmd[cmd.index("--harness") + 1]
+        model = cmd[cmd.index("--model") + 1]
+        key = (harness, model)
+        with active_lock:
+            active[key] = active.get(key, 0) + 1
+            if active[key] > 1:
+                overlap.set()
+        time.sleep(0.05)
+        with active_lock:
+            active[key] -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("codex", "kimi_k2_6", 1, 3),
+        BuildJob("codex", "kimi_k2_6", 2, 3),
+        BuildJob("codex", "kimi_k2_6", 3, 3),
+    ]
+    dispatch_build_jobs_by_replicate_wave(
+        jobs,
+        workers=3,
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        extra_args=[],
+        run_cmd=fake_run_cmd,
+    )
+    assert not overlap.is_set(), "same harness/model replicates overlapped"
 
 
 def test_phase_build_forwards_no_docker_prune_and_prunes_once(

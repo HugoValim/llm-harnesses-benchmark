@@ -19,7 +19,7 @@ from benchmark.defaults import DEFAULT_JOBS
 from benchmark.docker_cleanup import prune_docker_after_benchmark
 from benchmark.harnesses import dispatch_harness
 from benchmark.job_pool import run_job_pool
-from benchmark.replicates import model_num_runs
+from benchmark.replicates import expand_replicate_first, model_num_runs
 from benchmark.result_layout import format_replicate_dir
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
@@ -113,6 +113,20 @@ def group_build_batches(steps: Sequence[BuildStep]) -> list[BuildBatch]:
     ]
 
 
+def _group_steps_by_harness(
+    steps: Sequence[BuildStep],
+) -> tuple[dict[str, list[BuildStep]], list[str]]:
+    """Group matrix rows by harness while preserving first-seen harness order."""
+    groups: dict[str, list[BuildStep]] = {}
+    order: list[str] = []
+    for step in steps:
+        if step.harness not in groups:
+            groups[step.harness] = []
+            order.append(step.harness)
+        groups[step.harness].append(step)
+    return groups, order
+
+
 def expand_build_matrix_to_jobs(
     steps: Sequence[BuildStep],
     *,
@@ -122,11 +136,19 @@ def expand_build_matrix_to_jobs(
     registry = registry_by_slug(
         _normalize_registry_models(load_json(models_config).get("models"))
     )
+    groups, harness_order = _group_steps_by_harness(steps)
     jobs: list[BuildJob] = []
-    for step in steps:
-        model_row = registry.get(step.model_slug, {})
-        num_runs = model_num_runs(model_row) if model_row else 1
-        for replicate_index in range(1, num_runs + 1):
+    for harness in harness_order:
+        harness_steps = groups[harness]
+
+        def num_runs_for_step(step: BuildStep) -> int:
+            model_row = registry.get(step.model_slug, {})
+            return model_num_runs(model_row) if model_row else 1
+
+        for step, replicate_index, num_runs in expand_replicate_first(
+            harness_steps,
+            num_runs=num_runs_for_step,
+        ):
             jobs.append(
                 BuildJob(
                     harness=step.harness,
@@ -246,6 +268,41 @@ def dispatch_build_jobs(
         )
 
     return run_job_pool(list(jobs), workers, run_one)
+
+
+def dispatch_build_jobs_by_replicate_wave(
+    jobs: Sequence[BuildJob],
+    *,
+    workers: int,
+    models_config: Path,
+    results_dir: Path,
+    extra_args: Sequence[str],
+    run_id: str | None = None,
+    dry_run: bool = False,
+    run_cmd: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> list[tuple[str, int]]:
+    """Run build jobs in replicate waves so one target never overlaps replicates."""
+    if not jobs:
+        return []
+    max_replicate = max(job.replicate_index for job in jobs)
+    all_results: list[tuple[str, int]] = []
+    for replicate_index in range(1, max_replicate + 1):
+        wave = [job for job in jobs if job.replicate_index == replicate_index]
+        if not wave:
+            continue
+        all_results.extend(
+            dispatch_build_jobs(
+                wave,
+                workers=workers,
+                models_config=models_config,
+                results_dir=results_dir,
+                extra_args=extra_args,
+                run_id=run_id,
+                dry_run=dry_run,
+                run_cmd=run_cmd,
+            )
+        )
+    return all_results
 
 
 def _cleanup_docker_after_phase_build(extra_args: Sequence[str]) -> None:
@@ -377,7 +434,7 @@ def phase_build(
         f"==> Phase 1 — build matrix ({len(steps)} models, "
         f"{len(jobs_list)} jobs, global jobs={jobs})"
     )
-    results = dispatch_build_jobs(
+    results = dispatch_build_jobs_by_replicate_wave(
         jobs_list,
         workers=jobs,
         models_config=models_config,

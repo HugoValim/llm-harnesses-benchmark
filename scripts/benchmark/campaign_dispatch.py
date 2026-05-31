@@ -12,7 +12,12 @@ from typing import Any, Callable, Protocol
 from benchmark.config import BenchmarkConfig
 from benchmark.job_pool import job_pool_workers, run_job_pool
 from benchmark.rate_limit import RateLimitWaitPolicy
-from benchmark.replicates import model_num_runs, replicate_log_suffix, run_replicate_attempts
+from benchmark.replicates import (
+    expand_replicate_first,
+    model_num_runs,
+    replicate_log_suffix,
+    run_replicate_attempts,
+)
 from benchmark.result_validation import (
     followup_expected,
     validate_benchmark_result,
@@ -125,6 +130,22 @@ class VariantReplicateJob:
     num_runs: int
 
 
+class ModelSlotLocks:
+    """One lock per model slug; prevents overlapping replicates of the same model."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, threading.Lock] = {}
+        self._guard = threading.Lock()
+
+    def lock_for(self, slug: str) -> threading.Lock:
+        with self._guard:
+            lock = self._locks.get(slug)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[slug] = lock
+            return lock
+
+
 class RunModelFn(Protocol):
     """Callable shape for opencode/codex model execution.
 
@@ -169,21 +190,33 @@ def expand_model_jobs_to_replicate_jobs(
     replicate_index: int | None = None,
 ) -> list[ModelReplicateJob]:
     """Expand model-level jobs into one queue item per replicate attempt."""
-    expanded: list[ModelReplicateJob] = []
-    for model_index, model in job_items:
-        num_runs = model_num_runs(model)
-        for attempt_index in range(1, num_runs + 1):
-            if replicate_index is not None and attempt_index != replicate_index:
-                continue
-            expanded.append(
-                ModelReplicateJob(
-                    model_index=model_index,
-                    model=model,
-                    replicate_index=attempt_index,
-                    num_runs=num_runs,
+    if replicate_index is not None:
+        expanded: list[ModelReplicateJob] = []
+        for model_index, model in job_items:
+            num_runs = model_num_runs(model)
+            if replicate_index <= num_runs:
+                expanded.append(
+                    ModelReplicateJob(
+                        model_index=model_index,
+                        model=model,
+                        replicate_index=replicate_index,
+                        num_runs=num_runs,
+                    )
                 )
-            )
-    return expanded
+        return expanded
+
+    return [
+        ModelReplicateJob(
+            model_index=model_index,
+            model=model,
+            replicate_index=attempt_index,
+            num_runs=num_runs,
+        )
+        for (model_index, model), attempt_index, num_runs in expand_replicate_first(
+            job_items,
+            num_runs=lambda item: model_num_runs(item[1]),
+        )
+    ]
 
 
 def expand_variants_to_replicate_jobs(
@@ -192,20 +225,31 @@ def expand_variants_to_replicate_jobs(
     replicate_index: int | None = None,
 ) -> list[VariantReplicateJob]:
     """Expand variant jobs into one queue item per replicate attempt."""
-    expanded: list[VariantReplicateJob] = []
-    for variant in variants:
-        num_runs = model_num_runs(variant)
-        for attempt_index in range(1, num_runs + 1):
-            if replicate_index is not None and attempt_index != replicate_index:
-                continue
-            expanded.append(
-                VariantReplicateJob(
-                    variant=variant,
-                    replicate_index=attempt_index,
-                    num_runs=num_runs,
+    if replicate_index is not None:
+        expanded: list[VariantReplicateJob] = []
+        for variant in variants:
+            num_runs = model_num_runs(variant)
+            if replicate_index <= num_runs:
+                expanded.append(
+                    VariantReplicateJob(
+                        variant=variant,
+                        replicate_index=replicate_index,
+                        num_runs=num_runs,
+                    )
                 )
-            )
-    return expanded
+        return expanded
+
+    return [
+        VariantReplicateJob(
+            variant=variant,
+            replicate_index=attempt_index,
+            num_runs=num_runs,
+        )
+        for variant, attempt_index, num_runs in expand_replicate_first(
+            variants,
+            num_runs=model_num_runs,
+        )
+    ]
 
 
 def needs_local_gpu_lock(models: list[dict[str, Any]]) -> bool:
@@ -236,6 +280,7 @@ def run_model_job_batch(
     dispatch_model: DispatchModelFn,
     dispatch_replicate: DispatchReplicateFn,
     replicate_index: int | None = None,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> None:
     """Run model jobs with local GPU serialization and usage-limit aborts.
 
@@ -256,6 +301,7 @@ def run_model_job_batch(
             local_gpu_lock,
             dispatch_replicate,
             replicate_index=replicate_index,
+            model_slot_locks=model_slot_locks,
         )
         return
     _run_sequential_model_jobs(
@@ -280,6 +326,7 @@ def run_model_campaign(
     total_models = len(bench.selected_models)
     workers = benchmark_job_workers(total_models, jobs)
     local_gpu_lock = _local_gpu_lock_for(bench.selected_models)
+    model_slot_locks = ModelSlotLocks() if workers > 1 and total_models > 1 else None
     _print_model_campaign_start(bench, total_models, workers)
     run_model_job_batch(
         job_items=list(enumerate(bench.selected_models, start=1)),
@@ -287,6 +334,7 @@ def run_model_campaign(
         harness=bench.harness,
         abort_flag=abort_flag,
         local_gpu_lock=local_gpu_lock,
+        model_slot_locks=model_slot_locks,
         replicate_index=bench.replicate_index,
         dispatch_model=lambda model, index, skip_stale_kill=False: (
             _run_model_replicate(
@@ -344,7 +392,9 @@ def run_variant_campaign(config: VariantCampaignConfig) -> CampaignDispatchResul
     if jobs == 1 or len(config.variants) <= 1:
         _run_sequential_variant_jobs(config, abort_flag)
     else:
-        _run_parallel_variant_jobs(config, jobs, abort_flag)
+        _run_parallel_variant_jobs(
+            config, jobs, abort_flag, model_slot_locks=ModelSlotLocks()
+        )
     return CampaignDispatchResult(usage_limit_aborted=abort_flag.is_set())
 
 
@@ -510,7 +560,11 @@ def _run_sequential_variant_jobs(
 
 
 def _run_parallel_variant_jobs(
-    config: VariantCampaignConfig, jobs: int, abort_flag: threading.Event
+    config: VariantCampaignConfig,
+    jobs: int,
+    abort_flag: threading.Event,
+    *,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> None:
     replicate_jobs = expand_variants_to_replicate_jobs(
         config.variants, replicate_index=config.replicate_index
@@ -523,6 +577,7 @@ def _run_parallel_variant_jobs(
             job.replicate_index,
             job.num_runs,
             abort_flag,
+            model_slot_locks=model_slot_locks,
         )
 
     _run_job_pool(replicate_jobs, jobs, run_job)
@@ -534,6 +589,8 @@ def _run_variant_replicate_job(
     replicate_index: int,
     num_runs: int,
     abort_flag: threading.Event,
+    *,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
     slug = str(variant["slug"])
     suffix = replicate_log_suffix(replicate_index, num_runs)
@@ -543,9 +600,13 @@ def _run_variant_replicate_job(
         print_line(f"[{slug}] skipped - usage limit active")
         return slug, None, None
     try:
-        payload = _run_variant_replicate(
-            config, variant, replicate_index, num_runs
+        slot_lock = (
+            model_slot_locks.lock_for(slug) if model_slot_locks is not None else None
         )
+        with _optional_lock(slot_lock):
+            payload = _run_variant_replicate(
+                config, variant, replicate_index, num_runs
+            )
         if phase_hit_usage_limit(payload):
             abort_flag.set()
         return slug, payload, None
@@ -726,6 +787,7 @@ def _run_parallel_model_jobs(
     dispatch_replicate: DispatchReplicateFn,
     *,
     replicate_index: int | None = None,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> None:
     if harness == "opencode":
         kill_stale_opencode_processes()
@@ -756,6 +818,7 @@ def _run_parallel_model_jobs(
             abort_flag,
             local_gpu_lock,
             dispatch_one,
+            model_slot_locks=model_slot_locks,
         )
 
     _run_job_pool(replicate_jobs, workers, run_job)
@@ -783,6 +846,8 @@ def _run_model_job_item(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
+    *,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
     index, model = item
     slug = str(model["slug"])
@@ -791,7 +856,13 @@ def _run_model_job_item(
         return slug, None, None
     try:
         return _dispatch_model_job(
-            model, index, skip_stale_kill, abort_flag, local_gpu_lock, dispatch_model
+            model,
+            index,
+            skip_stale_kill,
+            abort_flag,
+            local_gpu_lock,
+            dispatch_model,
+            model_slot_locks=model_slot_locks,
         )
     except Exception:
         return slug, None, traceback.format_exc()
@@ -804,13 +875,20 @@ def _dispatch_model_job(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
+    *,
+    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
+    slug = str(model["slug"])
     gpu_lock = local_gpu_lock if model.get("provider") == "ollama" else None
-    with _optional_lock(gpu_lock):
-        payload = dispatch_model(model, index, skip_stale_kill=skip_stale_kill)
+    slot_lock = (
+        model_slot_locks.lock_for(slug) if model_slot_locks is not None else None
+    )
+    with _optional_lock(slot_lock):
+        with _optional_lock(gpu_lock):
+            payload = dispatch_model(model, index, skip_stale_kill=skip_stale_kill)
     if phase_hit_usage_limit(payload):
         abort_flag.set()
-    return str(model["slug"]), payload, None
+    return slug, payload, None
 
 
 class _optional_lock:

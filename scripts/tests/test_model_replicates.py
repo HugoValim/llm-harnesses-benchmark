@@ -14,7 +14,12 @@ from benchmark.config import (  # noqa: E402
     registry_harness_values,
     resolve_build_harness_config,
 )
-from benchmark.replicates import attach_replicate_fields, model_num_runs, run_replicate_attempts  # noqa: E402
+from benchmark.replicates import (  # noqa: E402
+    attach_replicate_fields,
+    expand_replicate_first,
+    model_num_runs,
+    run_replicate_attempts,
+)
 
 
 class TestNumRunsConfig(unittest.TestCase):
@@ -116,6 +121,22 @@ class TestReplicateHelpers(unittest.TestCase):
 
     def test_model_num_runs_defaults_to_one(self) -> None:
         self.assertEqual(model_num_runs({"slug": "demo"}), 1)
+
+    def test_expand_replicate_first_mixed_num_runs(self) -> None:
+        items = [
+            {"slug": "a", "num_runs": 2},
+            {"slug": "b", "num_runs": 1},
+            {"slug": "c", "num_runs": 2},
+        ]
+        expanded = expand_replicate_first(items, num_runs=model_num_runs)
+        self.assertEqual(
+            [(item["slug"], replicate_index) for item, replicate_index, _ in expanded],
+            [("a", 1), ("b", 1), ("c", 1), ("a", 2), ("c", 2)],
+        )
+        self.assertEqual(
+            [num_runs for _, _, num_runs in expanded],
+            [2, 1, 2, 2, 2],
+        )
 
 
 class TestRegistryModelsJson(unittest.TestCase):
