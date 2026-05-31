@@ -12,15 +12,16 @@ from typing import Callable, Sequence
 from benchmark.audit_meta import audit_model_harness
 from benchmark.config import (
     _normalize_registry_models,
+    existing_terminal_result,
     registry_by_slug,
     registry_harness_values,
 )
 from benchmark.defaults import DEFAULT_JOBS
 from benchmark.docker_cleanup import prune_docker_after_benchmark
 from benchmark.harnesses import dispatch_harness
-from benchmark.job_pool import run_job_pool
+from benchmark.job_pool import run_job_pool, run_target_pipelined_job_pool
 from benchmark.replicates import expand_replicate_first, model_num_runs
-from benchmark.result_layout import format_replicate_dir
+from benchmark.result_layout import format_replicate_dir, replicate_result_dir
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
@@ -66,6 +67,9 @@ class BuildJob:
         if self.num_runs <= 1:
             return f"{self.harness}:{self.model_slug}"
         return f"{self.harness}:{self.model_slug}/{replicate}"
+
+    def target_key(self) -> tuple[str, str]:
+        return (self.harness, self.model_slug)
 
 
 def build_matrix(models_config_path: Path) -> list[BuildStep]:
@@ -281,7 +285,10 @@ def dispatch_build_jobs_by_replicate_wave(
     dry_run: bool = False,
     run_cmd: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
 ) -> list[tuple[str, int]]:
-    """Run build jobs in replicate waves so one target never overlaps replicates."""
+    """Run build jobs in replicate waves so one target never overlaps replicates.
+
+    Deprecated: default Phase 1 uses :func:`dispatch_build_jobs_pipelined` instead.
+    """
     if not jobs:
         return []
     max_replicate = max(job.replicate_index for job in jobs)
@@ -303,6 +310,94 @@ def dispatch_build_jobs_by_replicate_wave(
             )
         )
     return all_results
+
+
+def _initial_replicate_index_for_target(
+    target_jobs: Sequence[BuildJob],
+    results_dir: Path,
+    *,
+    force: bool,
+) -> int:
+    """Return the next job-list index for one target (skip cached terminal results)."""
+    if force:
+        return 0
+    completed = 0
+    for job in target_jobs:
+        result_path = (
+            replicate_result_dir(
+                results_dir, job.harness, job.model_slug, job.replicate_index
+            )
+            / "result.json"
+        )
+        if existing_terminal_result(result_path):
+            completed += 1
+        else:
+            break
+    return completed
+
+
+def _group_build_jobs_by_target(
+    jobs: Sequence[BuildJob],
+) -> dict[tuple[str, str], list[BuildJob]]:
+    grouped: dict[tuple[str, str], list[BuildJob]] = {}
+    for job in jobs:
+        key = job.target_key()
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(job)
+    for target_jobs in grouped.values():
+        target_jobs.sort(key=lambda j: j.replicate_index)
+    return grouped
+
+
+def dispatch_build_jobs_pipelined(
+    jobs: Sequence[BuildJob],
+    *,
+    workers: int,
+    models_config: Path,
+    results_dir: Path,
+    extra_args: Sequence[str],
+    run_id: str | None = None,
+    dry_run: bool = False,
+    run_cmd: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> list[tuple[str, int]]:
+    """Run build jobs with per-target replicate pipelining and a global worker cap."""
+    if not jobs:
+        return []
+
+    force = "--force" in extra_args
+
+    def run_one(job: BuildJob) -> tuple[str, int]:
+        return execute_build_job(
+            job,
+            models_config=models_config,
+            results_dir=results_dir,
+            extra_args=extra_args,
+            run_id=run_id,
+            dry_run=dry_run,
+            run_cmd=run_cmd,
+        )
+
+    grouped = _group_build_jobs_by_target(jobs)
+
+    def initial_next_index(key: tuple[str, str]) -> int:
+        return _initial_replicate_index_for_target(
+            grouped[key], results_dir, force=force
+        )
+
+    def on_complete(_job: BuildJob, result: tuple[str, int]) -> bool:
+        _label, exit_code = result
+        return exit_code == 0
+
+    return run_target_pipelined_job_pool(
+        list(jobs),
+        workers,
+        run_one,
+        target_key=lambda job: job.target_key(),
+        replicate_index=lambda job: job.replicate_index,
+        initial_next_index=initial_next_index,
+        on_complete=on_complete,
+    )
 
 
 def _cleanup_docker_after_phase_build(extra_args: Sequence[str]) -> None:
@@ -432,9 +527,9 @@ def phase_build(
     child_extra = _build_extra_args(extra_args, defer_docker_prune=True)
     print_line(
         f"==> Phase 1 — build matrix ({len(steps)} models, "
-        f"{len(jobs_list)} jobs, global jobs={jobs})"
+        f"{len(jobs_list)} jobs, pipelined replicates, global jobs={jobs})"
     )
-    results = dispatch_build_jobs_by_replicate_wave(
+    results = dispatch_build_jobs_pipelined(
         jobs_list,
         workers=jobs,
         models_config=models_config,

@@ -21,6 +21,7 @@ from benchmark.full_pipeline import (  # noqa: E402
     build_matrix,
     dispatch_build_jobs,
     dispatch_build_jobs_by_replicate_wave,
+    dispatch_build_jobs_pipelined,
     expand_build_matrix_to_jobs,
     group_build_batches,
     phase_audit,
@@ -337,7 +338,9 @@ def test_dispatch_build_jobs_starts_second_harness_before_first_finishes() -> No
     assert set(results) == {("claude:kimi_k2_6", 0), ("codex:kimi_k2_6", 0)}
 
 
-def test_dispatch_build_jobs_never_overlaps_same_target_replicates() -> None:
+def test_dispatch_build_jobs_never_overlaps_same_target_replicates(
+    tmp_path: Path,
+) -> None:
     import threading
     import time
 
@@ -363,15 +366,78 @@ def test_dispatch_build_jobs_never_overlaps_same_target_replicates() -> None:
         BuildJob("codex", "kimi_k2_6", 2, 3),
         BuildJob("codex", "kimi_k2_6", 3, 3),
     ]
-    dispatch_build_jobs_by_replicate_wave(
+    dispatch_build_jobs_pipelined(
         jobs,
         workers=3,
         models_config=MODELS_CONFIG,
-        results_dir=REPO_ROOT / "results",
+        results_dir=tmp_path,
         extra_args=[],
         run_cmd=fake_run_cmd,
     )
     assert not overlap.is_set(), "same harness/model replicates overlapped"
+
+
+def test_dispatch_build_jobs_pipelined_starts_run2_while_straggler_on_run1(
+    tmp_path: Path,
+) -> None:
+    import threading
+    import time
+
+    started: list[tuple[str, int]] = []
+    lock = threading.Lock()
+    slow_release = threading.Event()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        model = cmd[cmd.index("--model") + 1]
+        replicate = int(cmd[cmd.index("--replicate-index") + 1])
+        with lock:
+            started.append((model, replicate))
+        if model == "slow" and replicate == 1:
+            slow_release.wait(timeout=5.0)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("codex", "slow", 1, 2),
+        BuildJob("codex", "slow", 2, 2),
+        BuildJob("codex", "fast", 1, 2),
+        BuildJob("codex", "fast", 2, 2),
+    ]
+    results: list[tuple[str, int]] = []
+
+    def runner() -> None:
+        results.extend(
+            dispatch_build_jobs_pipelined(
+                jobs,
+                workers=3,
+                models_config=MODELS_CONFIG,
+                results_dir=tmp_path,
+                extra_args=[],
+                run_cmd=fake_run_cmd,
+            )
+        )
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        with lock:
+            if ("fast", 2) in started:
+                break
+        time.sleep(0.01)
+    with lock:
+        fast_run2_started_before_release = ("fast", 2) in started
+    assert fast_run2_started_before_release, (
+        "expected fast run_02 to start while slow run_01 still blocked"
+    )
+    slow_release.set()
+    thread.join(timeout=5.0)
+    assert not thread.is_alive()
+    assert set(results) == {
+        ("codex:slow/run_01", 0),
+        ("codex:slow/run_02", 0),
+        ("codex:fast/run_01", 0),
+        ("codex:fast/run_02", 0),
+    }
 
 
 def test_phase_build_forwards_no_docker_prune_and_prunes_once(
@@ -403,7 +469,7 @@ def test_phase_build_forwards_no_docker_prune_and_prunes_once(
         return [(job.label(), 0) for job in jobs]
 
     monkeypatch.setattr(
-        "benchmark.full_pipeline.dispatch_build_jobs", fake_dispatch
+        "benchmark.full_pipeline.dispatch_build_jobs_pipelined", fake_dispatch
     )
     monkeypatch.setattr(
         "benchmark.full_pipeline._cleanup_docker_after_phase_build",
@@ -445,7 +511,7 @@ def test_phase_build_raises_when_any_job_fails(
     )
 
     monkeypatch.setattr(
-        "benchmark.full_pipeline.dispatch_build_jobs",
+        "benchmark.full_pipeline.dispatch_build_jobs_pipelined",
         lambda *args, **kwargs: [("claude:kimi_k2_6", 1)],
     )
 
@@ -458,6 +524,63 @@ def test_phase_build_raises_when_any_job_fails(
             dry_run=False,
             sequential_build=False,
         )
+
+
+def test_phase_build_uses_pipelined_dispatcher_not_wave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_claude"],
+                        "num_runs": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipelined_called = False
+    wave_called = False
+
+    def fake_pipelined(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal pipelined_called
+        pipelined_called = True
+        jobs = args[0] if args else kwargs["jobs"]
+        return [(job.label(), 0) for job in jobs]
+
+    def fake_wave(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal wave_called
+        wave_called = True
+        return []
+
+    monkeypatch.setattr(
+        "benchmark.full_pipeline.dispatch_build_jobs_pipelined", fake_pipelined
+    )
+    monkeypatch.setattr(
+        "benchmark.full_pipeline.dispatch_build_jobs_by_replicate_wave", fake_wave
+    )
+    monkeypatch.setattr(
+        "benchmark.full_pipeline._cleanup_docker_after_phase_build",
+        lambda extra_args: None,
+    )
+
+    phase_build(
+        config_path,
+        tmp_path,
+        [],
+        jobs=1,
+        dry_run=False,
+        sequential_build=False,
+    )
+    assert pipelined_called
+    assert not wave_called
 
 
 def test_sequential_build_uses_harness_batches_not_global_pool(
