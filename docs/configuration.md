@@ -84,6 +84,8 @@ python3 scripts/run_benchmark.py --harness codex --models-config /path/to/models
 
 ## Adding a model
 
+Before a cross-harness contest run, authenticate each CLI you plan to use (`codex login`, `claude` subscription or `ANTHROPIC_API_KEY`, `agent login` or `CURSOR_API_KEY`, OpenCode/OpenRouter as configured). Benchmark builds isolate per-replicate runtime dirs; staged subscription auth requires the corresponding dot-dir under your real `$HOME` unless you use API keys. See [running.md](running.md#full-pipeline) for build-parity details.
+
 1. Add a row to `config/models.json` with a unique `slug` and a `harness` list.
 2. For Ollama Cloud contest coverage, include
    `["ollama_claude", "ollama_codex", "ollama_opencode"]` on one base slug row.

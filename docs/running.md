@@ -108,6 +108,8 @@ Phase 1 (default) runs a **global job pool** in **replicate waves**: within each
 
 Parallel opencode runs isolate SQLite state by setting `XDG_DATA_HOME` to `{result_dir}/.xdg-data` (alongside stale-process cleanup before each batch).
 
+**Build parity (all four harnesses):** Phase 2 always runs cold — no opencode session resume, no Cursor `--continue`. The harness wraps the primary prompt with canonical agent rules before sending it to the CLI. Each replicate isolates runtime state: OpenCode uses `{result_dir}/.xdg-data`, Codex uses `{result_dir}/.codex-home`, Claude and Cursor use `{result_dir}/.agent-home` as `$HOME` (subscription auth is staged from your real home when `.claude/` or `.cursor/` exists; otherwise set `ANTHROPIC_API_KEY` or `CURSOR_API_KEY`). `result.json` records `build_parity` metadata. Existing pre-parity runs (e.g. `run_02` cells) are not comparable — re-run build jobs before cross-harness audit comparisons.
+
 Environment variables:
 
 - `AUDITOR_SLUG` — Role 1 auditor (default `codex_gpt_5_5`)
