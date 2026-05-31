@@ -5,13 +5,12 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from collections import deque
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from benchmark.config import BenchmarkConfig
+from benchmark.job_pool import job_pool_workers, run_job_pool
 from benchmark.rate_limit import RateLimitWaitPolicy
 from benchmark.replicates import model_num_runs, replicate_log_suffix, run_replicate_attempts
 from benchmark.result_validation import (
@@ -74,6 +73,7 @@ class VariantCampaignConfig:
     validate_results: bool
     max_validation_retries: int
     include_agent_rules: bool = True
+    replicate_index: int | None = None
 
 
 class DispatchModelFn(Protocol):
@@ -160,26 +160,26 @@ def benchmark_job_workers(total_models: int, jobs: int) -> int:
     Example:
         ``benchmark_job_workers(5, 0)`` returns ``5``.
     """
-    if total_models <= 0:
-        return 1
-    if jobs <= 0:
-        return total_models
-    return max(1, min(jobs, total_models))
+    return job_pool_workers(total_models, jobs)
 
 
 def expand_model_jobs_to_replicate_jobs(
     job_items: list[tuple[int, dict[str, Any]]],
+    *,
+    replicate_index: int | None = None,
 ) -> list[ModelReplicateJob]:
     """Expand model-level jobs into one queue item per replicate attempt."""
     expanded: list[ModelReplicateJob] = []
     for model_index, model in job_items:
         num_runs = model_num_runs(model)
-        for replicate_index in range(1, num_runs + 1):
+        for attempt_index in range(1, num_runs + 1):
+            if replicate_index is not None and attempt_index != replicate_index:
+                continue
             expanded.append(
                 ModelReplicateJob(
                     model_index=model_index,
                     model=model,
-                    replicate_index=replicate_index,
+                    replicate_index=attempt_index,
                     num_runs=num_runs,
                 )
             )
@@ -188,16 +188,20 @@ def expand_model_jobs_to_replicate_jobs(
 
 def expand_variants_to_replicate_jobs(
     variants: list[dict[str, Any]],
+    *,
+    replicate_index: int | None = None,
 ) -> list[VariantReplicateJob]:
     """Expand variant jobs into one queue item per replicate attempt."""
     expanded: list[VariantReplicateJob] = []
     for variant in variants:
         num_runs = model_num_runs(variant)
-        for replicate_index in range(1, num_runs + 1):
+        for attempt_index in range(1, num_runs + 1):
+            if replicate_index is not None and attempt_index != replicate_index:
+                continue
             expanded.append(
                 VariantReplicateJob(
                     variant=variant,
-                    replicate_index=replicate_index,
+                    replicate_index=attempt_index,
                     num_runs=num_runs,
                 )
             )
@@ -231,6 +235,7 @@ def run_model_job_batch(
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
     dispatch_replicate: DispatchReplicateFn,
+    replicate_index: int | None = None,
 ) -> None:
     """Run model jobs with local GPU serialization and usage-limit aborts.
 
@@ -250,6 +255,7 @@ def run_model_job_batch(
             abort_flag,
             local_gpu_lock,
             dispatch_replicate,
+            replicate_index=replicate_index,
         )
         return
     _run_sequential_model_jobs(
@@ -281,15 +287,31 @@ def run_model_campaign(
         harness=bench.harness,
         abort_flag=abort_flag,
         local_gpu_lock=local_gpu_lock,
-        dispatch_model=lambda model, index, skip_stale_kill=False: _run_model_replicates(
-            model,
-            bench,
-            index,
-            total_models,
-            skip_stale_kill,
-            validate_results,
-            max_validation_retries,
-            run_model_fn,
+        replicate_index=bench.replicate_index,
+        dispatch_model=lambda model, index, skip_stale_kill=False: (
+            _run_model_replicate(
+                model,
+                bench,
+                index,
+                total_models,
+                skip_stale_kill,
+                validate_results,
+                max_validation_retries,
+                run_model_fn,
+                bench.replicate_index,
+                model_num_runs(model),
+            )
+            if bench.replicate_index is not None
+            else _run_model_replicates(
+                model,
+                bench,
+                index,
+                total_models,
+                skip_stale_kill,
+                validate_results,
+                max_validation_retries,
+                run_model_fn,
+            )
         ),
         dispatch_replicate=lambda model,
         index,
@@ -473,7 +495,16 @@ def _run_sequential_variant_jobs(
     config: VariantCampaignConfig, abort_flag: threading.Event
 ) -> None:
     for variant in config.variants:
-        slug, _, err = _run_variant_job(config, variant, abort_flag)
+        if config.replicate_index is not None:
+            slug, _, err = _run_variant_replicate_job(
+                config,
+                variant,
+                config.replicate_index,
+                model_num_runs(variant),
+                abort_flag,
+            )
+        else:
+            slug, _, err = _run_variant_job(config, variant, abort_flag)
         if err:
             print_line(f"[{slug}] ERROR:\n{err}")
 
@@ -481,7 +512,9 @@ def _run_sequential_variant_jobs(
 def _run_parallel_variant_jobs(
     config: VariantCampaignConfig, jobs: int, abort_flag: threading.Event
 ) -> None:
-    replicate_jobs = expand_variants_to_replicate_jobs(config.variants)
+    replicate_jobs = expand_variants_to_replicate_jobs(
+        config.variants, replicate_index=config.replicate_index
+    )
 
     def run_job(job: VariantReplicateJob) -> tuple[str, dict[str, Any] | None, str | None]:
         return _run_variant_replicate_job(
@@ -680,28 +713,8 @@ def _run_job_pool(
     run_job: Callable[[Any], tuple[str, dict[str, Any] | None, str | None]],
 ) -> None:
     """Keep up to ``workers`` replicate/model jobs running until the queue is empty."""
-    if not jobs:
-        return
-    worker_count = benchmark_job_workers(len(jobs), workers)
-    if worker_count == 1:
-        for job in jobs:
-            _print_model_job_result(*run_job(job))
-        return
-
-    pending: deque[Any] = deque(jobs)
-    in_flight: set[Future[tuple[str, dict[str, Any] | None, str | None]]] = set()
-
-    with ThreadPoolExecutor(max_workers=worker_count) as pool:
-        while pending or in_flight:
-            while pending and len(in_flight) < worker_count:
-                in_flight.add(pool.submit(run_job, pending.popleft()))
-
-            if not in_flight:
-                break
-
-            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
-            for fut in done:
-                _print_model_job_result(*fut.result())
+    for result in run_job_pool(jobs, workers, run_job):
+        _print_model_job_result(*result)
 
 
 def _run_parallel_model_jobs(
@@ -711,11 +724,15 @@ def _run_parallel_model_jobs(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_replicate: DispatchReplicateFn,
+    *,
+    replicate_index: int | None = None,
 ) -> None:
     if harness == "opencode":
         kill_stale_opencode_processes()
 
-    replicate_jobs = expand_model_jobs_to_replicate_jobs(job_items)
+    replicate_jobs = expand_model_jobs_to_replicate_jobs(
+        job_items, replicate_index=replicate_index
+    )
 
     def run_job(job: ModelReplicateJob) -> tuple[str, dict[str, Any] | None, str | None]:
         suffix = replicate_log_suffix(job.replicate_index, job.num_runs)

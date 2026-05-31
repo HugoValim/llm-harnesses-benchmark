@@ -7,12 +7,20 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from benchmark.audit_meta import audit_model_harness
-from benchmark.config import _normalize_registry_models, registry_harness_values, resolve_build_harness_config
+from benchmark.config import (
+    _normalize_registry_models,
+    registry_by_slug,
+    registry_harness_values,
+)
 from benchmark.defaults import DEFAULT_JOBS
+from benchmark.docker_cleanup import prune_docker_after_benchmark
 from benchmark.harnesses import dispatch_harness
+from benchmark.job_pool import run_job_pool
+from benchmark.replicates import model_num_runs
+from benchmark.result_layout import format_replicate_dir
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
@@ -41,6 +49,23 @@ class BuildBatch:
 
     harness: str
     model_slugs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BuildJob:
+    """One global pool work item: a single harness/model/replicate attempt."""
+
+    harness: str
+    model_slug: str
+    replicate_index: int
+    num_runs: int
+
+    def label(self) -> str:
+        """Stable log label for one build job."""
+        replicate = format_replicate_dir(self.replicate_index)
+        if self.num_runs <= 1:
+            return f"{self.harness}:{self.model_slug}"
+        return f"{self.harness}:{self.model_slug}/{replicate}"
 
 
 def build_matrix(models_config_path: Path) -> list[BuildStep]:
@@ -88,6 +113,168 @@ def group_build_batches(steps: Sequence[BuildStep]) -> list[BuildBatch]:
     ]
 
 
+def expand_build_matrix_to_jobs(
+    steps: Sequence[BuildStep],
+    *,
+    models_config: Path,
+) -> list[BuildJob]:
+    """Return one job per configured (harness, model, replicate) leaf."""
+    registry = registry_by_slug(
+        _normalize_registry_models(load_json(models_config).get("models"))
+    )
+    jobs: list[BuildJob] = []
+    for step in steps:
+        model_row = registry.get(step.model_slug, {})
+        num_runs = model_num_runs(model_row) if model_row else 1
+        for replicate_index in range(1, num_runs + 1):
+            jobs.append(
+                BuildJob(
+                    harness=step.harness,
+                    model_slug=step.model_slug,
+                    replicate_index=replicate_index,
+                    num_runs=num_runs,
+                )
+            )
+    return jobs
+
+
+def _build_extra_args(
+    extra_args: Sequence[str],
+    *,
+    defer_docker_prune: bool,
+) -> list[str]:
+    args = list(extra_args)
+    if defer_docker_prune and "--no-docker-prune" not in args:
+        args.append("--no-docker-prune")
+    return args
+
+
+def build_job_argv(
+    job: BuildJob,
+    *,
+    models_config: Path,
+    results_dir: Path,
+    extra_args: Sequence[str],
+    run_id: str | None = None,
+) -> list[str]:
+    """Argv for one single-replicate ``run_benchmark.py`` subprocess."""
+    argv = [
+        sys.executable,
+        str(SCRIPTS_DIR / "run_benchmark.py"),
+        "--harness",
+        job.harness,
+        "--models-config",
+        str(models_config),
+        *timeout_cli_flags(),
+        "--model",
+        job.model_slug,
+        "--replicate-index",
+        str(job.replicate_index),
+        "-j",
+        "1",
+    ]
+    if run_id:
+        argv.extend(["--run-id", run_id])
+    else:
+        argv.extend(["--results-dir", str(results_dir)])
+    argv.extend(extra_args)
+    return argv
+
+
+def execute_build_job(
+    job: BuildJob,
+    *,
+    models_config: Path,
+    results_dir: Path,
+    extra_args: Sequence[str],
+    run_id: str | None = None,
+    dry_run: bool = False,
+    run_cmd: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[str, int]:
+    """Run one build job subprocess; return ``(label, exit_code)``."""
+    print_line(f"==> Phase 1 build: {job.label()}")
+    cmd = build_job_argv(
+        job,
+        models_config=models_config,
+        results_dir=results_dir,
+        extra_args=extra_args,
+        run_id=run_id,
+    )
+    if dry_run:
+        print_line(" ".join(cmd))
+        return job.label(), 0
+    runner = run_cmd or subprocess.run
+    completed = runner(cmd, cwd=REPO_ROOT, check=False, text=True)
+    return job.label(), int(completed.returncode)
+
+
+def dispatch_build_jobs(
+    jobs: Sequence[BuildJob],
+    *,
+    workers: int,
+    models_config: Path,
+    results_dir: Path,
+    extra_args: Sequence[str],
+    run_id: str | None = None,
+    dry_run: bool = False,
+    run_cmd: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> list[tuple[str, int]]:
+    """Run build jobs through a global worker pool."""
+    if dry_run:
+        return [
+            execute_build_job(
+                job,
+                models_config=models_config,
+                results_dir=results_dir,
+                extra_args=extra_args,
+                run_id=run_id,
+                dry_run=True,
+                run_cmd=run_cmd,
+            )
+            for job in jobs
+        ]
+
+    def run_one(job: BuildJob) -> tuple[str, int]:
+        return execute_build_job(
+            job,
+            models_config=models_config,
+            results_dir=results_dir,
+            extra_args=extra_args,
+            run_id=run_id,
+            dry_run=False,
+            run_cmd=run_cmd,
+        )
+
+    return run_job_pool(list(jobs), workers, run_one)
+
+
+def _cleanup_docker_after_phase_build(extra_args: Sequence[str]) -> None:
+    if "--no-docker-prune" in extra_args:
+        return
+    result = prune_docker_after_benchmark()
+    if result.get("skipped"):
+        print_line(f"Docker cleanup skipped: {result.get('reason', 'unknown')}")
+        return
+    for step in result.get("steps") or []:
+        label = step.get("label", "docker")
+        if step.get("ok"):
+            reclaimed = step.get("reclaimed")
+            suffix = f" ({reclaimed} reclaimed)" if reclaimed else ""
+            print_line(f"Docker cleanup: {label} prune complete{suffix}")
+        else:
+            rc = step.get("returncode")
+            err = step.get("stderr") or step.get("stdout") or "unknown error"
+            print_line(f"Docker cleanup: {label} prune failed (exit {rc}): {err}")
+
+
+def _raise_build_failures(results: list[tuple[str, int]]) -> None:
+    failures = [label for label, exit_code in results if exit_code != 0]
+    if failures:
+        raise SystemExit(
+            f"ERROR: build failed for job(s): {', '.join(failures)}"
+        )
+
+
 def build_benchmark_argv(
     batch: BuildBatch,
     *,
@@ -130,7 +317,7 @@ def run_build_batch(
     extra_args: Sequence[str],
     run_id: str | None = None,
     dry_run: bool = False,
-) -> None:
+) -> int:
     slugs = ", ".join(batch.model_slugs)
     print_line(
         f"==> Phase 1 build: harness={batch.harness} "
@@ -146,8 +333,9 @@ def run_build_batch(
     )
     if dry_run:
         print_line(" ".join(cmd))
-        return
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
+        return 0
+    completed = subprocess.run(cmd, cwd=REPO_ROOT, check=False)
+    return int(completed.returncode)
 
 
 def phase_build(
@@ -158,23 +346,49 @@ def phase_build(
     jobs: int = DEFAULT_JOBS,
     run_id: str | None = None,
     dry_run: bool = False,
+    sequential_build: bool = False,
 ) -> list[BuildStep]:
     steps = build_matrix(models_config)
-    batches = group_build_batches(steps)
+    if sequential_build:
+        batches = group_build_batches(steps)
+        print_line(
+            f"==> Phase 1 — build matrix ({len(steps)} models, "
+            f"{len(batches)} harness batches, jobs={jobs}, sequential)"
+        )
+        for batch in batches:
+            exit_code = run_build_batch(
+                batch,
+                models_config=models_config,
+                results_dir=results_dir,
+                jobs=jobs,
+                extra_args=extra_args,
+                run_id=run_id,
+                dry_run=dry_run,
+            )
+            if exit_code != 0:
+                raise SystemExit(
+                    f"ERROR: build failed for harness={batch.harness!r} (exit {exit_code})"
+                )
+        return steps
+
+    jobs_list = expand_build_matrix_to_jobs(steps, models_config=models_config)
+    child_extra = _build_extra_args(extra_args, defer_docker_prune=True)
     print_line(
         f"==> Phase 1 — build matrix ({len(steps)} models, "
-        f"{len(batches)} invocations, jobs={jobs})"
+        f"{len(jobs_list)} jobs, global jobs={jobs})"
     )
-    for batch in batches:
-        run_build_batch(
-            batch,
-            models_config=models_config,
-            results_dir=results_dir,
-            jobs=jobs,
-            extra_args=extra_args,
-            run_id=run_id,
-            dry_run=dry_run,
-        )
+    results = dispatch_build_jobs(
+        jobs_list,
+        workers=jobs,
+        models_config=models_config,
+        results_dir=results_dir,
+        extra_args=child_extra,
+        run_id=run_id,
+        dry_run=dry_run,
+    )
+    _raise_build_failures(results)
+    if not dry_run:
+        _cleanup_docker_after_phase_build(extra_args)
     return steps
 
 

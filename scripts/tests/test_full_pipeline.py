@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,10 +15,15 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.config import resolve_build_harness_config  # noqa: E402
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_JOBS  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
+    BuildJob,
     build_benchmark_argv,
+    build_job_argv,
     build_matrix,
+    dispatch_build_jobs,
+    expand_build_matrix_to_jobs,
     group_build_batches,
     phase_audit,
+    phase_build,
     reject_forwarded_model_flag,
     resolve_meta_config,
 )
@@ -199,3 +205,227 @@ def test_list_steps_cli() -> None:
     assert "claude_opus_4_7" in completed.stdout
     assert "codex_gpt_5_5" in completed.stdout
     assert "composer_2_5" in completed.stdout
+
+
+def test_expand_build_matrix_to_jobs_includes_all_replicates(tmp_path: Path) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_claude", "ollama_codex"],
+                        "num_runs": 3,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    steps = build_matrix(config_path)
+    jobs = expand_build_matrix_to_jobs(steps, models_config=config_path)
+    assert len(jobs) == 6
+    assert {(j.harness, j.model_slug, j.replicate_index) for j in jobs} == {
+        ("claude", "kimi_k2_6", 1),
+        ("claude", "kimi_k2_6", 2),
+        ("claude", "kimi_k2_6", 3),
+        ("codex", "kimi_k2_6", 1),
+        ("codex", "kimi_k2_6", 2),
+        ("codex", "kimi_k2_6", 3),
+    }
+
+
+def test_build_job_argv_runs_single_replicate_with_global_pool_defaults() -> None:
+    argv = build_job_argv(
+        BuildJob("codex", "kimi_k2_6", 2, 3),
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        extra_args=["--no-docker-prune"],
+        run_id="run_02",
+    )
+    assert "--harness codex".split()[0] in argv
+    assert argv[argv.index("--harness") + 1] == "codex"
+    assert argv[argv.index("--model") + 1] == "kimi_k2_6"
+    assert argv[argv.index("--replicate-index") + 1] == "2"
+    assert argv[argv.index("-j") + 1] == "1"
+    assert "--no-docker-prune" in argv
+
+
+def test_dispatch_build_jobs_starts_second_harness_before_first_finishes() -> None:
+    import threading
+    import time
+
+    started: list[str] = []
+    lock = threading.Lock()
+    claude_release = threading.Event()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        harness = cmd[cmd.index("--harness") + 1]
+        with lock:
+            started.append(harness)
+        if harness == "claude":
+            claude_release.wait(timeout=5.0)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("claude", "kimi_k2_6", 1, 1),
+        BuildJob("codex", "kimi_k2_6", 1, 1),
+    ]
+    results: list[tuple[str, int]] = []
+
+    def runner() -> None:
+        results.extend(
+            dispatch_build_jobs(
+                jobs,
+                workers=2,
+                models_config=MODELS_CONFIG,
+                results_dir=REPO_ROOT / "results",
+                extra_args=[],
+                run_cmd=fake_run_cmd,
+            )
+        )
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    time.sleep(0.05)
+    assert started == ["claude", "codex"]
+    claude_release.set()
+    thread.join(timeout=5.0)
+    assert set(results) == {("claude:kimi_k2_6", 0), ("codex:kimi_k2_6", 0)}
+
+
+def test_phase_build_forwards_no_docker_prune_and_prunes_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_claude"],
+                        "num_runs": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured_extra: list[list[str]] = []
+    prune_calls: list[int] = []
+
+    def fake_dispatch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_extra.append(list(kwargs["extra_args"]))
+        jobs = args[0] if args else kwargs["jobs"]
+        return [(job.label(), 0) for job in jobs]
+
+    monkeypatch.setattr(
+        "benchmark.full_pipeline.dispatch_build_jobs", fake_dispatch
+    )
+    monkeypatch.setattr(
+        "benchmark.full_pipeline._cleanup_docker_after_phase_build",
+        lambda extra_args: prune_calls.append(1),
+    )
+
+    phase_build(
+        config_path,
+        tmp_path,
+        [],
+        jobs=1,
+        dry_run=False,
+        sequential_build=False,
+    )
+    assert captured_extra
+    assert "--no-docker-prune" in captured_extra[0]
+    assert prune_calls == [1]
+
+
+def test_phase_build_raises_when_any_job_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_claude"],
+                        "num_runs": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "benchmark.full_pipeline.dispatch_build_jobs",
+        lambda *args, **kwargs: [("claude:kimi_k2_6", 1)],
+    )
+
+    with pytest.raises(SystemExit, match="build failed"):
+        phase_build(
+            config_path,
+            tmp_path,
+            [],
+            jobs=1,
+            dry_run=False,
+            sequential_build=False,
+        )
+
+
+def test_sequential_build_uses_harness_batches_not_global_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "models.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "kimi_k2_6",
+                        "provider": "ollama_cloud",
+                        "id": "kimi-k2.6:cloud",
+                        "harness": ["ollama_claude"],
+                        "num_runs": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    dispatch_called = False
+    batch_called = False
+
+    def fake_dispatch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal dispatch_called
+        dispatch_called = True
+        return []
+
+    def fake_batch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal batch_called
+        batch_called = True
+        return 0
+
+    monkeypatch.setattr("benchmark.full_pipeline.dispatch_build_jobs", fake_dispatch)
+    monkeypatch.setattr("benchmark.full_pipeline.run_build_batch", fake_batch)
+
+    phase_build(
+        config_path,
+        tmp_path,
+        [],
+        jobs=1,
+        dry_run=False,
+        sequential_build=True,
+    )
+    assert batch_called
+    assert not dispatch_called

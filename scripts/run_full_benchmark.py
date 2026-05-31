@@ -16,6 +16,7 @@ Examples:
   python3 scripts/run_full_benchmark.py --run-id run_02 --force
   python3 scripts/run_full_benchmark.py --run-id run_02 --list-steps
   python3 scripts/run_full_benchmark.py --run-id run_02 -j 4  # override default -j 3
+  python3 scripts/run_full_benchmark.py --run-id run_02 --sequential-build  # legacy harness batches
   AUDITOR_SLUG=kimi_k2_6_ollama_cloud python3 scripts/run_full_benchmark.py --run-id run_02
 """
 
@@ -70,7 +71,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--jobs",
         type=int,
         default=DEFAULT_JOBS,
-        help=f"Concurrency for build and audit phases (default: {DEFAULT_JOBS}).",
+        help=(
+            f"Max concurrent build jobs across all harnesses in Phase 1 "
+            f"(default: {DEFAULT_JOBS}). Audit Phase 2 uses the same cap. "
+            "With --sequential-build, applies per harness batch instead."
+        ),
+    )
+    parser.add_argument(
+        "--sequential-build",
+        action="store_true",
+        help=(
+            "Run Phase 1 one harness batch at a time (legacy). "
+            "Default runs a global job pool across all harnesses."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -130,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             jobs=args.jobs,
             run_id=args.run_id,
             dry_run=args.dry_run,
+            sequential_build=args.sequential_build,
         )
 
     auditor_harness, meta_slug, meta_harness, meta_input = resolve_meta_config(

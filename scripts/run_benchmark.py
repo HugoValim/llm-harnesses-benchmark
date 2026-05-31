@@ -205,6 +205,12 @@ def parse_args() -> argparse.Namespace:
         help="Cap how many models to execute this invocation.",
     )
     parser.add_argument(
+        "--replicate-index",
+        type=int,
+        default=None,
+        help="Run only this 1-based replicate attempt (run_01, run_02, …).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-run even if a terminal result.json already exists.",
@@ -274,6 +280,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.max_validation_retries < 0:
         parser.error("--max-validation-retries must be >= 0")
+    if args.replicate_index is not None and args.replicate_index < 1:
+        parser.error("--replicate-index must be >= 1")
     if args.rate_limit_wait_cap_hours < 0:
         parser.error("--rate-limit-wait-cap-hours must be >= 0")
     if args.rate_limit_backoff_initial_seconds <= 0:
@@ -374,6 +382,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         followup_prompt=followup_prompt,
         include_agent_rules=include_agent_rules,
         rate_limit_policy=rate_limit_policy,
+        replicate_index=args.replicate_index,
     )
 
     dispatch_result = run_model_campaign(
@@ -487,6 +496,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             rate_limit_policy=rate_limit_policy,
             validate_results=not args.no_result_validation,
             max_validation_retries=args.max_validation_retries,
+            replicate_index=args.replicate_index,
         )
     )
 

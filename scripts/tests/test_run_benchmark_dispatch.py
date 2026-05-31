@@ -59,6 +59,12 @@ class TestExpandModelJobs(unittest.TestCase):
             [("a", 1), ("a", 2), ("b", 1)],
         )
 
+    def test_filters_single_replicate_index(self) -> None:
+        items = [(1, {"slug": "a", "num_runs": 3})]
+        expanded = expand_model_jobs_to_replicate_jobs(items, replicate_index=2)
+        self.assertEqual(len(expanded), 1)
+        self.assertEqual(expanded[0].replicate_index, 2)
+
 
 class TestRunModelJobBatch(unittest.TestCase):
     def _dispatch_replicate(
@@ -351,6 +357,48 @@ class TestRunModelCampaign(unittest.TestCase):
 
         self.assertFalse(result.usage_limit_aborted)
         self.assertEqual(calls, [(1, 2, False), (2, 2, False)])
+
+    def test_replicate_index_runs_single_replicate(self) -> None:
+        bench = BenchmarkConfig(
+            runner={},
+            config_path=REPO_ROOT / "config" / "models.json",
+            results_dir=REPO_ROOT / "tmp" / "results",
+            harness="codex",
+            timeout_seconds=60,
+            no_progress_timeout_seconds=30,
+            min_preview_output_tps=None,
+            min_preview_samples=3,
+            auto_skip_slow_preview=False,
+            force=False,
+            selected_models=[
+                {"slug": "demo", "provider": "openai", "num_runs": 3}
+            ],
+            replicate_index=2,
+        )
+        calls: list[tuple[int, int | None, bool]] = []
+
+        def run_model_fn(
+            model: dict,
+            active_bench: BenchmarkConfig,
+            index: int,
+            total: int,
+            *,
+            skip_stale_kill: bool = False,
+            replicate_index: int = 1,
+            num_runs: int | None = None,
+        ) -> dict:
+            calls.append((replicate_index, num_runs, active_bench.force))
+            return {"status": "completed", "slug": model["slug"]}
+
+        run_model_campaign(
+            bench,
+            jobs=1,
+            validate_results=False,
+            max_validation_retries=0,
+            run_model_fn=run_model_fn,
+        )
+
+        self.assertEqual(calls, [(2, 3, False)])
 
 
 class TestRunVariantCampaign(unittest.TestCase):

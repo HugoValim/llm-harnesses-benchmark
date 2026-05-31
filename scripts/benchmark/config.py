@@ -427,6 +427,7 @@ class BenchmarkConfig:
     followup_prompt: str | None = None
     include_agent_rules: bool = True
     rate_limit_policy: RateLimitWaitPolicy = field(default_factory=RateLimitWaitPolicy)
+    replicate_index: int | None = None
 
 
 def load_opencode_config() -> dict[str, Any] | None:
