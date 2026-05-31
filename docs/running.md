@@ -102,7 +102,9 @@ python3 scripts/run_full_benchmark.py --run-id run_02 --list-steps
 python3 scripts/run_full_benchmark.py --run-id run_02 -- --force
 ```
 
-Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`
+Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`, `--sequential-build`
+
+Phase 1 (default) runs a **global job pool**: every `(harness, model, replicate)` from the build matrix shares one queue with at most `-j` concurrent subprocesses (default 3). Finishing a claude job can immediately backfill with a codex or opencode job. Docker prune runs once after all build jobs finish. Use `--sequential-build` to restore the legacy behavior (one harness batch at a time, `-j` per batch).
 
 Environment variables:
 

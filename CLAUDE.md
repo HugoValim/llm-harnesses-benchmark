@@ -25,9 +25,12 @@ This is a single-context repo with root `CONTEXT.md`; no ADR directory exists cu
 Single entrypoint — pick a harness with **`--harness {opencode,codex,claude,cursor}`** (required) and a run directory with **`--run-id run_XX`**. Runs write under `results/<run_id>/projects/<harness>-<slug>/run_XX/` (one folder per replicate; count from `num_runs` in `config/models.json`).
 
 Run the full pipeline (build + audit + meta-analysis):
+
 ```bash
 python scripts/run_full_benchmark.py --run-id run_02
 ```
+
+Phase 1 uses a global job pool (`-j 3` default): up to three `(harness, model, replicate)` subprocesses run concurrently across all harnesses. Use `--sequential-build` for legacy harness-by-harness dispatch.
 
 Run the full opencode benchmark (default models from `config/models.json`):
 ```bash
