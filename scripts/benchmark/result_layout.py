@@ -108,6 +108,22 @@ def layout_from_repo(run_id: str, repo_root: Path) -> RunLayout:
     return resolve_run_layout(run_id, repo_root / "results")
 
 
+def resolve_default_run_id(results_base: Path) -> str | None:
+    """Return the highest ``run_XX`` directory name under ``results_base``, or None."""
+    if not results_base.is_dir():
+        return None
+    candidates: list[tuple[int, str]] = []
+    for entry in results_base.iterdir():
+        if not entry.is_dir():
+            continue
+        if not RUN_ID_PATTERN.match(entry.name):
+            continue
+        candidates.append((int(entry.name.split("_", 1)[1]), entry.name))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
 def add_run_id_arg(
     parser: argparse.ArgumentParser,
     *,

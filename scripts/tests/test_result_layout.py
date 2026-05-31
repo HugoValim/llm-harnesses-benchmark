@@ -25,6 +25,7 @@ from benchmark.result_layout import (  # noqa: E402
     matches_benchmark_only_filter,
     parse_benchmark_target_path,
     replicate_result_dir,
+    resolve_default_run_id,
     resolve_run_layout,
     split_target_slug,
     target_dir,
@@ -72,6 +73,34 @@ class TestTargetPaths(unittest.TestCase):
             target_followup_prompt(self.projects, "claude", "demo"),
             Path("/tmp/r/run_02/projects/claude-demo/followup-prompt.txt"),
         )
+
+
+class TestResolveDefaultRunId(unittest.TestCase):
+    def test_picks_highest_run_xx(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run_01").mkdir()
+            (root / "run_02").mkdir()
+            self.assertEqual(resolve_default_run_id(root), "run_02")
+
+    def test_picks_highest_run_xx_by_numeric_suffix(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run_02").mkdir()
+            (root / "run_10").mkdir()
+            self.assertEqual(resolve_default_run_id(root), "run_10")
+
+    def test_returns_none_for_flat_legacy_tree(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "opencode-bad").mkdir()
+            self.assertIsNone(resolve_default_run_id(root))
 
 
 class TestRunLayout(unittest.TestCase):
