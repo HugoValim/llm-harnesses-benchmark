@@ -106,6 +106,8 @@ Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`, `--sequential
 
 Phase 1 (default) runs a **global job pool** in **replicate waves**: within each wave, up to `-j` concurrent subprocesses (default 3) run different `(harness, model)` targets at the same replicate index (e.g. all `run_01` jobs). The next wave starts only after the current replicate index finishes. The same `(harness, model)` never runs two replicates in parallel. Docker prune runs once after all build jobs finish. Use `--sequential-build` to restore the legacy behavior (one harness batch at a time, `-j` per batch).
 
+Parallel opencode runs isolate SQLite state by setting `XDG_DATA_HOME` to `{result_dir}/.xdg-data` (alongside stale-process cleanup before each batch).
+
 Environment variables:
 
 - `AUDITOR_SLUG` — Role 1 auditor (default `codex_gpt_5_5`)

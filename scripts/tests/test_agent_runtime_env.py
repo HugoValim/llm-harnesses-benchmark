@@ -1,4 +1,4 @@
-"""Regression tests for isolated CODEX_HOME used with ollama launch codex."""
+"""Regression tests for per-run agent runtime env (CODEX_HOME, XDG_DATA_HOME)."""
 
 from __future__ import annotations
 
@@ -6,16 +6,19 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.codex_home import (  # noqa: E402
+from benchmark.agent_runtime_env import (  # noqa: E402
     codex_env_for_phase,
     config_has_legacy_ollama_launch_profile,
+    opencode_env_for_phase,
     prepare_isolated_codex_home,
     strip_legacy_ollama_launch_profile,
 )
+from benchmark.harnesses import check_harness_cli_requirements  # noqa: E402
 
 LEGACY_CONFIG = """\
 model = "gpt-5.5"
@@ -43,6 +46,30 @@ openai_base_url = "http://127.0.0.1:11434/v1/"
 forced_login_method = "api"
 model_provider = "ollama-launch"
 """
+
+
+class TestOpenCodeEnvForPhase(unittest.TestCase):
+    def test_opencode_env_sets_xdg_data_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            result_dir = Path(tmp) / "run_01"
+            result_dir.mkdir()
+            env = opencode_env_for_phase(
+                {"PATH": "/usr/bin"},
+                result_dir=result_dir,
+            )
+            self.assertEqual(env["XDG_DATA_HOME"], str(result_dir / ".xdg-data"))
+
+    def test_opencode_env_plain_opencode_still_isolates(self) -> None:
+        with TemporaryDirectory() as tmp:
+            result_dir = Path(tmp) / "run_01"
+            result_dir.mkdir()
+            env = opencode_env_for_phase(
+                {"PATH": "/usr/bin"},
+                result_dir=result_dir,
+                command_prefix=None,
+            )
+            self.assertIn("XDG_DATA_HOME", env)
+            self.assertTrue((result_dir / ".xdg-data").is_dir())
 
 
 class TestLegacyOllamaLaunchProfileDetection(unittest.TestCase):
@@ -132,6 +159,17 @@ class TestCodexEnvForPhase(unittest.TestCase):
                 command_prefix=None,
             )
             self.assertNotIn("CODEX_HOME", env)
+
+
+class TestOpenCodeHarnessOllamaPreflight(unittest.TestCase):
+    def test_opencode_harness_requires_ollama_binary(self) -> None:
+        with patch("benchmark.harnesses.shutil.which", return_value=None):
+            ok, err = check_harness_cli_requirements(
+                "opencode",
+                [{"command_prefix": ["ollama", "launch", "--yes", "opencode"]}],
+            )
+        self.assertFalse(ok)
+        self.assertIn("ollama", err)
 
 
 if __name__ == "__main__":

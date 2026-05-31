@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
-from benchmark.codex_home import codex_env_for_phase, uses_isolated_codex_home
+from benchmark.agent_runtime_env import (
+    codex_env_for_phase,
+    opencode_env_for_phase,
+    uses_isolated_codex_home,
+)
 from benchmark.commands import (
     build_codex_command,
     build_opencode_command,
@@ -472,23 +476,33 @@ def run_opencode_phase(
     continue_session_id: str | None = None,
     phase_name: str = "phase1",
     override_min_preview_tps: float | None = ...,  # sentinel
+    command_prefix: list[str] | None = None,
 ) -> dict[str, Any]:
     root_dir = bench.results_dir.resolve().parent
     before_markers = snapshot_root_generated_markers(root_dir, bench.results_dir)
     prompt_path.write_text(prompt)
+    effective_prefix = command_prefix or model.get("command_prefix")
     command = build_opencode_command(
         bench.runner,
         model["id"],
         prompt,
         project_dir,
         continue_session_id=continue_session_id,
-        command_prefix=model.get("command_prefix"),
+        command_prefix=effective_prefix,
     )
     wall_start = time.monotonic()
-    process_env = os.environ.copy()
+    result_dir = prompt_path.parent
+    process_env = opencode_env_for_phase(
+        os.environ.copy(),
+        result_dir=result_dir,
+        command_prefix=effective_prefix,
+    )
     process_env["OPENCODE_PERMISSION"] = json.dumps(
         OPENCODE_YOLO_PERMISSION, separators=(",", ":")
     )
+    log_tag = stream_log_prefix(bench.harness, model_slug, phase_name)
+    if process_env.get("XDG_DATA_HOME"):
+        print_line(f"[{log_tag}] XDG_DATA_HOME={process_env['XDG_DATA_HOME']}")
     process = subprocess.Popen(
         command,
         cwd=project_dir,
@@ -1023,6 +1037,8 @@ def run_model(
         phase_command_prefix = model.get("command_prefix")
         if not phase_command_prefix and runner_type == "ollama":
             phase_command_prefix = ollama_launch_command_prefix("codex")
+    elif model.get("command_prefix"):
+        phase_command_prefix = model.get("command_prefix")
     cli_version_fields_cache: dict[str, Any] | None = None
 
     def get_cli_version_fields() -> dict[str, Any]:
@@ -1112,7 +1128,7 @@ def run_model(
         }
         if request.phase_name == "phase2":
             phase_kwargs["override_min_preview_tps"] = None
-        if phase_command_prefix:
+        if phase_command_prefix is not None:
             phase_kwargs["command_prefix"] = phase_command_prefix
         if runner_type not in _CODEX_RUNNERS:
             phase_kwargs["continue_session_id"] = request.continue_session_id

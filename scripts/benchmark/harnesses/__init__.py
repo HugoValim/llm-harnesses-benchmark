@@ -221,26 +221,50 @@ def _apply_runner_defaults(
 
 
 def _required_binaries(harness: Harness, models: list[dict[str, Any]]) -> list[str]:
-    if harness.name != "codex":
-        return [harness.cli_binary] if harness.cli_binary else []
     if not models:
-        return ["codex"]
-    return sorted({_codex_binary_for_model(model) for model in models})
+        if harness.name == "codex":
+            return ["codex"]
+        return [harness.cli_binary] if harness.cli_binary else []
+    return sorted(
+        {
+            binary
+            for model in models
+            for binary in _binaries_for_model(harness.name, model)
+        }
+    )
 
 
-def _codex_binary_for_model(model: dict[str, Any]) -> str:
+def _binaries_for_model(harness_name: str, model: dict[str, Any]) -> set[str]:
+    harness = get_harness(harness_name)
     command_prefix = model.get("command_prefix") or []
-    runner_type = model.get("runner_type", "codex")
-    if runner_type == "ollama" or ollama_launch_prefix_integration(command_prefix) == "codex":
-        return "ollama"
-    return "codex"
+    default_runner = "codex" if harness_name == "codex" else "opencode"
+    runner_type = model.get("runner_type", default_runner)
+
+    if harness_name == "codex":
+        if runner_type == "ollama" or ollama_launch_prefix_integration(command_prefix) == "codex":
+            return {"ollama"}
+        return {"codex"}
+
+    binaries: set[str] = set()
+    if harness.cli_binary:
+        binaries.add(harness.cli_binary)
+    if ollama_launch_prefix_integration(command_prefix):
+        binaries.add("ollama")
+    return binaries
 
 
 def _missing_binary_message(binary: str, harness_name: str) -> str:
     if binary == "ollama":
-        return "ollama is not available on PATH (needed for ollama launch codex)"
+        integration = _ollama_launch_integration_for_harness(harness_name)
+        return (
+            f"ollama is not available on PATH (needed for ollama launch {integration})"
+        )
     harness = get_harness(harness_name)
     return harness.cli_install_hint or f"{binary} is not available on PATH"
+
+
+def _ollama_launch_integration_for_harness(harness_name: str) -> str:
+    return {"opencode": "opencode", "claude": "claude"}.get(harness_name, "codex")
 
 
 # Lazy adapter wiring — imported here so ``from benchmark.harnesses import …``

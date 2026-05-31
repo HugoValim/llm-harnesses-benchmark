@@ -180,4 +180,5 @@ Per-project artifacts land in `results/<harness>-<slug>/project/_runtime_verific
 - **Stall detection:** If no stdout/stderr activity and no file count change occur for `no_progress_timeout_seconds` (default 15 minutes), the run is aborted. Error loops (5 consecutive error events) also trigger abort. Default wall-clock timeout per agent run is 50 minutes (`scripts/benchmark/timeouts.py`).
 - **Preview TPS gating:** opencode runs can be aborted early if average output tokens/sec over the first N steps falls below a threshold (`--min-preview-output-tps`).
 - **Home isolation:** Claude Code model rows can set `isolate_home: true` to replace `$HOME` with the result dir during the run. This prevents user-level `~/.claude/agents/*.md` from leaking in, but breaks subscription auth (requires `ANTHROPIC_API_KEY`).
+- **OpenCode data isolation:** Parallel opencode runs set `XDG_DATA_HOME` to `{result_dir}/.xdg-data` so concurrent replicate waves do not contend on `~/.local/share/opencode/opencode.db`.
 - **GPU memory management:** When using local backends, the harness unloads competing backends before preflight and unloads models post-run to prevent OOM.
