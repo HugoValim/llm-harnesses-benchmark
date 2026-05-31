@@ -84,15 +84,6 @@
       "selection_reason": "Qwen 3.5 served by Ollama Cloud for agentic Python-stack benchmark coverage."
     },
     {
-      "slug": "nemotron_3_super",
-      "label": "Nemotron 3 Super (Ollama Cloud)",
-      "provider": "ollama_cloud",
-      "id": "nemotron-3-super:cloud",
-      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
-      "num_runs": 3,
-      "selection_reason": "NVIDIA Nemotron 3 Super served by Ollama Cloud for reasoning and coding benchmark coverage."
-    },
-    {
       "slug": "gemma4",
       "label": "Gemma 4 31B (Ollama Cloud)",
       "provider": "ollama_cloud",
