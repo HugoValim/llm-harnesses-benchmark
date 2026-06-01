@@ -20,6 +20,7 @@ from benchmark.publish_campaign import (  # noqa: E402
     build_manifest,
     discover_targets_from_auditor,
     render_gitignore_block,
+    run_agnostic_repo_path,
     strip_project_ephemeral,
     update_github_latest_meta_analysis,
     update_gitignore,
@@ -116,6 +117,41 @@ class TestGitignoreBlock(unittest.TestCase):
         self.assertIn(f"/results/**/project/{TAILWINDCSS_BINARY_PREFIX}*", block)
         self.assertIn("/results/**/project/.venv/", block)
         self.assertNotIn("results/codex-demo/followup-stderr.log", block)
+
+    def test_render_run_scoped_paths_use_run_wildcard(self) -> None:
+        manifest = CampaignManifest(
+            id="2026-06-test",
+            label="Run scoped",
+            date="2026-06-01",
+            prompt_versions={},
+            auditor_slug="codex_gpt_5_5",
+            meta_analysis="results/run_02/meta-analysis.md",
+            audit_root="results/run_02/audit-reports/codex_gpt_5_5",
+            benchmark_results_root="results/run_02/projects",
+            targets=["codex-demo"],
+            harnesses=["codex"],
+            models_config_sha256="x",
+            harnesses_config_sha256="y",
+            run_id="run_02",
+        )
+        block = render_gitignore_block(manifest)
+        self.assertIn("/results/run_*/projects/*/", block)
+        self.assertIn("!/results/run_*/projects/codex-demo/", block)
+        self.assertIn(
+            "/results/run_*/runtime_verification_summary.json", block
+        )
+        self.assertIn("!/results/run_*/audit-reports/codex_gpt_5_5/", block)
+        self.assertNotIn("run_02", block)
+
+    def test_run_agnostic_repo_path_leaves_legacy_paths(self) -> None:
+        self.assertEqual(
+            run_agnostic_repo_path("results", None),
+            "results",
+        )
+        self.assertEqual(
+            run_agnostic_repo_path("audit-reports/codex_gpt_5_5", None),
+            "audit-reports/codex_gpt_5_5",
+        )
 
     def test_update_gitignore_replaces_existing_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

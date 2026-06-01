@@ -333,9 +333,21 @@ def strip_campaign_results(repo_root: Path, manifest: CampaignManifest) -> dict[
     return stripped
 
 
+def run_agnostic_repo_path(repo_relative: str, run_id: str | None) -> str:
+    """Replace a concrete run_id with run_* so gitignore rules apply to any run."""
+    if run_id is None:
+        return repo_relative
+    needle = f"results/{run_id}/"
+    if needle not in repo_relative:
+        return repo_relative
+    return repo_relative.replace(needle, "results/run_*/", 1)
+
+
 def render_gitignore_block(manifest: CampaignManifest) -> str:
     """Render the generated .gitignore section for one published campaign."""
-    results_root = manifest.benchmark_results_root
+    run_id = manifest.run_id
+    results_root = run_agnostic_repo_path(manifest.benchmark_results_root, run_id)
+    audit_root = run_agnostic_repo_path(manifest.audit_root, run_id)
     lines = [
         GITIGNORE_BEGIN,
         f"# Campaign: {manifest.id} ({manifest.label})",
@@ -343,15 +355,22 @@ def render_gitignore_block(manifest: CampaignManifest) -> str:
         "# Default: ignore all runtime outputs",
         f"/{results_root}/*/",
         "/results-claude-code/*/",
-        f"/{results_root}/runtime_verification_summary.json",
         "/audit-reports/*/",
-        "",
-        f"# Published audit tree: {manifest.audit_root}",
-        f"!/{manifest.audit_root}/",
-        f"/{manifest.audit_root}/_meta-analysis-runs/",
     ]
+    if run_id is not None:
+        lines.append(
+            f"/{run_agnostic_repo_path(f'results/{run_id}/runtime_verification_summary.json', run_id)}"
+        )
+    lines.extend(
+        [
+            "",
+            f"# Published audit tree: {audit_root}",
+            f"!/{audit_root}/",
+            f"/{audit_root}/_meta-analysis-runs/",
+        ]
+    )
     for name in sorted(AUDIT_EXCLUDE_FILE_NAMES):
-        lines.append(f"/{manifest.audit_root}/**/{name}")
+        lines.append(f"/{audit_root}/**/{name}")
 
     lines.extend(
         [
