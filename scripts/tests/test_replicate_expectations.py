@@ -25,11 +25,13 @@ class TestExpectedBenchmarkLeaves(unittest.TestCase):
     def test_registry_models_emit_variable_replicate_counts(self) -> None:
         leaves = expected_benchmark_leaves(REPO_ROOT / "config" / "models.json")
         slugs = {leaf.slug for leaf in leaves}
-        self.assertIn("codex-codex_gpt_5_5/run_01", slugs)
-        self.assertNotIn("codex-codex_gpt_5_5/run_02", slugs)
-        self.assertIn("opencode-kimi_k2_6/run_01", slugs)
-        self.assertIn("opencode-kimi_k2_6/run_02", slugs)
-        self.assertIn("opencode-kimi_k2_6/run_03", slugs)
+        for prefix in (
+            "codex-codex_gpt_5_5",
+            "claude-claude_opus_4_7",
+            "opencode-kimi_k2_6",
+        ):
+            for run in ("run_01", "run_02", "run_03"):
+                self.assertIn(f"{prefix}/{run}", slugs)
 
     def test_expected_leaves_per_harness_num_runs(self) -> None:
         import tempfile

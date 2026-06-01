@@ -6,7 +6,7 @@
       "provider": "anthropic",
       "id": "claude-opus-4-7",
       "harness": ["claude"],
-      "num_runs": 1,
+      "num_runs": 3,
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
     },
     {
@@ -16,7 +16,7 @@
       "id": "gpt-5.5",
       "harness": ["codex"],
       "codex_reasoning_effort": "xhigh",
-      "num_runs": 1,
+      "num_runs": 3,
       "selection_reason": "Codex GPT-5.5 with extra-high reasoning. Verify availability with `codex debug models`."
     },
     {
