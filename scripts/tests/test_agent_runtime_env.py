@@ -18,6 +18,7 @@ from benchmark.agent_runtime_env import (  # noqa: E402
     config_has_legacy_ollama_launch_profile,
     opencode_env_for_phase,
     prepare_isolated_codex_home,
+    stage_cursor_auth,
     stage_subscription_auth,
     strip_legacy_ollama_launch_profile,
 )
@@ -265,6 +266,95 @@ class TestStageSubscriptionAuth(unittest.TestCase):
 
             self.assertEqual(len(copied), 1)
             self.assertTrue((isolated_home / ".claude" / "settings.json").is_file())
+
+
+class TestStageCursorAuth(unittest.TestCase):
+    def test_stage_cursor_auth_stages_auth_json_when_present(self) -> None:
+        auth_content = '{"accessToken":"test"}\n'
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            isolated_home = Path(tmp) / "isolated"
+            cursor_config = source_home / ".config" / "cursor"
+            cursor_config.mkdir(parents=True)
+            (cursor_config / "auth.json").write_text(auth_content, encoding="utf-8")
+            isolated_home.mkdir()
+
+            copied = stage_cursor_auth(isolated_home, source_home)
+
+            self.assertEqual(len(copied), 1)
+            self.assertEqual(
+                (isolated_home / ".config" / "cursor" / "auth.json").read_text(
+                    encoding="utf-8"
+                ),
+                auth_content,
+            )
+
+    def test_stage_cursor_auth_skips_auth_json_when_absent(self) -> None:
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            isolated_home = Path(tmp) / "isolated"
+            source_home.mkdir()
+            isolated_home.mkdir()
+
+            copied = stage_cursor_auth(isolated_home, source_home)
+
+            self.assertEqual(copied, [])
+            self.assertFalse(
+                (isolated_home / ".config" / "cursor" / "auth.json").exists()
+            )
+
+    def test_stage_subscription_auth_cursor_stages_config_auth(self) -> None:
+        auth_content = '{"accessToken":"test"}\n'
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            isolated_home = Path(tmp) / "isolated"
+            cursor_dir = source_home / ".cursor"
+            cursor_dir.mkdir(parents=True)
+            (cursor_dir / "cli-config.json").write_text("{}", encoding="utf-8")
+            cursor_config = source_home / ".config" / "cursor"
+            cursor_config.mkdir(parents=True)
+            (cursor_config / "auth.json").write_text(auth_content, encoding="utf-8")
+            isolated_home.mkdir()
+
+            copied = stage_subscription_auth(isolated_home, source_home, "cursor")
+
+            self.assertEqual(len(copied), 2)
+            self.assertTrue((isolated_home / ".cursor" / "cli-config.json").is_file())
+            self.assertEqual(
+                (isolated_home / ".config" / "cursor" / "auth.json").read_text(
+                    encoding="utf-8"
+                ),
+                auth_content,
+            )
+
+    def test_benchmark_env_cursor_stages_auth_under_isolated_config(self) -> None:
+        auth_content = '{"accessToken":"test"}\n'
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            cursor_config = source_home / ".config" / "cursor"
+            cursor_config.mkdir(parents=True)
+            (cursor_config / "auth.json").write_text(auth_content, encoding="utf-8")
+            result_dir = Path(tmp) / "run_01"
+            result_dir.mkdir()
+
+            with patch(
+                "benchmark.agent_runtime_env.Path.home",
+                return_value=source_home,
+            ):
+                env = benchmark_env_for_harness(
+                    "cursor",
+                    {"PATH": "/usr/bin"},
+                    result_dir=result_dir,
+                )
+
+            agent_home = result_dir / AGENT_HOME_DIRNAME
+            self.assertEqual(env["HOME"], str(agent_home.resolve()))
+            self.assertEqual(
+                (agent_home / ".config" / "cursor" / "auth.json").read_text(
+                    encoding="utf-8"
+                ),
+                auth_content,
+            )
 
 
 class TestOpenCodeHarnessOllamaPreflight(unittest.TestCase):

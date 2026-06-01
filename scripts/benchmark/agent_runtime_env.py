@@ -12,6 +12,10 @@ and stage subscription auth from the real home when available.
 
 Codex subscription auth is staged by copying ``auth.json`` from the source
 ``~/.codex`` into per-replicate ``.codex-home`` when present.
+
+Cursor subscription auth is staged by copying ``auth.json`` from the source
+``~/.config/cursor`` into ``{result_dir}/.agent-home/.config/cursor`` when
+present (fallback: ``CURSOR_API_KEY`` in the environment).
 """
 
 from __future__ import annotations
@@ -110,6 +114,32 @@ def stage_codex_auth(source_home: Path, dest_home: Path) -> list[str]:
     return copied
 
 
+def cursor_config_dir(home: Path, *, xdg_config_home: Path | None = None) -> Path:
+    """Return the Cursor CLI config directory under *home*."""
+    base = xdg_config_home if xdg_config_home is not None else home / ".config"
+    return base / "cursor"
+
+
+def stage_cursor_auth(
+    isolated_home: Path,
+    source_home: Path,
+    *,
+    source_xdg_config_home: Path | None = None,
+) -> list[str]:
+    """Copy ``auth.json`` from source Cursor config into isolated ``HOME/.config/cursor``."""
+    auth_src = (
+        cursor_config_dir(source_home, xdg_config_home=source_xdg_config_home)
+        / "auth.json"
+    )
+    if not auth_src.is_file():
+        return []
+    dest_dir = cursor_config_dir(isolated_home)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    auth_dest = dest_dir / "auth.json"
+    shutil.copy2(auth_src, auth_dest)
+    return [str(auth_dest)]
+
+
 def prepare_isolated_opencode_data_home(result_dir: Path) -> Path:
     """Return parent for XDG_DATA_HOME; opencode uses {parent}/opencode."""
     data_home = result_dir / ".xdg-data"
@@ -160,6 +190,8 @@ def stage_subscription_auth(
     isolated_home: Path,
     source_home: Path,
     harness: str,
+    *,
+    source_xdg_config_home: Path | None = None,
 ) -> list[str]:
     """Copy subscription auth dirs from source home into isolated home."""
     copied: list[str] = []
@@ -175,6 +207,13 @@ def stage_subscription_auth(
             dest = isolated_home / ".cursor"
             shutil.copytree(source, dest, dirs_exist_ok=True)
             copied.append(str(dest))
+        copied.extend(
+            stage_cursor_auth(
+                isolated_home,
+                source_home,
+                source_xdg_config_home=source_xdg_config_home,
+            )
+        )
     return copied
 
 
@@ -200,7 +239,13 @@ def benchmark_env_for_harness(
         return env
     if harness in ("claude", "cursor") and isolate_home:
         agent_home = prepare_isolated_agent_home(result_dir)
-        stage_subscription_auth(agent_home, Path.home(), harness)
+        source_xdg = base_env.get("XDG_CONFIG_HOME")
+        stage_subscription_auth(
+            agent_home,
+            Path.home(),
+            harness,
+            source_xdg_config_home=Path(source_xdg) if source_xdg else None,
+        )
         env["HOME"] = str(agent_home)
     return env
 
