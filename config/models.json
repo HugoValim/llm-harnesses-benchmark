@@ -29,15 +29,6 @@
       "selection_reason": "Cursor Composer 2.5 baseline on the Python benchmark."
     },
     {
-      "slug": "composer_2_0",
-      "label": "Composer 2.0 (Cursor CLI, subscription auth)",
-      "provider": "cursor",
-      "id": "composer-2",
-      "harness": ["cursor"],
-      "num_runs": 3,
-      "selection_reason": "Cursor Composer 2.0 baseline on the Python benchmark."
-    },
-    {
       "slug": "kimi_k2_6",
       "label": "Kimi K2.6 (Ollama Cloud)",
       "provider": "ollama_cloud",

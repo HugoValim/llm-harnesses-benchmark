@@ -89,7 +89,7 @@ def test_build_matrix_covers_all_registry_harness_pairs() -> None:
 def test_build_matrix_includes_cursor_models() -> None:
     steps = build_matrix(MODELS_CONFIG)
     cursor_slugs = {s.model_slug for s in steps if s.harness == "cursor"}
-    assert cursor_slugs == {"composer_2_5", "composer_2_0"}
+    assert cursor_slugs == {"composer_2_5"}
 
 
 def test_build_matrix_includes_ollama_opencode_models() -> None:
