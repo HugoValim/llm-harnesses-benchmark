@@ -20,6 +20,7 @@ from benchmark.audit_report import (
     _dimension_labels,
     _fmt,
 )
+from benchmark.model_identity import cohort_slug
 from benchmark.result_layout import (
     BENCHMARK_CONTEST_HARNESSES,
     CURSOR_AGENT_PREFIX,
@@ -418,20 +419,7 @@ def _aggregated_contest_ranking_rows(
     return rows
 
 
-_OLLAMA_COHORT_SUFFIXES = ("_claude", "_codex", "_opencode")
 _CONTEST_HARNESS_COLUMN_ORDER: tuple[str, ...] = ("claude", "codex", "opencode")
-
-
-def cohort_slug(model_slug: str) -> str:
-    """Return the shared model identity for contest-harness suffixed slugs."""
-    for suffix in _OLLAMA_COHORT_SUFFIXES:
-        if not model_slug.endswith(suffix):
-            continue
-        base = model_slug[: -len(suffix)]
-        if suffix == "_opencode" and base.startswith(("claude_", "codex_")):
-            return model_slug
-        return base
-    return model_slug
 
 
 def _is_ollama_cloud_slug(model_slug: str) -> bool:

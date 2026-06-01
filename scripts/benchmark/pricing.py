@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmark.audit_rollup import cohort_slug
+from benchmark.model_identity import cohort_slug
 from benchmark.result_layout import split_target_slug
 from benchmark.util import load_json, migrate_to_v2
 
