@@ -108,7 +108,7 @@ Phase 1 (default) runs a **global job pool** with **per-target pipelined replica
 
 Parallel opencode runs isolate SQLite state by setting `XDG_DATA_HOME` to `{result_dir}/.xdg-data` (alongside stale-process cleanup before each batch).
 
-**Build parity (all four harnesses):** Phase 2 always runs cold — no opencode session resume, no Cursor `--continue`. The harness wraps the primary prompt with canonical agent rules before sending it to the CLI. Each replicate isolates runtime state: OpenCode uses `{result_dir}/.xdg-data`, Codex uses `{result_dir}/.codex-home`, Claude and Cursor use `{result_dir}/.agent-home` as `$HOME` (subscription auth is staged from your real home when `.claude/` or `.cursor/` exists; otherwise set `ANTHROPIC_API_KEY` or `CURSOR_API_KEY`). `result.json` records `build_parity` metadata. Existing pre-parity runs (e.g. `run_02` cells) are not comparable — re-run build jobs before cross-harness audit comparisons.
+**Build parity (all four harnesses):** Phase 2 always runs cold — no opencode session resume, no Cursor `--continue`. The harness wraps the primary prompt with canonical agent rules before sending it to the CLI. Each replicate isolates runtime state: OpenCode uses `{result_dir}/.xdg-data`, Codex uses `{result_dir}/.codex-home` (stages `auth.json` from `~/.codex` when present; otherwise set `OPENAI_API_KEY`), Claude and Cursor use `{result_dir}/.agent-home` as `$HOME` (subscription auth is staged from your real home when `.claude/` or `.cursor/` exists; otherwise set `ANTHROPIC_API_KEY` or `CURSOR_API_KEY`). `result.json` records `build_parity` metadata. Existing pre-parity runs (e.g. `run_02` cells) are not comparable — re-run build jobs before cross-harness audit comparisons.
 
 Environment variables:
 

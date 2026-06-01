@@ -125,6 +125,39 @@ class TestPrepareIsolatedCodexHome(unittest.TestCase):
             overlay = (isolated / "ollama-launch.config.toml").read_text(encoding="utf-8")
             self.assertEqual(overlay, PROFILE_OVERLAY)
 
+    def test_prepare_isolated_codex_home_stages_auth_json_when_present(
+        self,
+    ) -> None:
+        auth_content = '{"token":"test"}\n'
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            source_home.mkdir()
+            (source_home / "config.toml").write_text(CLEAN_BASE_CONFIG, encoding="utf-8")
+            (source_home / "auth.json").write_text(auth_content, encoding="utf-8")
+            result_dir = Path(tmp) / "run_01"
+            result_dir.mkdir()
+
+            isolated = prepare_isolated_codex_home(result_dir, source_home=source_home)
+
+            self.assertEqual(
+                (isolated / "auth.json").read_text(encoding="utf-8"),
+                auth_content,
+            )
+
+    def test_prepare_isolated_codex_home_skips_auth_json_when_absent(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as tmp:
+            source_home = Path(tmp) / "source"
+            source_home.mkdir()
+            (source_home / "config.toml").write_text(CLEAN_BASE_CONFIG, encoding="utf-8")
+            result_dir = Path(tmp) / "run_01"
+            result_dir.mkdir()
+
+            isolated = prepare_isolated_codex_home(result_dir, source_home=source_home)
+
+            self.assertFalse((isolated / "auth.json").exists())
+
 
 class TestCodexEnvForPhase(unittest.TestCase):
     def test_ollama_launch_codex_sets_codex_home(self) -> None:

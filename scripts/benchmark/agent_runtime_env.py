@@ -9,6 +9,9 @@ set ``XDG_DATA_HOME`` to ``{result_dir}/.xdg-data`` to avoid SQLite lock content
 
 Claude and Cursor benchmark builds isolate ``$HOME`` under ``{result_dir}/.agent-home``
 and stage subscription auth from the real home when available.
+
+Codex subscription auth is staged by copying ``auth.json`` from the source
+``~/.codex`` into per-replicate ``.codex-home`` when present.
 """
 
 from __future__ import annotations
@@ -92,7 +95,19 @@ def prepare_isolated_codex_home(
     else:
         profile_dest.write_text(_DEFAULT_OLLAMA_LAUNCH_PROFILE, encoding="utf-8")
 
+    stage_codex_auth(source, dest)
     return dest.resolve()
+
+
+def stage_codex_auth(source_home: Path, dest_home: Path) -> list[str]:
+    """Copy ``auth.json`` from source Codex home into isolated ``CODEX_HOME``."""
+    copied: list[str] = []
+    auth_src = source_home / "auth.json"
+    if auth_src.is_file():
+        auth_dest = dest_home / "auth.json"
+        shutil.copy2(auth_src, auth_dest)
+        copied.append(str(auth_dest))
+    return copied
 
 
 def prepare_isolated_opencode_data_home(result_dir: Path) -> Path:

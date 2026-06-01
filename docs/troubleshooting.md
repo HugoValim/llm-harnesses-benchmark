@@ -36,7 +36,9 @@ Auth depends on the selected provider and harness.
 
 - OpenRouter-backed opencode rows need `OPENROUTER_API_KEY` or a working
   opencode provider config.
-- Codex subscription rows need `codex login`.
+- Codex subscription rows need `codex login` in your real `~/.codex` (the harness
+  copies `auth.json` into isolated `.codex-home` per replicate) or `OPENAI_API_KEY`
+  in the environment.
 - Claude subscription rows need `claude login`.
 - Cursor rows need `agent login` or `CURSOR_API_KEY`.
 - Ollama Cloud rows route through `ollama launch`; verify `ollama` auth and
