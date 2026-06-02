@@ -38,31 +38,29 @@ db.sqlite3
 
 # Published benchmark targets (allowlist)
 !/results/run_*/projects/claude-claude_opus_4_7/
-!/results/run_*/projects/claude-deepseek_v4_flash_ollama_cloud/
+!/results/run_*/projects/claude-claude_sonnet_4_6/
 !/results/run_*/projects/claude-deepseek_v4_pro_ollama_cloud/
 !/results/run_*/projects/claude-gemma4_ollama_cloud/
 !/results/run_*/projects/claude-glm_5_1_ollama_cloud/
 !/results/run_*/projects/claude-kimi_k2_6_ollama_cloud/
-!/results/run_*/projects/claude-minimax_m2_7_ollama_cloud/
+!/results/run_*/projects/claude-minimax_m3/
 !/results/run_*/projects/claude-nemotron_3_super_ollama_cloud/
 !/results/run_*/projects/claude-qwen3_5_ollama_cloud/
 !/results/run_*/projects/codex-codex_gpt_5_5/
-!/results/run_*/projects/codex-deepseek_v4_flash_ollama_cloud/
 !/results/run_*/projects/codex-deepseek_v4_pro_ollama_cloud/
 !/results/run_*/projects/codex-gemma4_ollama_cloud/
 !/results/run_*/projects/codex-glm_5_1_ollama_cloud/
 !/results/run_*/projects/codex-kimi_k2_6_ollama_cloud/
-!/results/run_*/projects/codex-minimax_m2_7_ollama_cloud/
+!/results/run_*/projects/codex-minimax_m3/
 !/results/run_*/projects/codex-nemotron_3_super_ollama_cloud/
 !/results/run_*/projects/codex-qwen3_5_ollama_cloud/
 !/results/run_*/projects/cursor-composer_2_0/
 !/results/run_*/projects/cursor-composer_2_5/
-!/results/run_*/projects/opencode-deepseek_v4_flash_ollama_cloud/
 !/results/run_*/projects/opencode-deepseek_v4_pro_ollama_cloud/
 !/results/run_*/projects/opencode-gemma4_ollama_cloud/
 !/results/run_*/projects/opencode-glm_5_1_ollama_cloud/
 !/results/run_*/projects/opencode-kimi_k2_6_ollama_cloud/
-!/results/run_*/projects/opencode-minimax_m2_7_ollama_cloud/
+!/results/run_*/projects/opencode-minimax_m3/
 !/results/run_*/projects/opencode-nemotron_3_super_ollama_cloud/
 !/results/run_*/projects/opencode-qwen3_5_ollama_cloud/
 

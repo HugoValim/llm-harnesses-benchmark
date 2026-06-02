@@ -52,12 +52,10 @@ This file is the **source of truth** for `Estimated-Cost-USD` in audit reports. 
 | composer_2_0 | cursor | composer-2 | cursor_list | 0.50 | 2.50 | 0.20 | | yes | cursor.com/docs/account/teams/pricing | 2026-05-25 |
 | kimi_k2_6 | ollama_cloud | kimi-k2.6:cloud | ollama_cloud | 0.73 | 3.49 | 0.25 | | yes | openrouter.ai/moonshotai/kimi-k2.6 (proxy) | 2026-05-25 |
 | deepseek_v4_pro | ollama_cloud | deepseek-v4-pro:cloud | ollama_cloud | 0.435 | 0.87 | 0.003625 | | yes | api-docs.deepseek.com (promo until 2026-05-31) | 2026-05-25 |
-| deepseek_v4_flash | ollama_cloud | deepseek-v4-flash:cloud | ollama_cloud | 0.10 | 0.20 | 0.02 | | yes | openrouter.ai/deepseek/deepseek-v4-flash (proxy) | 2026-05-25 |
 | glm_5_1 | ollama_cloud | glm-5.1:cloud | ollama_cloud | 1.05 | 3.50 | | | yes | openrouter.ai/z-ai/glm-5.1 (proxy) | 2026-05-25 |
 | qwen3_5 | ollama_cloud | qwen3.5:cloud | ollama_cloud | 0.26 | 1.56 | | | yes | openrouter.ai/qwen/qwen3.5-plus-02-15 (proxy) | 2026-05-25 |
 | nemotron_3_super | ollama_cloud | nemotron-3-super:cloud | ollama_cloud | 0.09 | 0.45 | | | yes | pricepertoken.com/nemotron-3-super (proxy) | 2026-05-25 |
 | gemma4 | ollama_cloud | gemma4:31b-cloud | ollama_cloud | 0.00 | 0.00 | | | yes | openrouter.ai free Gemma 4 31B tier (proxy) | 2026-05-25 |
-| minimax_m2_7 | ollama_cloud | minimax-m2.7:cloud | ollama_cloud | 0.279 | 1.20 | | | yes | openrouter.ai/minimax/minimax-m2.7 (proxy) | 2026-05-25 |
 | minimax_m3 | ollama_cloud | minimax-m3:cloud | ollama_cloud | 0.30 | 1.20 | | | yes | openrouter.ai/minimax/minimax-m3 (proxy) | 2026-06-01 |
 
 ## Subscription appendix (reference only)

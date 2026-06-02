@@ -12,14 +12,14 @@ from benchmark.util import stream_log_prefix  # noqa: E402
 
 
 def test_stream_log_prefix_harness_model() -> None:
-    assert stream_log_prefix("opencode", "minimax_m2_7_ollama_cloud") == (
-        "opencode:minimax_m2_7_ollama_cloud"
+    assert stream_log_prefix("opencode", "minimax_m3") == (
+        "opencode:minimax_m3"
     )
 
 
 def test_stream_log_prefix_includes_phase() -> None:
-    assert stream_log_prefix("opencode", "minimax_m2_7_ollama_cloud", "phase1") == (
-        "opencode:minimax_m2_7_ollama_cloud/phase1"
+    assert stream_log_prefix("opencode", "minimax_m3", "phase1") == (
+        "opencode:minimax_m3/phase1"
     )
 
 

@@ -25,10 +25,8 @@ OPENROUTER_ID_TO_SLUG: dict[str, str] = {
     "openrouter/anthropic/claude-sonnet-4.6": "claude_sonnet_4_6",
     "openrouter/anthropic/claude-opus-4.7": "claude_opus_4_7",
     "moonshotai/kimi-k2.6": "kimi_k2_6",
-    "deepseek/deepseek-v4-flash": "deepseek_v4_flash",
     "z-ai/glm-5.1": "glm_5_1",
     "qwen/qwen3.5-plus-02-15": "qwen3_5",
-    "minimax/minimax-m2.7": "minimax_m2_7",
     "minimax/minimax-m3": "minimax_m3",
 }
 
