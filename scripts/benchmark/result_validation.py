@@ -14,6 +14,7 @@ from benchmark.target_lifecycle import TargetRunPaths
 from benchmark.run_status import (
     USAGE_LIMIT_REACHED,
     derive_run_status,
+    payload_hit_usage_limit,
     validation_retryable_status,
 )
 from benchmark.util import load_json, migrate_to_v2
@@ -63,6 +64,37 @@ class ValidationResult:
 def followup_expected(*, followup_prompt: str | None) -> bool:
     """True when the benchmark follow-up prompt is configured (phase 2 required)."""
     return bool(followup_prompt and followup_prompt.strip())
+
+
+def _phase1_should_run_followup(
+    phase1: dict[str, Any] | None,
+    *,
+    followup_expected_flag: bool,
+) -> bool:
+    """True when lifecycle would run follow-up based on phase1 result.
+
+    Mirrors :func:`benchmark.target_lifecycle._should_run_followup`.
+    """
+    if not followup_expected_flag:
+        return False
+    if phase1 is None:
+        return False
+    if payload_hit_usage_limit(phase1):
+        return False
+    if phase1.get("timed_out"):
+        return False
+    return not bool(phase1.get("stalled"))
+
+
+def _phase1_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    phases = row.get("phases")
+    if not isinstance(phases, list) or not phases:
+        return None
+    phase1 = next(
+        (p for p in phases if isinstance(p, dict) and p.get("phase") == "phase1"),
+        phases[0] if isinstance(phases[0], dict) else None,
+    )
+    return phase1 if isinstance(phase1, dict) else None
 
 
 def wipe_result_dir(result_dir: Path, *, recreate: bool = True) -> None:
@@ -183,7 +215,8 @@ def _required_artifact_entries(
         ("stdout", paths.stdout_path),
         ("stderr", paths.stderr_path),
     ]
-    if followup_expected_flag:
+    phase1 = _phase1_from_row(row) if isinstance(row, dict) else None
+    if _phase1_should_run_followup(phase1, followup_expected_flag=followup_expected_flag):
         required.extend(
             [
                 ("followup_prompt", paths.followup_prompt_path),
@@ -398,10 +431,7 @@ def validate_benchmark_result(
     if not isinstance(phases, list) or not phases:
         issues.append(ValidationIssue("missing_phases", "result has no phases[]"))
     else:
-        phase1 = next(
-            (p for p in phases if isinstance(p, dict) and p.get("phase") == "phase1"),
-            phases[0] if isinstance(phases[0], dict) else None,
-        )
+        phase1 = _phase1_from_row(row)
         if isinstance(phase1, dict):
             issues.extend(
                 _validate_phase_row(
@@ -411,7 +441,7 @@ def validate_benchmark_result(
                     fresh_summary=fresh_summary,
                 )
             )
-        if followup_expected_flag:
+        if _phase1_should_run_followup(phase1, followup_expected_flag=followup_expected_flag):
             phase2 = next(
                 (
                     p

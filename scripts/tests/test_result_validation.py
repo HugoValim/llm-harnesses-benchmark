@@ -121,6 +121,32 @@ def test_validate_replicate_leaf_requires_followup_artifacts(tmp_path: Path) -> 
     row = _completed_row(phases=[_completed_row()["phases"][0]])
     row["status"] = "failed"
     row["exit_code"] = -15
+    row["phases"][0]["status"] = "failed"
+    row["phases"][0]["exit_code"] = -15
+    row["phases"][0]["project_summary"]["works_as_intended"] = "partial"
+    row["project_summary"]["works_as_intended"] = "partial"
+    (result_dir / "result.json").write_text(json.dumps(row))
+
+    vr = validate_replicate_leaf(
+        result_dir,
+        harness="opencode",
+        followup_expected_flag=True,
+    )
+
+    assert not vr.ok
+    assert any(i.code == "missing_followup_prompt" for i in vr.issues)
+    assert any(i.code == "missing_phase2" for i in vr.issues)
+
+
+def test_validate_replicate_leaf_skips_followup_requirements_when_phase1_stalled(
+    tmp_path: Path,
+) -> None:
+    result_dir = tmp_path / "opencode-qwen3_5" / "run_01"
+    _write_project(result_dir / "project")
+    _write_opencode_artifacts(result_dir, include_followup=False)
+    row = _completed_row(phases=[_completed_row()["phases"][0]])
+    row["status"] = "failed"
+    row["exit_code"] = -15
     row["stalled"] = True
     row["phases"][0]["status"] = "failed"
     row["phases"][0]["exit_code"] = -15
@@ -136,8 +162,8 @@ def test_validate_replicate_leaf_requires_followup_artifacts(tmp_path: Path) -> 
     )
 
     assert not vr.ok
-    assert any(i.code == "missing_followup_prompt" for i in vr.issues)
-    assert any(i.code == "missing_phase2" for i in vr.issues)
+    assert not any(i.code.startswith("missing_followup_") for i in vr.issues)
+    assert not any(i.code == "missing_phase2" for i in vr.issues)
 
 
 def test_validate_replicate_leaf_fails_when_recorded_path_missing(tmp_path: Path) -> None:
