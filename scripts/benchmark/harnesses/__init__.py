@@ -211,6 +211,10 @@ def _apply_runner_defaults(
     integration = ollama_launch_integration(model_harness)
     if integration is not None:
         if dispatch == "codex":
+            # Route Codex through `ollama launch codex` so the integration shim
+            # can provide a stable OpenAI-compatible surface for Ollama Cloud /
+            # local endpoints (some reject newer roles like "developer").
+            row.setdefault("command_prefix", ollama_launch_command_prefix(integration))
             row.setdefault("runner_type", "ollama")
             return
         row.setdefault("command_prefix", ollama_launch_command_prefix(integration))

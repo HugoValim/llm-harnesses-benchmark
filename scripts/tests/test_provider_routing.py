@@ -103,7 +103,7 @@ class TestOllamaHarnessRouting(unittest.TestCase):
             }
         ]
         rows = _resolve(self.config_dir, models, "codex")
-        self.assertNotIn("command_prefix", rows[0])
+        self.assertEqual(rows[0]["command_prefix"], ["ollama", "launch", "--yes", "codex"])
 
     def test_uses_ollama_launch_codex_with_yes_prefix(self) -> None:
         model = {
