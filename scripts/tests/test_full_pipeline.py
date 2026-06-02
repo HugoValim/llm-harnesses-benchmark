@@ -331,8 +331,13 @@ def test_dispatch_build_jobs_starts_second_harness_before_first_finishes() -> No
 
     thread = threading.Thread(target=runner)
     thread.start()
-    time.sleep(0.05)
-    assert started == ["claude", "codex"]
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        with lock:
+            if len(started) >= 2:
+                break
+        time.sleep(0.01)
+    assert sorted(started[:2]) == ["claude", "codex"]
     claude_release.set()
     thread.join(timeout=5.0)
     assert set(results) == {("claude:kimi_k2_6", 0), ("codex:kimi_k2_6", 0)}

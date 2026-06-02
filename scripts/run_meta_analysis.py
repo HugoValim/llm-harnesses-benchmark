@@ -249,7 +249,6 @@ def main() -> int:
 
     meta_runner = meta_config.get("runner") or {}
     meta_command_prefix = meta_runner.get("command_prefix")
-    meta_isolate_home = bool(meta_runner.get("isolate_home", False))
 
     if args.meta_input_dir:
         meta_input_dirs: list[Path] = []
@@ -314,7 +313,6 @@ def main() -> int:
             variant=meta_variant,
             harness=meta_dispatch_harness,
             runner_command_prefix=meta_command_prefix,
-            isolate_home=meta_isolate_home,
             timeout_seconds=args.meta_timeout_minutes * 60,
             no_progress_timeout_seconds=args.no_progress_minutes * 60,
             force=args.force,

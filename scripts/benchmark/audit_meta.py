@@ -196,7 +196,6 @@ def run_ai_meta_analysis(
     variant: dict,
     harness: str,
     runner_command_prefix: list[str] | None = None,
-    isolate_home: bool = False,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
@@ -269,6 +268,4 @@ def run_ai_meta_analysis(
     }
     if harness_adapter.accepts_runner_command_prefix:
         run_kwargs["runner_command_prefix"] = runner_command_prefix
-    if harness_adapter.accepts_isolate_home:
-        run_kwargs["isolate_home"] = isolate_home
     return harness_adapter.run_variant(**run_kwargs)

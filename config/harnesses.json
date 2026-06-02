@@ -12,7 +12,7 @@
       "Same opencode runner as the Rails profile - chosen for machine-readable JSON events with session IDs and token counts.",
       "Models with opencode_id in models.json are auto-included using that ID (typically an OpenRouter path).",
       "Verification is performed by scripts/analyze_results_runtime.py: discover Django app root, install deps in a venv, boot the ASGI server, headless browser probe, docker build, docker compose.",
-      "Benchmark builds use cold phase-2 followup and per-replicate runtime isolation (see docs/running.md)."
+      "Benchmark builds use cold phase-2 followup (see docs/running.md). Parallel runs share ~/.local/share/opencode; stale-process cleanup runs before each batch."
     ]
   },
   "codex": {
@@ -21,17 +21,16 @@
       "ChatGPT-linked Codex: plain `codex` on PATH. Authenticate with `codex login` (ChatGPT OAuth) or subscription-backed credentials.",
       "openai provider -> runner_type=ollama -> `ollama launch --yes codex` (non-interactive).",
       "Uses `codex exec --json --ephemeral` with the harness autonomy flags.",
-      "Benchmark builds use cold phase-2 followup and per-replicate runtime isolation (see docs/running.md)."
+      "Benchmark builds use cold phase-2 followup (see docs/running.md). Codex uses your normal ~/.codex config."
     ]
   },
   "claude": {
     "command": "claude",
-    "isolate_home": false,
     "notes": [
       "Uses Claude Code CLI in headless mode (-p with --output-format stream-json --dangerously-skip-permissions).",
       "anthropic provider -> runs claude directly. ollama_cloud provider -> command_prefix=[ollama, launch, --yes, claude].",
-      "isolate_home defaults to false so Claude subscription auth (read from ~/.claude/) works.",
-      "Benchmark builds use cold phase-2 followup and per-replicate runtime isolation (see docs/running.md)."
+      "Authenticate with `claude login` so subscription auth reads from ~/.claude/.",
+      "Benchmark builds use cold phase-2 followup (see docs/running.md)."
     ]
   },
   "cursor": {
@@ -40,7 +39,7 @@
       "Cursor Agent CLI in headless mode: agent -p --output-format stream-json --force --trust.",
       "Authenticate with `agent login` (subscription) or set CURSOR_API_KEY for automation.",
       "cursor provider models are auto-included.",
-      "Benchmark builds use cold phase-2 followup and per-replicate runtime isolation (see docs/running.md)."
+      "Benchmark builds use cold phase-2 followup (see docs/running.md)."
     ]
   }
 }

@@ -20,7 +20,7 @@ from benchmark.replicates import (
 )
 from benchmark.result_validation import (
     followup_expected,
-    validate_benchmark_result,
+    validate_replicate_leaf,
     validation_retryable,
     wipe_result_dir,
 )
@@ -65,14 +65,12 @@ class VariantCampaignConfig:
     jobs: int
     harness_name: str
     run_variant: RunVariantFn
-    accepts_isolate_home: bool
     prompt: str
     results_dir: Path
     timeout_seconds: int
     no_progress_timeout_seconds: int
     force: bool
     runner_command_prefix: list[str] | None
-    isolate_home: bool
     followup_prompt: str
     rate_limit_policy: RateLimitWaitPolicy
     validate_results: bool
@@ -703,8 +701,6 @@ def _variant_run_kwargs(
         "num_runs": num_runs,
         "include_agent_rules": config.include_agent_rules,
     }
-    if config.accepts_isolate_home:
-        kwargs["isolate_home"] = config.isolate_home
     kwargs["for_benchmark_build"] = True
     kwargs["wrap_primary_prompt"] = True
     return kwargs
@@ -751,8 +747,10 @@ def _result_validation_passed(
     expect_followup: bool,
     attempt: int,
 ) -> bool:
-    result = validate_benchmark_result(
+    harness = str(model.get("harness") or "unknown")
+    result = validate_replicate_leaf(
         result_dir,
+        harness=harness,
         model=model,
         followup_expected_flag=expect_followup,
     )

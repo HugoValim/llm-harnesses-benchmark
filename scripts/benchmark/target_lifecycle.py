@@ -13,7 +13,7 @@ from benchmark.build_parity import (
     build_parity_metadata,
     wrap_primary_prompt,
 )
-from benchmark.config import existing_terminal_result
+from benchmark.config import existing_acceptable_result
 from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.replicates import attach_replicate_fields
 from benchmark.run_status import payload_hit_usage_limit
@@ -228,7 +228,12 @@ class TargetRunLifecycle:
     def _cached_payload(self) -> dict[str, Any] | None:
         if self.force:
             return None
-        return existing_terminal_result(self.paths.result_path)
+        expect_followup = bool(self.followup_prompt and self.followup_prompt.strip())
+        return existing_acceptable_result(
+            self.paths.result_path,
+            model={"slug": self.slug, "harness": self.harness},
+            followup_expected_flag=expect_followup,
+        )
 
     def _before_phases_payload(self) -> dict[str, Any] | None:
         if self.before_phases is None:

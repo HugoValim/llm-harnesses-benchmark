@@ -126,7 +126,7 @@ All entrypoints add `scripts/` to `sys.path` and import from the `benchmark` pac
 
 - `backends.py` — Local model backend abstraction (`OllamaBackend`, `LlamaSwapBackend`). Handles preflight (unload/load models), GPU eviction between backends, and health checks.
 - `runner.py` — Process management for opencode/codex. Spawns subprocesses, streams NDJSON stdout/stderr, detects stalls/timeouts/error loops, measures preview TPS, and kills process groups. Also handles session export and stale opencode process cleanup.
-- `claude_code_runner.py` — Process management for Claude Code CLI. Similar streaming/heartbeat/stall detection but parses Claude's `stream-json` format instead of opencode's. Handles `command_prefix` for Ollama shims and `isolate_home` for agent isolation.
+- `claude_code_runner.py` — Process management for Claude Code CLI. Similar streaming/heartbeat/stall detection but parses Claude's `stream-json` format instead of opencode's. Handles `command_prefix` for Ollama shims.
 - `config.py` — Config loading and opencode config generation. Reads `config/models.json` plus `config/harnesses.json`, produces a benchmark-isolated config at `config/opencode.benchmark.json` with yolo permissions and local model context overrides. Also handles multi-agent subagent registration.
 - `result_validation.py` — Post-run validation and status re-derivation from `result.json` and on-disk project scaffolds.
 - `util.py` — Shared JSON I/O, SHA256, file counting, formatting helpers.
@@ -179,7 +179,6 @@ Per-project artifacts land in `results/<harness>-<slug>/project/_runtime_verific
 - **NDJSON streaming:** opencode and Claude Code both emit newline-delimited JSON events. The harness reads line-by-line via `select.select()`, writes to disk, and parses in real time for heartbeat logging and stall detection.
 - **Stall detection:** If no stdout/stderr activity and no file count change occur for `no_progress_timeout_seconds` (default 15 minutes), the run is aborted. Error loops (5 consecutive error events) also trigger abort. Default wall-clock timeout per agent run is 50 minutes (`scripts/benchmark/timeouts.py`).
 - **Preview TPS gating:** opencode runs can be aborted early if average output tokens/sec over the first N steps falls below a threshold (`--min-preview-output-tps`).
-- **Home isolation:** Claude Code model rows can set `isolate_home: true` to replace `$HOME` with the result dir during the run. This prevents user-level `~/.claude/agents/*.md` from leaking in, but breaks subscription auth (requires `ANTHROPIC_API_KEY`).
-- **OpenCode data isolation:** Parallel opencode runs set `XDG_DATA_HOME` to `{result_dir}/.xdg-data` so concurrent build subprocesses do not contend on `~/.local/share/opencode/opencode.db`.
-- **Build parity:** Benchmark build runs use cold phase-2 followup (no session/`--continue`), wrap the primary prompt with canonical agent rules for all harnesses, and isolate runtime state per replicate via `benchmark_env_for_harness` (`XDG_DATA_HOME`, `CODEX_HOME`, or `{result_dir}/.agent-home` for Claude/Cursor).
+- **OpenCode concurrency:** Parallel opencode runs share `~/.local/share/opencode`; the harness kills stale opencode processes before each batch to reduce SQLite lock contention.
+- **Build parity:** Benchmark build runs use cold phase-2 followup (no session/`--continue`), wrap the primary prompt with canonical agent rules for all harnesses, and use each CLI's normal home config (no per-replicate `.codex-home` / `.xdg-data` / `.agent-home`).
 - **GPU memory management:** When using local backends, the harness unloads competing backends before preflight and unloads models post-run to prevent OOM.

@@ -36,15 +36,15 @@ Auth depends on the selected provider and harness.
 
 - OpenRouter-backed opencode rows need `OPENROUTER_API_KEY` or a working
   opencode provider config.
-- Codex subscription rows need `codex login` in your real `~/.codex` (the harness
-  copies `auth.json` into isolated `.codex-home` per replicate) or `OPENAI_API_KEY`
-  in the environment.
-- Claude subscription rows need `claude login`.
-- Cursor subscription rows need `agent login` in your real `~/.config/cursor`
-  (the harness copies `auth.json` into isolated `.agent-home/.config/cursor` per
-  replicate) or `CURSOR_API_KEY` in the environment.
-- Ollama Cloud rows route through `ollama launch`; verify `ollama` auth and
-  model access outside the benchmark first.
+- Codex subscription rows need `codex login` in `~/.codex` or `OPENAI_API_KEY` in
+  the environment.
+- Claude subscription rows need `claude login` in `~/.claude`.
+- Cursor subscription rows need `agent login` in `~/.config/cursor` or
+  `CURSOR_API_KEY` in the environment.
+- Ollama Cloud rows route through `ollama launch`; verify `ollama` auth and model
+  access outside the benchmark first. For Codex + `ollama launch codex`, remove
+  legacy `[profiles.ollama-launch]` from `~/.codex/config.toml` if Codex 0.134+
+  rejects the profile (keep `ollama-launch.config.toml` overlay).
 
 Never paste API keys into config files, prompts, generated projects, or logs.
 

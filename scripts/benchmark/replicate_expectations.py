@@ -139,15 +139,7 @@ def find_replicate_coverage_gaps(
         leaf_dir = projects_root / leaf.slug
         result_path = leaf_dir / "result.json"
         project_dir = leaf_dir / "project"
-        if result_path.is_file():
-            continue
-        if project_dir.is_dir():
-            gaps.append(
-                ReplicateCoverageGap(
-                    slug=leaf.slug,
-                    reason="project/ exists but result.json is missing",
-                )
-            )
+        if result_path.is_file() or project_dir.is_dir():
             continue
         gaps.append(
             ReplicateCoverageGap(

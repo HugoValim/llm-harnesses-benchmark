@@ -146,6 +146,19 @@ class TestFindReplicateCoverageGaps(unittest.TestCase):
             gaps = find_replicate_coverage_gaps(root, self._demo_expected())
             self.assertEqual(gaps, [])
 
+    def test_project_without_result_json_is_not_a_coverage_gap(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            leaf = root / "codex-demo" / "run_01"
+            leaf.mkdir(parents=True)
+            (leaf / "project").mkdir()
+            gaps = find_replicate_coverage_gaps(root, self._demo_expected())
+            gap_slugs = {gap.slug for gap in gaps}
+            self.assertNotIn("codex-demo/run_01", gap_slugs)
+            self.assertIn("codex-demo/run_02", gap_slugs)
+
     def test_missing_replicate_is_reported(self) -> None:
         import tempfile
 

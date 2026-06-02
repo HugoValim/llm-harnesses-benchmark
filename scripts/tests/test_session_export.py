@@ -12,12 +12,11 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.agent_runtime_env import benchmark_env_for_harness  # noqa: E402
 from benchmark.session_export import export_opencode_session  # noqa: E402
 
 
 class TestSessionExportEnv(unittest.TestCase):
-    def test_export_uses_isolated_xdg_data_home(self) -> None:
+    def test_export_uses_parent_env_without_xdg_override(self) -> None:
         with TemporaryDirectory() as tmp:
             result_dir = Path(tmp) / "run_01"
             result_dir.mkdir()
@@ -32,12 +31,9 @@ class TestSessionExportEnv(unittest.TestCase):
                     {"returncode": 0, "stdout": "{}", "stderr": ""},
                 )()
 
-            process_env = benchmark_env_for_harness(
-                "opencode",
-                os.environ.copy(),
-                result_dir=result_dir,
-            )
+            process_env = os.environ.copy()
             process_env["OPENCODE_PERMISSION"] = "{}"
+            process_env["BENCHMARK_ENV_PROBE"] = "export-parent"
 
             with patch("benchmark.session_export.subprocess.run", side_effect=fake_run):
                 export_opencode_session(
@@ -47,7 +43,10 @@ class TestSessionExportEnv(unittest.TestCase):
                     "demo-model",
                 )
 
-            self.assertTrue(captured_env["XDG_DATA_HOME"].endswith(".xdg-data"))
+            self.assertEqual(captured_env.get("BENCHMARK_ENV_PROBE"), "export-parent")
+            xdg = captured_env.get("XDG_DATA_HOME")
+            if xdg is not None:
+                self.assertFalse(str(xdg).endswith(".xdg-data"))
 
 
 if __name__ == "__main__":

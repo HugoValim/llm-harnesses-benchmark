@@ -463,16 +463,12 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
     no_progress_timeout_seconds = args.no_progress_minutes * 60
     runner = config.get("runner") or {}
     runner_command_prefix = runner.get("command_prefix")
-    isolate_home = bool(runner.get("isolate_home", False))
     jobs = args.jobs if args.jobs > 0 else len(variants)
     jobs = max(1, min(jobs, len(variants))) if variants else 1
     followup_text = _load_followup_prompt(Path(args.followup_prompt))
-    extra_banner = (
-        f", isolate_home={isolate_home}" if harness.accepts_isolate_home else ""
-    )
     print_line(
         f"{harness_name} benchmark: {len(variants)} models, jobs={jobs}, "
-        f"timeout={timeout_seconds}s{extra_banner}"
+        f"timeout={timeout_seconds}s"
     )
 
     rate_limit_policy = rate_limit_policy_from_args(args)
@@ -483,14 +479,12 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
             jobs=jobs,
             harness_name=harness_name,
             run_variant=harness.run_variant,
-            accepts_isolate_home=harness.accepts_isolate_home,
             prompt=prompt,
             results_dir=results_dir,
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
             force=args.force,
             runner_command_prefix=runner_command_prefix,
-            isolate_home=isolate_home,
             followup_prompt=followup_text,
             include_agent_rules=include_agent_rules,
             rate_limit_policy=rate_limit_policy,

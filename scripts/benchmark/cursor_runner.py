@@ -11,10 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benchmark.agent_runtime_env import (
-    benchmark_env_for_harness,
-    runtime_isolation_for_env,
-)
+from benchmark.agent_runtime_env import runtime_isolation_for_env
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.pricing import merge_cursor_model_usage, model_usage_from_cursor_final
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
@@ -570,16 +567,7 @@ def run_variant(
     def get_env() -> dict[str, str]:
         nonlocal env_cache
         if env_cache is None:
-            if for_benchmark_build:
-                env_cache = benchmark_env_for_harness(
-                    "cursor",
-                    os.environ.copy(),
-                    result_dir=result_dir,
-                )
-                if env_cache.get("HOME"):
-                    print_line(f"[{log_tag}] HOME={env_cache['HOME']} (benchmark build isolation)")
-            else:
-                env_cache = os.environ.copy()
+            env_cache = os.environ.copy()
             runtime_isolation.clear()
             runtime_isolation.update(runtime_isolation_for_env(env_cache))
         return env_cache
@@ -607,7 +595,7 @@ def run_variant(
         return None
 
     def run_phase(request: PhaseRunRequest) -> dict[str, Any]:
-        phase_env = get_env() if for_benchmark_build else None
+        phase_env = get_env()
         return _run_cursor_lifecycle_phase(
             request=request,
             variant=variant,

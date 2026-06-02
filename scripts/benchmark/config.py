@@ -20,6 +20,7 @@ from benchmark.util import (
     clone_json,
     load_json,
     load_optional_json,
+    migrate_to_v2,
     print_line,
     save_json,
     save_json_preserve_order,
@@ -469,7 +470,49 @@ def load_ollama_warmup_payload(path: Path) -> dict[str, Any] | None:
     return payload
 
 
+def existing_acceptable_result(
+    result_path: Path,
+    *,
+    model: dict[str, Any] | None = None,
+    followup_expected_flag: bool = False,
+) -> dict[str, Any] | None:
+    """Return cached result payload only when full replicate validation passes."""
+    if not result_path.is_file():
+        return None
+    from benchmark.result_validation import (
+        resolve_result_target_identity,
+        validate_replicate_leaf,
+    )
+
+    result_dir = result_path.parent
+    resolved_harness, _slug = resolve_result_target_identity(result_dir)
+    model_row = dict(model) if isinstance(model, dict) else {}
+
+    harness_value = model_row.get("harness")
+    if isinstance(resolved_harness, str) and resolved_harness:
+        harness = resolved_harness
+    elif isinstance(harness_value, str) and harness_value:
+        harness = harness_value
+    elif isinstance(harness_value, list):
+        harness = next(
+            (item for item in harness_value if isinstance(item, str) and item),
+            "unknown",
+        )
+    else:
+        harness = "unknown"
+    vr = validate_replicate_leaf(
+        result_dir,
+        harness=harness,
+        model=model_row or None,
+        followup_expected_flag=followup_expected_flag,
+    )
+    if not vr.ok:
+        return None
+    return migrate_to_v2(load_json(result_path))
+
+
 def existing_terminal_result(result_path: Path) -> dict[str, Any] | None:
+    """Return any terminal-status result without semantic validation (legacy)."""
     if not result_path.exists():
         return None
     payload = load_json(result_path)

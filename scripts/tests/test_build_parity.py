@@ -136,7 +136,7 @@ class PhaseKwargCapturingRunner:
             "project_summary": {"file_count": 1},
             "status": "completed",
             "tokens": {},
-            "runtime_isolation": {"XDG_DATA_HOME": "/tmp/.xdg-data"},
+            "runtime_isolation": {},
         }
 
 

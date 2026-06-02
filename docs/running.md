@@ -25,14 +25,17 @@ Run one benchmark model:
 python3 scripts/run_benchmark.py --run-id run_02 --harness opencode --model claude_sonnet_4_6
 ```
 
-Validate a finished run (harness status + project scaffold):
+Validate a finished run (replicate coverage, harness artifacts on disk, `result.json` semantics, and project scaffold):
 
 ```bash
 python3 scripts/validate_results.py --run-id run_02 --only opencode-claude_sonnet_4_6
 python3 scripts/validate_results.py --run-id run_02 --remove-on-fail
+python3 scripts/validate_results.py --run-id run_02 --verbose  # full issue text per leaf
 ```
 
-`run_benchmark.py` runs the same checks after each model and retries from scratch up to three times on failure (see `--max-validation-retries` / `--no-result-validation`).
+With a run-scoped layout, validation walks every configured replicate leaf (`num_runs` from `config/models.json`), not only directories that already have `result.json`. A leaf with `project/` but no `result.json` fails with `missing_result`; incomplete harness logs fail with `missing_*` artifact codes.
+
+`run_benchmark.py` runs the same checks after each model and retries from scratch up to three times on failure (see `--max-validation-retries` / `--no-result-validation`). Only validation-passed completed runs are treated as cached skips on re-run (failed terminal rows are retried without `--force`).
 
 Validate generated projects boot locally and in Docker:
 
@@ -106,9 +109,9 @@ Flags: `--dry-run`, `--skip-build`, `--skip-audit`, `--skip-meta`, `--sequential
 
 Phase 1 (default) runs a **global job pool** with **per-target pipelined replicates**: up to `-j` concurrent subprocesses (default 3) run across all `(harness, model)` targets. Each target runs replicates one at a time — `run_02` starts when **that** target's `run_01` completes — but different targets share the pool, so workers stay busy when one target is still on an earlier replicate. At most one in-flight job per `(harness, model)`. Workers may drop below `-j` only when fewer than `-j` runnable jobs remain globally or a target fails. Docker prune runs once after all build jobs finish. Use `--sequential-build` to restore the legacy behavior (one harness batch at a time, `-j` per batch).
 
-Parallel opencode runs isolate SQLite state by setting `XDG_DATA_HOME` to `{result_dir}/.xdg-data` (alongside stale-process cleanup before each batch).
+Parallel opencode runs share `~/.local/share/opencode`; the harness kills stale opencode processes before each batch to reduce SQLite lock contention.
 
-**Build parity (all four harnesses):** Phase 2 always runs cold — no opencode session resume, no Cursor `--continue`. The harness wraps the primary prompt with canonical agent rules before sending it to the CLI. Each replicate isolates runtime state: OpenCode uses `{result_dir}/.xdg-data`, Codex uses `{result_dir}/.codex-home` (stages `auth.json` from `~/.codex` when present; otherwise set `OPENAI_API_KEY`), Claude uses `{result_dir}/.agent-home` as `$HOME` (stages `.claude/` from your real home when present; otherwise set `ANTHROPIC_API_KEY`), Cursor uses `{result_dir}/.agent-home` as `$HOME` (stages `.cursor/` and `auth.json` from `~/.config/cursor` when present; otherwise set `CURSOR_API_KEY`). `result.json` records `build_parity` metadata. Existing pre-parity runs (e.g. `run_02` cells) are not comparable — re-run build jobs before cross-harness audit comparisons.
+**Build parity (all four harnesses):** Phase 2 always runs cold — no opencode session resume, no Cursor `--continue`. The harness wraps the primary prompt with canonical agent rules before sending it to the CLI. Each harness uses your normal CLI home config (`~/.codex`, `~/.claude`, `~/.config/cursor`, opencode data dir). `result.json` records `build_parity` metadata (`runtime_isolation` is always `{}`). Existing pre-parity runs that materialized `.codex-home`, `.xdg-data`, or `.agent-home` under replicates are not comparable — re-run build jobs before cross-harness audit comparisons.
 
 Environment variables:
 

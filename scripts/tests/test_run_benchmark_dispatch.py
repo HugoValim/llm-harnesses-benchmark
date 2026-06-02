@@ -491,21 +491,15 @@ class TestRunModelCampaign(unittest.TestCase):
 
 class TestRunVariantCampaign(unittest.TestCase):
     def test_runs_configured_replicates(self) -> None:
-        calls: list[tuple[int, int | None, bool, bool | None]] = []
+        calls: list[tuple[int, int | None, bool]] = []
 
         def run_variant(**kwargs: object) -> dict[str, str]:
             num_runs = kwargs["num_runs"] if isinstance(kwargs["num_runs"], int) else None
-            isolate_home = (
-                kwargs.get("isolate_home")
-                if isinstance(kwargs.get("isolate_home"), bool)
-                else None
-            )
             calls.append(
                 (
                     int(kwargs["replicate_index"]),
                     num_runs,
                     bool(kwargs["force"]),
-                    isolate_home,
                 )
             )
             return {"status": "completed"}
@@ -522,14 +516,12 @@ class TestRunVariantCampaign(unittest.TestCase):
             jobs=1,
             harness_name="claude",
             run_variant=run_variant,
-            accepts_isolate_home=True,
             prompt="build app",
             results_dir=REPO_ROOT / "tmp" / "variant-results",
             timeout_seconds=60,
             no_progress_timeout_seconds=30,
             force=False,
             runner_command_prefix=None,
-            isolate_home=True,
             followup_prompt="check app",
             rate_limit_policy=RateLimitWaitPolicy(),
             validate_results=False,
@@ -539,7 +531,7 @@ class TestRunVariantCampaign(unittest.TestCase):
         result = run_variant_campaign(config)
 
         self.assertFalse(result.usage_limit_aborted)
-        self.assertEqual(calls, [(1, 2, False, True), (2, 2, False, True)])
+        self.assertEqual(calls, [(1, 2, False), (2, 2, False)])
         # Campaign always passes build parity flags for benchmark builds.
         # Verified via run_variant kwargs capture in TestBuildParityDispatch.
 
@@ -564,14 +556,12 @@ class TestBuildParityDispatch(unittest.TestCase):
             jobs=1,
             harness_name="claude",
             run_variant=run_variant,
-            accepts_isolate_home=True,
             prompt="build app",
             results_dir=REPO_ROOT / "tmp" / "parity-variant-results",
             timeout_seconds=60,
             no_progress_timeout_seconds=30,
             force=False,
             runner_command_prefix=None,
-            isolate_home=True,
             followup_prompt="check app",
             rate_limit_policy=RateLimitWaitPolicy(),
             validate_results=False,
@@ -615,14 +605,12 @@ class TestBuildParityDispatch(unittest.TestCase):
             jobs=2,
             harness_name="claude",
             run_variant=run_variant,
-            accepts_isolate_home=True,
             prompt="build app",
             results_dir=REPO_ROOT / "tmp" / "variant-results-parallel",
             timeout_seconds=60,
             no_progress_timeout_seconds=30,
             force=False,
             runner_command_prefix=None,
-            isolate_home=True,
             followup_prompt="check app",
             rate_limit_policy=RateLimitWaitPolicy(),
             validate_results=False,

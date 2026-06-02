@@ -43,7 +43,7 @@ def test_run_with_validation_retries_until_pass(tmp_path: Path, monkeypatch) -> 
     ]
 
     monkeypatch.setattr(
-        "benchmark.campaign_dispatch.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_replicate_leaf",
         lambda *args, **kwargs: outcomes.pop(0),
     )
     monkeypatch.setattr(
@@ -123,7 +123,7 @@ def test_run_with_validation_sleeps_after_stalled_attempt(
         ),
     ]
     monkeypatch.setattr(
-        "benchmark.campaign_dispatch.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_replicate_leaf",
         lambda *a, **k: outcomes.pop(0),
     )
     monkeypatch.setattr(
@@ -163,7 +163,7 @@ def test_run_with_validation_no_sleep_on_non_stall_failure(
         ),
     ]
     monkeypatch.setattr(
-        "benchmark.campaign_dispatch.validate_benchmark_result",
+        "benchmark.campaign_dispatch.validate_replicate_leaf",
         lambda *a, **k: outcomes.pop(0),
     )
     monkeypatch.setattr(

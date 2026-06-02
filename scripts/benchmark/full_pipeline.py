@@ -7,15 +7,16 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 from benchmark.audit_meta import audit_model_harness
 from benchmark.config import (
     _normalize_registry_models,
-    existing_terminal_result,
+    existing_acceptable_result,
     registry_by_slug,
     registry_harness_values,
 )
+from benchmark.result_validation import followup_expected
 from benchmark.defaults import DEFAULT_JOBS
 from benchmark.docker_cleanup import prune_docker_after_benchmark
 from benchmark.harnesses import dispatch_harness
@@ -317,8 +318,10 @@ def _initial_replicate_index_for_target(
     results_dir: Path,
     *,
     force: bool,
+    model_row: dict[str, Any] | None = None,
+    followup_expected_flag: bool = False,
 ) -> int:
-    """Return the next job-list index for one target (skip cached terminal results)."""
+    """Return the next job-list index for one target (skip validation-passed results)."""
     if force:
         return 0
     completed = 0
@@ -329,7 +332,11 @@ def _initial_replicate_index_for_target(
             )
             / "result.json"
         )
-        if existing_terminal_result(result_path):
+        if existing_acceptable_result(
+            result_path,
+            model=model_row,
+            followup_expected_flag=followup_expected_flag,
+        ):
             completed += 1
         else:
             break
@@ -366,6 +373,16 @@ def dispatch_build_jobs_pipelined(
         return []
 
     force = "--force" in extra_args
+    models_payload = load_json(models_config)
+    models_list = models_payload.get("models", [])
+    registry = registry_by_slug(models_list if isinstance(models_list, list) else [])
+    followup_prompt_path = REPO_ROOT / "prompts" / "benchmark_followup_prompt.txt"
+    followup_prompt = (
+        followup_prompt_path.read_text(encoding="utf-8").strip()
+        if followup_prompt_path.is_file()
+        else None
+    )
+    expect_followup = followup_expected(followup_prompt=followup_prompt)
 
     def run_one(job: BuildJob) -> tuple[str, int]:
         return execute_build_job(
@@ -381,8 +398,14 @@ def dispatch_build_jobs_pipelined(
     grouped = _group_build_jobs_by_target(jobs)
 
     def initial_next_index(key: tuple[str, str]) -> int:
+        harness, model_slug = key
+        model_row = registry.get(model_slug, {"slug": model_slug, "harness": harness})
         return _initial_replicate_index_for_target(
-            grouped[key], results_dir, force=force
+            grouped[key],
+            results_dir,
+            force=force,
+            model_row=model_row,
+            followup_expected_flag=expect_followup,
         )
 
     def on_complete(_job: BuildJob, result: tuple[str, int]) -> bool:

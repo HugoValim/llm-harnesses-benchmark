@@ -11,10 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from benchmark.agent_runtime_env import (
-    benchmark_env_for_harness,
-    runtime_isolation_for_env,
-)
+from benchmark.agent_runtime_env import runtime_isolation_for_env
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
@@ -399,26 +396,6 @@ def _merge_token_counts(target: dict[str, Any], source: dict[str, Any]) -> None:
         target[key] = target.get(key, 0) + source.get(key, 0)
 
 
-def _apply_home_isolation(
-    env: dict[str, str],
-    result_dir: Path,
-    isolate_home: bool,
-    log_tag: str,
-) -> None:
-    if isolate_home:
-        # Isolating HOME prevents user-level agents from leaking into a run.
-        env["HOME"] = str(result_dir.resolve())
-        print_line(
-            f"[{log_tag}] HOME isolated to {result_dir} "
-            "(API-key auth required; subscription auth will fail)"
-        )
-        return
-    print_line(
-        f"[{log_tag}] HOME not isolated — subscription auth via ~/.claude/ works; "
-        "user-level agents may leak"
-    )
-
-
 def _apply_env_overrides(
     env: dict[str, str],
     overrides: dict[str, Any],
@@ -470,25 +447,10 @@ def _set_env_override(
 
 def _build_claude_env(
     *,
-    result_dir: Path,
     variant: dict[str, Any],
-    isolate_home: bool,
     log_tag: str,
-    for_benchmark_build: bool = False,
-    harness: str = "claude",
 ) -> dict[str, str]:
-    if for_benchmark_build:
-        env = benchmark_env_for_harness(
-            harness,
-            os.environ.copy(),
-            result_dir=result_dir,
-        )
-        if env.get("HOME"):
-            print_line(f"[{log_tag}] HOME={env['HOME']} (benchmark build isolation)")
-        _apply_env_overrides(env, variant.get("env_overrides") or {}, log_tag)
-        return env
     env = os.environ.copy()
-    _apply_home_isolation(env, result_dir, isolate_home, log_tag)
     _apply_env_overrides(env, variant.get("env_overrides") or {}, log_tag)
     return env
 
@@ -712,7 +674,6 @@ def run_variant(
     no_progress_timeout_seconds: int = DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS,
     force: bool = False,
     runner_command_prefix: list[str] | None = None,
-    isolate_home: bool = False,
     harness: str = "claude",
     explicit_result_dir: Path | None = None,
     followup_prompt: str | None = None,
@@ -728,12 +689,6 @@ def run_variant(
     runner_command_prefix overrides the default ["claude"] head — used for setups
     where Claude Code is invoked via a wrapper (e.g. ["ollama","launch","claude"]
     for Ollama-served models). A per-variant `command_prefix` field takes precedence.
-
-    isolate_home replaces $HOME with the result_dir during the run. This prevents
-    user-level ~/.claude/agents/*.md from leaking into the run, but it also breaks
-    Claude subscription auth (which reads credentials from the real ~/.claude/).
-    Default is False; opt in via runner.isolate_home in the variants config when
-    you're using API-key auth and want strict agent isolation.
 
     explicit_result_dir: when set (e.g. audit harness), use this path directly
     instead of ``results_dir / f"{harness}-{slug}"``.
@@ -759,14 +714,7 @@ def run_variant(
     def get_env() -> dict[str, str]:
         nonlocal env_cache
         if env_cache is None:
-            env_cache = _build_claude_env(
-                result_dir=result_dir,
-                variant=variant,
-                isolate_home=isolate_home,
-                log_tag=log_tag,
-                for_benchmark_build=for_benchmark_build,
-                harness=harness,
-            )
+            env_cache = _build_claude_env(variant=variant, log_tag=log_tag)
             runtime_isolation.clear()
             runtime_isolation.update(runtime_isolation_for_env(env_cache))
         return env_cache

@@ -45,7 +45,6 @@ class AuditDispatchConfig:
     no_progress_timeout_seconds: int
     force: bool
     runner_command_prefix: list[str] | None
-    isolate_home: bool
     rate_limit_policy: RateLimitWaitPolicy
     model_registry: dict[str, dict[str, Any]]
 
@@ -265,8 +264,6 @@ def _run_auditor(
     }
     if harness.accepts_runner_command_prefix:
         run_kwargs["runner_command_prefix"] = config.runner_command_prefix
-    if harness.accepts_isolate_home:
-        run_kwargs["isolate_home"] = config.isolate_home
     if runner_type in ("claude", "cursor"):
         run_kwargs["wrap_primary_prompt"] = False
         run_kwargs["for_benchmark_build"] = False

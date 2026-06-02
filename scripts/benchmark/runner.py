@@ -14,11 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
-from benchmark.agent_runtime_env import (
-    benchmark_env_for_harness,
-    codex_env_for_phase,
-    runtime_isolation_for_env,
-)
+from benchmark.agent_runtime_env import codex_env_for_phase, runtime_isolation_for_env
 from benchmark.build_parity import FOLLOWUP_CONTINUITY_COLD
 from benchmark.commands import (
     build_codex_command,
@@ -448,6 +444,16 @@ def stream_process_output(
                 return _make_result(False, False, None)
 
 
+def apply_opencode_noninteractive_env(env: dict[str, str]) -> None:
+    """Force OpenCode into noninteractive, benchmark-safe configuration mode."""
+
+    env["OPENCODE_YOLO"] = "1"
+    env["OPENCODE_DANGEROUSLY_SKIP_PERMISSIONS"] = "true"
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+        {"permission": OPENCODE_YOLO_PERMISSION}, separators=(",", ":")
+    )
+
+
 
 
 
@@ -481,19 +487,12 @@ def run_opencode_phase(
         command_prefix=effective_prefix,
     )
     wall_start = time.monotonic()
-    result_dir = prompt_path.parent
-    process_env = benchmark_env_for_harness(
-        "opencode",
-        os.environ.copy(),
-        result_dir=result_dir,
-        command_prefix=effective_prefix,
-    )
+    process_env = os.environ.copy()
     process_env["OPENCODE_PERMISSION"] = json.dumps(
         OPENCODE_YOLO_PERMISSION, separators=(",", ":")
     )
+    apply_opencode_noninteractive_env(process_env)
     log_tag = stream_log_prefix(bench.harness, model_slug, phase_name)
-    if process_env.get("XDG_DATA_HOME"):
-        print_line(f"[{log_tag}] XDG_DATA_HOME={process_env['XDG_DATA_HOME']}")
     process = subprocess.Popen(
         command,
         cwd=project_dir,
@@ -605,23 +604,12 @@ def run_codex_phase(
     )
     wall_start = time.monotonic()
 
-    result_dir = prompt_path.parent
-    if for_benchmark_build:
-        process_env = benchmark_env_for_harness(
-            "codex",
-            os.environ.copy(),
-            result_dir=result_dir,
-            command_prefix=command_prefix,
-        )
-    else:
-        process_env = codex_env_for_phase(
-            os.environ.copy(),
-            result_dir=result_dir,
-            command_prefix=command_prefix,
-        )
+    process_env = codex_env_for_phase(
+        os.environ.copy(),
+        result_dir=prompt_path.parent,
+        command_prefix=command_prefix,
+    )
     log_tag = stream_log_prefix(bench.harness, model_slug, phase_name)
-    if process_env.get("CODEX_HOME"):
-        print_line(f"[{log_tag}] CODEX_HOME={process_env['CODEX_HOME']}")
 
     process = subprocess.Popen(
         command,
@@ -1212,11 +1200,7 @@ def run_model(
     def export_session_artifact(session_id: Any) -> Path | None:
         if runner_type in _CODEX_RUNNERS:
             return None
-        process_env = benchmark_env_for_harness(
-            "opencode",
-            os.environ.copy(),
-            result_dir=paths.result_dir,
-        )
+        process_env = os.environ.copy()
         process_env["OPENCODE_PERMISSION"] = json.dumps(
             OPENCODE_YOLO_PERMISSION, separators=(",", ":")
         )

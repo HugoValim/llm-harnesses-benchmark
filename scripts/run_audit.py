@@ -601,7 +601,6 @@ def main() -> int:
                 no_progress_timeout_seconds=no_progress_timeout_seconds,
                 force=args.force,
                 runner_command_prefix=runner.get("command_prefix"),
-                isolate_home=bool(runner.get("isolate_home", False)),
                 rate_limit_policy=rate_limit_policy,
                 model_registry=model_registry,
             ),

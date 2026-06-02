@@ -78,7 +78,6 @@ register(Harness(
     run_model=None,
     cli_binary="claude",
     cli_install_hint="claude (Claude Code CLI) is not available on PATH",
-    accepts_isolate_home=True,
     accepts_runner_command_prefix=True,
 ))
 

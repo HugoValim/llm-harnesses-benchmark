@@ -175,7 +175,6 @@ def test_cli_preserves_audit_output_path(
         {
             "claude": {
                 "command": "claude",
-                "isolate_home": False,
                 "models": {"sonnet_auditor": {"id": "claude-sonnet-4-6"}},
             }
         },
@@ -204,7 +203,6 @@ def test_cli_preserves_audit_output_path(
         run_variant=fake_run_variant,
         run_model=None,
         cli_binary="claude",
-        accepts_isolate_home=True,
     )
     monkeypatch.setitem(HARNESS_REGISTRY, "claude", fake_harness)
     monkeypatch.setattr(
@@ -250,7 +248,6 @@ def test_run_audit_fails_when_harness_completes_without_report(
         {
             "claude": {
                 "command": "claude",
-                "isolate_home": False,
                 "models": {"sonnet_auditor": {"id": "claude-sonnet-4-6"}},
             }
         },
@@ -297,7 +294,6 @@ def test_run_audit_fails_when_harness_completes_without_report(
             run_variant=fake_run_variant,
             run_model=None,
             cli_binary="claude",
-            accepts_isolate_home=True,
         ),
     )
     monkeypatch.setattr(
@@ -366,7 +362,7 @@ def test_report_only_with_model_skips_auditor_without_reports(
     _write_json(models_path, {"models": [_audit_row(slug="sonnet_auditor")]})
     _write_json(
         config_dir / "harnesses.json",
-        {"claude": {"command": "claude", "isolate_home": False}},
+        {"claude": {"command": "claude"}},
     )
     audit_reports_dir = tmp_path / "audit-reports"
     (audit_reports_dir / "sonnet_auditor").mkdir(parents=True)
