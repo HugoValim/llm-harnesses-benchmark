@@ -91,6 +91,15 @@
       "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "MiniMax M2.7 served by Ollama Cloud as a mid-tier Python-stack benchmark model."
+    },
+    {
+      "slug": "minimax_m3",
+      "label": "MiniMax M3 (Ollama Cloud)",
+      "provider": "ollama_cloud",
+      "id": "minimax-m3:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
+      "num_runs": 3,
+      "selection_reason": "MiniMax M3 served by Ollama Cloud as a mid-tier Python-stack benchmark model."
     }
   ]
 }

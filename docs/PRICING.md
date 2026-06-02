@@ -1,4 +1,4 @@
-Last-Updated: 2026-05-25
+Last-Updated: 2026-06-01
 
 Sources:
 - https://openrouter.ai/ (model pages, snapshot 2026-05-25)
@@ -58,6 +58,7 @@ This file is the **source of truth** for `Estimated-Cost-USD` in audit reports. 
 | nemotron_3_super | ollama_cloud | nemotron-3-super:cloud | ollama_cloud | 0.09 | 0.45 | | | yes | pricepertoken.com/nemotron-3-super (proxy) | 2026-05-25 |
 | gemma4 | ollama_cloud | gemma4:31b-cloud | ollama_cloud | 0.00 | 0.00 | | | yes | openrouter.ai free Gemma 4 31B tier (proxy) | 2026-05-25 |
 | minimax_m2_7 | ollama_cloud | minimax-m2.7:cloud | ollama_cloud | 0.279 | 1.20 | | | yes | openrouter.ai/minimax/minimax-m2.7 (proxy) | 2026-05-25 |
+| minimax_m3 | ollama_cloud | minimax-m3:cloud | ollama_cloud | 0.30 | 1.20 | | | yes | openrouter.ai/minimax/minimax-m3 (proxy) | 2026-06-01 |
 
 ## Subscription appendix (reference only)
 

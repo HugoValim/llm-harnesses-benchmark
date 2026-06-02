@@ -29,6 +29,7 @@ OPENROUTER_ID_TO_SLUG: dict[str, str] = {
     "z-ai/glm-5.1": "glm_5_1",
     "qwen/qwen3.5-plus-02-15": "qwen3_5",
     "minimax/minimax-m2.7": "minimax_m2_7",
+    "minimax/minimax-m3": "minimax_m3",
 }
 
 
