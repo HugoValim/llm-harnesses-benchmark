@@ -299,6 +299,8 @@ def stream_process_output(
             preview_average_output_tps=event_state.preview_average_output_tps,
         )
 
+    closed_streams: set[Any] = set()
+
     with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
         while True:
             now = time.monotonic()
@@ -315,13 +317,18 @@ def stream_process_output(
                 return _make_result(True, False, None)
 
             ready_streams: list[Any] = []
-            streams = [s for s in (process.stdout, process.stderr) if s is not None]
+            streams = [
+                s
+                for s in (process.stdout, process.stderr)
+                if s is not None and s not in closed_streams
+            ]
             if streams:
                 ready_streams, _, _ = select.select(streams, [], [], 1.0)
 
             for stream in ready_streams:
                 chunk = stream.readline()
                 if chunk == "":
+                    closed_streams.add(stream)
                     continue
                 if stream is process.stdout:
                     stdout_chunks.append(chunk)
@@ -434,7 +441,7 @@ def stream_process_output(
                 print_line(f"[{model_slug}] {idle_action.reason}")
                 return _make_result(False, True, idle_action.reason)
 
-            if process.poll() is not None and not ready_streams:
+            if process.poll() is not None and not streams:
                 if stdout_buffer:
                     stdout_chunks.append(stdout_buffer)
                     stdout_file.write(stdout_buffer)
