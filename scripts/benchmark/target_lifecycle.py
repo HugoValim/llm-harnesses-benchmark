@@ -159,6 +159,7 @@ class TargetRunLifecycle:
     replicate_index: int = 1
     num_runs: int = 1
     include_agent_rules: bool = True
+    elapsed_field: str = "elapsed_seconds"
     extra_payload_fields: dict[str, Any] = field(default_factory=dict)
     _effective_prompt: str = field(default="", init=False, repr=False)
 
@@ -312,7 +313,7 @@ class TargetRunLifecycle:
         final_phase: dict[str, Any],
     ) -> dict[str, Any]:
         total_elapsed = round(
-            sum(float(phase.get("elapsed_seconds") or 0.0) for phase in phases),
+            sum(float(phase.get(self.elapsed_field) or 0.0) for phase in phases),
             2,
         )
         runtime_isolation = self.extra_payload_fields.get("runtime_isolation", {})
@@ -322,7 +323,6 @@ class TargetRunLifecycle:
             **final_phase,
             "result_schema_version": RESULT_SCHEMA_VERSION,
             "harness": self.harness,
-            "elapsed_seconds": total_elapsed,
             "ended_at": utc_now(),
             "paths": self._build_paths_payload(),
             "primary_prompt_sha256": prompt_sha256(self.prompt),
@@ -341,6 +341,7 @@ class TargetRunLifecycle:
             "phases": phases,
             **self.extra_payload_fields,
         }
+        payload[self.elapsed_field] = total_elapsed
         return payload
 
     def _build_paths_payload(self) -> dict[str, str | None]:

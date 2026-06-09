@@ -596,6 +596,7 @@ def run_codex_phase(
     override_min_preview_tps: float | None = ...,  # sentinel
     command_prefix: list[str] | None = None,
     for_benchmark_build: bool = False,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     """Run a single benchmark phase using the Codex CLI."""
     root_dir = bench.results_dir.resolve().parent
@@ -693,6 +694,7 @@ def run_codex_phase(
             "preview_output_tokens_per_second": result.latest_preview_output_tps,
             "preview_output_tokens_per_second_average": result.preview_average_output_tps,
         },
+        elapsed_field=elapsed_field,
     )
     if for_benchmark_build:
         payload["runtime_isolation"] = runtime_isolation_for_env(process_env)
@@ -720,6 +722,7 @@ def run_codex_variant(
     explicit_result_dir: Path | None = None,
     rate_limit_policy: RateLimitWaitPolicy | None = None,
     include_agent_rules: bool = True,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     """Run a single one-shot variant through the Codex CLI.
 
@@ -857,6 +860,7 @@ def run_codex_variant(
             phase_name="phase1",
             override_min_preview_tps=None,
             command_prefix=command_prefix,
+            elapsed_field=elapsed_field,
         ),
     )
     payload.setdefault("result_schema_version", RESULT_SCHEMA_VERSION)

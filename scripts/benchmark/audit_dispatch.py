@@ -261,6 +261,7 @@ def _run_auditor(
         "harness": runner_type,
         "explicit_result_dir": result_dir,
         "rate_limit_policy": config.rate_limit_policy,
+        "elapsed_field": "elapsed_minutes",
     }
     if harness.accepts_runner_command_prefix:
         run_kwargs["runner_command_prefix"] = config.runner_command_prefix

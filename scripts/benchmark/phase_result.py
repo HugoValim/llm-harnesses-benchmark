@@ -59,6 +59,7 @@ def build_phase_payload(
     no_progress_timeout_seconds: int,
     tokens: dict[str, Any],
     harness_metrics: dict[str, Any] | None = None,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     """Assemble the result payload dict for one benchmark phase.
 
@@ -94,7 +95,7 @@ def build_phase_payload(
         "assistant_output_excerpt": assistant_output[:4000],
         "command": command,
         "continued_from_session": continued_from_session,
-        "elapsed_seconds": elapsed_seconds,
+        elapsed_field: elapsed_seconds,
         "ended_at": ended_at,
         "exit_code": exit_code,
         "finish_reason": finish_reason,

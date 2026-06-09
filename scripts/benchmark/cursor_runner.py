@@ -344,6 +344,7 @@ def _run_cursor_lifecycle_phase(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
     env: dict[str, str] | None = None,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     request.prompt_path.write_text(request.prompt)
     result, process, elapsed = _run_cursor_phase(
@@ -370,6 +371,7 @@ def _run_cursor_lifecycle_phase(
         command_prefix=command_prefix,
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
+        elapsed_field=elapsed_field,
     )
 
 
@@ -383,6 +385,7 @@ def _cursor_phase_payload(
     command_prefix: list[str] | None,
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     final = result.final_result_event or {}
     usage = _dict_or_empty(final.get("usage"))
@@ -399,7 +402,7 @@ def _cursor_phase_payload(
         "status": status,
         "started_at": request.started_at,
         "ended_at": utc_now(),
-        "elapsed_seconds": elapsed,
+        elapsed_field: elapsed,
         "timed_out": result.timed_out,
         "stalled": result.stalled,
         "stall_reason": result.stall_reason,
@@ -423,11 +426,13 @@ def _cursor_phase_payload(
     }
 
 
-def _cursor_phase_record(phase: dict[str, Any]) -> dict[str, Any]:
+def _cursor_phase_record(
+    phase: dict[str, Any], *, elapsed_field: str = "elapsed_seconds"
+) -> dict[str, Any]:
     keys = (
         "phase",
         "status",
-        "elapsed_seconds",
+        elapsed_field,
         "num_turns",
         "file_count",
         "model_usage",
@@ -443,6 +448,7 @@ def _finalize_cursor_payload(
     prompt: str,
     followup_prompt: str | None,
     cli_version_fields: dict[str, Any],
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     phase1 = phases[0]
     payload.update(
@@ -452,7 +458,10 @@ def _finalize_cursor_payload(
             "main_model": variant["main_model"],
             "prompt_sha256": prompt_sha256(prompt),
             "command": phase1.get("command", []),
-            "phases": [_cursor_phase_record(phase) for phase in phases],
+            "phases": [
+                _cursor_phase_record(phase, elapsed_field=elapsed_field)
+                for phase in phases
+            ],
             **cli_version_fields,
         }
     )
@@ -508,9 +517,10 @@ def _print_cursor_completion(
     log_tag: str,
 ) -> None:
     model_usage = _dict_or_empty(payload.get("model_usage"))
+    elapsed = payload.get("elapsed_seconds", payload.get("elapsed_minutes"))
     print_line(
         f"Finished {slug} status={payload['status']} "
-        f"elapsed={float(payload['elapsed_seconds']):.2f}s "
+        f"elapsed={float(elapsed):.2f}s "
         f"files={payload['file_count']} turns={payload['num_turns']}"
     )
     if model_usage:
@@ -544,6 +554,7 @@ def run_variant(
     include_agent_rules: bool = True,
     for_benchmark_build: bool = False,
     wrap_primary_prompt: bool = True,
+    elapsed_field: str = "elapsed_seconds",
 ) -> dict[str, Any]:
     """Run a single Cursor CLI benchmark variant."""
     slug = variant["slug"]
@@ -605,6 +616,7 @@ def run_variant(
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
             env=phase_env,
+            elapsed_field=elapsed_field,
         )
 
     def finalize_payload(
@@ -618,6 +630,7 @@ def run_variant(
             prompt=prompt,
             followup_prompt=followup_prompt,
             cli_version_fields=get_cli_version_fields(),
+            elapsed_field=elapsed_field,
         )
 
     return TargetRunLifecycle(
@@ -641,4 +654,5 @@ def run_variant(
         include_agent_rules=include_agent_rules,
         wrap_primary_prompt=wrap_primary_prompt,
         extra_payload_fields={"runtime_isolation": runtime_isolation},
+        elapsed_field=elapsed_field,
     ).run()

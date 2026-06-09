@@ -106,6 +106,35 @@ class TestPhasePayload(unittest.TestCase):
         self.assertEqual(payload["tokens_per_second"], 3.0)
         self.assertEqual(payload["output_tokens_per_second"], 2.0)
 
+    def test_build_phase_payload_supports_elapsed_minutes_field(self) -> None:
+        payload = build_phase_payload(
+            phase_name="phase1",
+            assistant_output="",
+            command=[],
+            continued_from_session=None,
+            elapsed_seconds=29.32,
+            ended_at="t",
+            exit_code=0,
+            finish_reason="stop",
+            model={},
+            session_id=None,
+            paths={},
+            project_summary={"works_as_intended": "yes"},
+            prompt="",
+            started_at="t",
+            stderr="",
+            stalled=False,
+            stall_reason=None,
+            timed_out=False,
+            timeout_seconds=60,
+            no_progress_timeout_seconds=30,
+            tokens={"input": 0, "output": 0, "total": 0},
+            elapsed_field="elapsed_minutes",
+        )
+
+        self.assertNotIn("elapsed_seconds", payload)
+        self.assertEqual(payload["elapsed_minutes"], 29.32)
+
     def test_terminal_stop_with_working_project_is_completed(self) -> None:
         status = derive_phase_status(
             timed_out=False,
