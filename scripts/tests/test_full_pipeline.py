@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -293,6 +294,66 @@ def test_build_job_argv_runs_single_replicate_with_global_pool_defaults() -> Non
     assert argv[argv.index("--replicate-index") + 1] == "2"
     assert argv[argv.index("-j") + 1] == "1"
     assert "--no-docker-prune" in argv
+
+
+def test_build_job_argv_adds_skip_stale_opencode_kill_for_opencode() -> None:
+    argv = build_job_argv(
+        BuildJob("opencode", "kimi_k2_6", 1, 3),
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        extra_args=[],
+        run_id="run_02",
+    )
+    assert "--skip-stale-opencode-kill" in argv
+
+    codex_argv = build_job_argv(
+        BuildJob("codex", "kimi_k2_6", 1, 3),
+        models_config=MODELS_CONFIG,
+        results_dir=REPO_ROOT / "results",
+        extra_args=[],
+        run_id="run_02",
+    )
+    assert "--skip-stale-opencode-kill" not in codex_argv
+
+
+def test_dispatch_build_jobs_pipelined_serializes_opencode() -> None:
+    import threading
+    import time
+
+    active_opencode = 0
+    overlap = threading.Event()
+    active_lock = threading.Lock()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        harness = cmd[cmd.index("--harness") + 1]
+        nonlocal active_opencode
+        if harness != "opencode":
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        with active_lock:
+            active_opencode += 1
+            if active_opencode > 1:
+                overlap.set()
+        time.sleep(0.05)
+        with active_lock:
+            active_opencode -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("opencode", "kimi_k2_6", 1, 1),
+        BuildJob("codex", "kimi_k2_6", 1, 1),
+        BuildJob("opencode", "qwen3_5", 1, 1),
+    ]
+    with patch("benchmark.full_pipeline.kill_stale_opencode_processes") as kill_mock:
+        dispatch_build_jobs_pipelined(
+            jobs,
+            workers=3,
+            models_config=MODELS_CONFIG,
+            results_dir=REPO_ROOT / "results",
+            extra_args=[],
+            run_cmd=fake_run_cmd,
+        )
+    kill_mock.assert_called_once()
+    assert not overlap.is_set()
 
 
 def test_dispatch_build_jobs_starts_second_harness_before_first_finishes() -> None:

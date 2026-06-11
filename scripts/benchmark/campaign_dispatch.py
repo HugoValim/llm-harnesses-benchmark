@@ -279,6 +279,7 @@ def run_model_job_batch(
     dispatch_replicate: DispatchReplicateFn,
     replicate_index: int | None = None,
     model_slot_locks: ModelSlotLocks | None = None,
+    skip_stale_opencode_kill: bool = False,
 ) -> None:
     """Run model jobs with local GPU serialization and usage-limit aborts.
 
@@ -289,7 +290,7 @@ def run_model_job_batch(
         ``run_model_job_batch(..., workers=2, harness="codex")`` runs up to two jobs.
     """
     parallel = workers > 1 and len(job_items) > 1
-    skip_stale_kill = parallel
+    skip_stale_kill = parallel or skip_stale_opencode_kill
     if parallel:
         _run_parallel_model_jobs(
             job_items,
@@ -375,6 +376,7 @@ def run_model_campaign(
             replicate_index,
             num_runs,
         ),
+        skip_stale_opencode_kill=bench.skip_stale_opencode_kill,
     )
     return CampaignDispatchResult(usage_limit_aborted=abort_flag.is_set())
 

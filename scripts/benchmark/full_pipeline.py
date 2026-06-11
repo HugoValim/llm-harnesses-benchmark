@@ -5,11 +5,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from benchmark.audit_meta import audit_model_harness
+from benchmark.campaign_dispatch import kill_stale_opencode_processes
 from benchmark.config import (
     _normalize_registry_models,
     existing_acceptable_result,
@@ -204,6 +206,8 @@ def build_job_argv(
         argv.extend(["--run-id", run_id])
     else:
         argv.extend(["--results-dir", str(results_dir)])
+    if job.harness == "opencode":
+        argv.append("--skip-stale-opencode-kill")
     argv.extend(extra_args)
     return argv
 
@@ -384,7 +388,23 @@ def dispatch_build_jobs_pipelined(
     )
     expect_followup = followup_expected(followup_prompt=followup_prompt)
 
+    if any(job.harness == "opencode" for job in jobs):
+        kill_stale_opencode_processes()
+
+    opencode_lock = threading.Lock()
+
     def run_one(job: BuildJob) -> tuple[str, int]:
+        if job.harness == "opencode":
+            with opencode_lock:
+                return execute_build_job(
+                    job,
+                    models_config=models_config,
+                    results_dir=results_dir,
+                    extra_args=extra_args,
+                    run_id=run_id,
+                    dry_run=dry_run,
+                    run_cmd=run_cmd,
+                )
         return execute_build_job(
             job,
             models_config=models_config,

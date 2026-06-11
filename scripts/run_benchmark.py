@@ -276,6 +276,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Omit prompts/agent_coding_rules.md from project CLAUDE.md/AGENTS.md.",
     )
+    parser.add_argument(
+        "--skip-stale-opencode-kill",
+        action="store_true",
+        help=(
+            "Do not pgrep-kill other opencode processes before each run. "
+            "Set by the pipelined full-benchmark pool so sibling subprocesses "
+            "are not SIGTERM'd while sharing ~/.local/share/opencode."
+        ),
+    )
     add_rate_limit_cli_args(parser)
     args = parser.parse_args()
     if args.max_validation_retries < 0:
@@ -383,6 +392,7 @@ def _run_model_harness(args: argparse.Namespace, harness: str) -> int:
         include_agent_rules=include_agent_rules,
         rate_limit_policy=rate_limit_policy,
         replicate_index=args.replicate_index,
+        skip_stale_opencode_kill=args.skip_stale_opencode_kill,
     )
 
     dispatch_result = run_model_campaign(

@@ -281,6 +281,38 @@ class TestRunModelJobBatch(unittest.TestCase):
         self.assertFalse(overlap.is_set(), "two local runs overlapped on GPU lock")
         self.assertEqual(len(calls), 3)
 
+    def test_skip_stale_opencode_kill_in_sequential_batch(self) -> None:
+        seen: list[bool] = []
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            seen.append(skip_stale_kill)
+            return {"status": "completed"}
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            raise AssertionError("sequential dispatch should run in sequential mode")
+
+        items = [(1, {"slug": "a", "provider": "ollama_cloud"})]
+        run_model_job_batch(
+            job_items=items,
+            workers=1,
+            harness="opencode",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+            skip_stale_opencode_kill=True,
+        )
+        self.assertEqual(seen, [True])
+
     def test_parallel_passes_skip_stale_kill(self) -> None:
         seen: list[bool] = []
 
