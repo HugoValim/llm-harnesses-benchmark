@@ -69,7 +69,7 @@ def ensure_audit_report(
     When missing, tries stream extraction. Returns ``(True, "")`` on success or
     ``(False, reason)`` when the report is still incomplete.
     """
-    if not audit_report_is_complete(report_path):
+    if not report_path.is_file():
         if stream_path is not None and stream_path.is_file():
             extract_final_report_from_stream(stream_path, report_path)
     if audit_report_is_complete(report_path):

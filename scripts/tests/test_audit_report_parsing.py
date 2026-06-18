@@ -29,6 +29,18 @@ def test_parse_section_c_inline_total() -> None:
     assert report.total == 91
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "C. **Total score / 100**: 80 / 100",
+        "C. **Total Score**\n80 / 100.",
+    ],
+)
+def test_parse_section_c_colon_and_multiline_variants(text: str) -> None:
+    report = parse_report_scores(text, target="codex-foo")
+    assert report.total == 80
+
+
 def test_parse_d10_dimension_row() -> None:
     text = """
 | 10 | Code quality | 9 / 10 | project/chat/consumers.py:42 clean structure |

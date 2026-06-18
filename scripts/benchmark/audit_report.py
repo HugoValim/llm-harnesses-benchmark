@@ -225,6 +225,9 @@ def _extract_total(report_text: str) -> int | None:
 
     heading = _SECTION_C_HEADING.search(report_text)
     if heading:
+        matched = heading.group(0)
+        for match in _SCORE_OUT_OF_100.finditer(matched):
+            return int(match.group(1))
         tail = report_text[heading.end() : heading.end() + 400]
         for match in _SCORE_OUT_OF_100.finditer(tail):
             return int(match.group(1))

@@ -68,6 +68,32 @@ def test_extract_final_report_falls_back_to_thinking(tmp_path: Path) -> None:
     assert "Only thinking output." in report.read_text()
 
 
+def test_ensure_audit_report_does_not_clobber_existing_report(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.md"
+    original = "C. **Total score / 100**: 80 / 100\n"
+    report.write_text(original)
+    stream = tmp_path / "stream.ndjson"
+    stream.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "thinking", "thinking": "Only thinking output."},
+                    ]
+                },
+            }
+        )
+        + "\n"
+    )
+    ok, reason = ensure_audit_report(report_path=report, stream_path=stream)
+    assert report.read_text() == original
+    assert ok
+    assert reason == ""
+
+
 def test_ensure_audit_report_requires_parseable_total(tmp_path: Path) -> None:
     report = tmp_path / "report.md"
     report.write_text("no score here\n")
