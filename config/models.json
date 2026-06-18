@@ -38,6 +38,15 @@
       "selection_reason": "Cursor Composer 2.5 baseline on the Python benchmark."
     },
     {
+      "slug": "kimi_k2_7",
+      "label": "Kimi K2.7 (Ollama Cloud)",
+      "provider": "ollama_cloud",
+      "id": "kimi-k2.7-code:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
+      "num_runs": 3,
+      "selection_reason": "Kimi K2.7 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
+    },
+    {
       "slug": "kimi_k2_6",
       "label": "Kimi K2.6 (Ollama Cloud)",
       "provider": "ollama_cloud",
@@ -64,6 +73,15 @@
       "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
       "num_runs": 3,
       "selection_reason": "GLM 5.1 served by Ollama Cloud for long-horizon agentic engineering comparison."
+    },
+    {
+      "slug": "glm_5_2",
+      "label": "GLM 5.2 (Ollama Cloud)",
+      "provider": "ollama_cloud",
+      "id": "glm-5.2:cloud",
+      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
+      "num_runs": 3,
+      "selection_reason": "GLM 5.2 served by Ollama Cloud for long-horizon agentic engineering comparison."
     },
     {
       "slug": "qwen3_5",
