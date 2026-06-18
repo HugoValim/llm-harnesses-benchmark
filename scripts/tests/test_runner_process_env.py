@@ -141,47 +141,130 @@ class TestRunnerProcessEnv(unittest.TestCase):
                 "runner_type": "codex",
                 "slug": "demo",
             }
-            with patch.dict(os.environ, {"BENCHMARK_ENV_PROBE": "codex-parent"}, clear=False):
-                with patch("benchmark.runner.subprocess.Popen", side_effect=fake_popen):
-                    with patch("benchmark.runner.stream_process_output") as stream_mock:
-                        stream_mock.return_value = MagicMock(
-                            stdout="",
-                            stderr="",
-                            stalled=False,
-                            stall_reason=None,
-                            timed_out=False,
-                            latest_preview_output_tps=None,
-                            preview_average_output_tps=None,
-                        )
-                        with patch("benchmark.runner.parse_event_stream", return_value=[]):
-                            with patch(
-                                "benchmark.runner.extract_codex_metrics",
-                                return_value={
-                                    "assistant_output": "",
-                                    "finish_reason": "stop",
-                                    "session_id": None,
-                                    "tokens": {},
-                                },
-                            ):
-                                run_codex_phase(
-                                    bench=bench,
-                                    model=model,
-                                    model_slug="demo",
-                                    prompt="build",
-                                    started_at="2026-01-01T00:00:00Z",
-                                    project_dir=project_dir,
-                                    prompt_path=prompt_path,
-                                    stdout_path=stdout_path,
-                                    stderr_path=stderr_path,
-                                    result_path=None,
-                                    for_benchmark_build=True,
-                                )
+            fake_home = Path(tmp) / "home"
+            codex_home = fake_home / ".codex"
+            codex_home.mkdir(parents=True)
+            (codex_home / "config.toml").write_text('[projects."/tmp"]\ntrust_level = "trusted"\n')
+
+            with patch("pathlib.Path.home", return_value=fake_home):
+                with patch.dict(os.environ, {"BENCHMARK_ENV_PROBE": "codex-parent"}, clear=False):
+                    with patch("benchmark.runner.subprocess.Popen", side_effect=fake_popen):
+                        with patch("benchmark.runner.stream_process_output") as stream_mock:
+                            stream_mock.return_value = MagicMock(
+                                stdout="",
+                                stderr="",
+                                stalled=False,
+                                stall_reason=None,
+                                timed_out=False,
+                                latest_preview_output_tps=None,
+                                preview_average_output_tps=None,
+                            )
+                            with patch("benchmark.runner.parse_event_stream", return_value=[]):
+                                with patch(
+                                    "benchmark.runner.extract_codex_metrics",
+                                    return_value={
+                                        "assistant_output": "",
+                                        "finish_reason": "stop",
+                                        "session_id": None,
+                                        "tokens": {},
+                                    },
+                                ):
+                                    run_codex_phase(
+                                        bench=bench,
+                                        model=model,
+                                        model_slug="demo",
+                                        prompt="build",
+                                        started_at="2026-01-01T00:00:00Z",
+                                        project_dir=project_dir,
+                                        prompt_path=prompt_path,
+                                        stdout_path=stdout_path,
+                                        stderr_path=stderr_path,
+                                        result_path=None,
+                                        for_benchmark_build=True,
+                                    )
 
             env = captured.get("env")
             self.assertIsInstance(env, dict)
             assert isinstance(env, dict)
             self.assertEqual(env.get("BENCHMARK_ENV_PROBE"), "codex-parent")
             self.assertNotIn("CODEX_HOME", env)
+
+    def test_run_codex_phase_sets_codex_home_when_home_has_ollama_provider_override(self) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_popen(*args: Any, **kwargs: Any) -> MagicMock:
+            captured["env"] = kwargs.get("env")
+            proc = MagicMock()
+            proc.stdin = MagicMock()
+            proc.stdout = MagicMock()
+            proc.stderr = MagicMock()
+            proc.returncode = 0
+            return proc
+
+        with TemporaryDirectory() as tmp:
+            result_dir = Path(tmp) / "run_01"
+            project_dir = result_dir / "project"
+            project_dir.mkdir(parents=True)
+            prompt_path = result_dir / "prompt.txt"
+            stdout_path = result_dir / "out.ndjson"
+            stderr_path = result_dir / "err.log"
+            bench = _minimal_bench("codex")
+            model = {
+                "id": "gpt-test",
+                "provider": "openai",
+                "runner_type": "codex",
+                "slug": "demo",
+            }
+
+            fake_home = Path(tmp) / "home"
+            codex_home = fake_home / ".codex"
+            codex_home.mkdir(parents=True)
+            (codex_home / "config.toml").write_text('model_provider = "ollama-launch"\n')
+            (codex_home / "auth.json").write_text("{}\n")
+
+            with patch("pathlib.Path.home", return_value=fake_home):
+                with patch.dict(os.environ, {"BENCHMARK_ENV_PROBE": "codex-parent"}, clear=False):
+                    with patch("benchmark.runner.subprocess.Popen", side_effect=fake_popen):
+                        with patch("benchmark.runner.stream_process_output") as stream_mock:
+                            stream_mock.return_value = MagicMock(
+                                stdout="",
+                                stderr="",
+                                stalled=False,
+                                stall_reason=None,
+                                timed_out=False,
+                                latest_preview_output_tps=None,
+                                preview_average_output_tps=None,
+                            )
+                            with patch("benchmark.runner.parse_event_stream", return_value=[]):
+                                with patch(
+                                    "benchmark.runner.extract_codex_metrics",
+                                    return_value={
+                                        "assistant_output": "",
+                                        "finish_reason": "stop",
+                                        "session_id": None,
+                                        "tokens": {},
+                                    },
+                                ):
+                                    run_codex_phase(
+                                        bench=bench,
+                                        model=model,
+                                        model_slug="demo",
+                                        prompt="build",
+                                        started_at="2026-01-01T00:00:00Z",
+                                        project_dir=project_dir,
+                                        prompt_path=prompt_path,
+                                        stdout_path=stdout_path,
+                                        stderr_path=stderr_path,
+                                        result_path=None,
+                                        for_benchmark_build=True,
+                                    )
+
+            env = captured.get("env")
+            self.assertIsInstance(env, dict)
+            assert isinstance(env, dict)
+            self.assertIn("CODEX_HOME", env)
+            self.assertEqual(env["CODEX_HOME"], str(result_dir / ".codex-home"))
+            self.assertTrue((result_dir / ".codex-home" / "auth.json").is_file())
 
     def test_run_codex_phase_sets_codex_home_for_ollama_launch_codex(self) -> None:
         captured: dict[str, Any] = {}

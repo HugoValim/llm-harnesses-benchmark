@@ -1,4 +1,4 @@
-"""Benchmark agent runtime env — uses the operator's normal CLI home config."""
+"""Benchmark agent runtime env — isolates Codex home when Ollama overrides leak in."""
 
 from __future__ import annotations
 
@@ -11,12 +11,23 @@ from benchmark.util import ollama_launch_integration
 _CODEX_PROFILE_ASSIGNMENT_RE = re.compile(
     r"^\s*profile\s*=\s*(['\"])ollama-launch\1\s*$"
 )
+_CODEX_MODEL_PROVIDER_ASSIGNMENT_RE = re.compile(
+    r"^\s*model_provider\s*=\s*(['\"])ollama-launch\1\s*$"
+)
+_CODEX_MODEL_CATALOG_JSON_RE = re.compile(r"^\s*model_catalog_json\s*=")
 _CODEX_OLLAMA_LAUNCH_TABLE_RE = re.compile(r"^\s*\[profiles\.ollama-launch\]\s*$")
+_CODEX_OLLAMA_LAUNCH_PROVIDER_TABLE_RE = re.compile(
+    r"^\s*\[model_providers\.ollama-launch\]\s*$"
+)
 _CODEX_ANY_TABLE_RE = re.compile(r"^\s*\[[^\]]+\]\s*$")
+_CODEX_OLLAMA_LAUNCH_TABLES = (
+    _CODEX_OLLAMA_LAUNCH_TABLE_RE,
+    _CODEX_OLLAMA_LAUNCH_PROVIDER_TABLE_RE,
+)
 
 
-def config_has_legacy_ollama_launch_profile(config_toml: str) -> bool:
-    """Return True when Codex config.toml embeds the legacy ollama-launch profile."""
+def config_has_ollama_launch_overrides(config_toml: str) -> bool:
+    """Return True when Codex config.toml routes plain ``codex`` through Ollama."""
 
     for raw in config_toml.splitlines():
         line = raw.split("#", 1)[0].strip()
@@ -24,13 +35,22 @@ def config_has_legacy_ollama_launch_profile(config_toml: str) -> bool:
             continue
         if _CODEX_PROFILE_ASSIGNMENT_RE.match(line):
             return True
-        if _CODEX_OLLAMA_LAUNCH_TABLE_RE.match(line):
+        if _CODEX_MODEL_PROVIDER_ASSIGNMENT_RE.match(line):
             return True
+        for table_re in _CODEX_OLLAMA_LAUNCH_TABLES:
+            if table_re.match(line):
+                return True
     return False
 
 
-def strip_legacy_ollama_launch_profile(config_toml: str) -> str:
-    """Remove legacy ollama-launch profile directives from a Codex config.toml."""
+def config_has_legacy_ollama_launch_profile(config_toml: str) -> bool:
+    """Return True when Codex config.toml embeds the legacy ollama-launch profile."""
+
+    return config_has_ollama_launch_overrides(config_toml)
+
+
+def strip_ollama_launch_overrides(config_toml: str) -> str:
+    """Remove ollama-launch profile/provider directives from a Codex config.toml."""
 
     lines = config_toml.splitlines(keepends=True)
     stripped: list[str] = []
@@ -46,14 +66,29 @@ def strip_legacy_ollama_launch_profile(config_toml: str) -> str:
 
         if _CODEX_PROFILE_ASSIGNMENT_RE.match(line):
             continue
-
-        if _CODEX_OLLAMA_LAUNCH_TABLE_RE.match(line):
-            skipping_table = True
+        if _CODEX_MODEL_PROVIDER_ASSIGNMENT_RE.match(line):
+            continue
+        if _CODEX_MODEL_CATALOG_JSON_RE.match(line):
             continue
 
-        stripped.append(raw)
+        for table_re in _CODEX_OLLAMA_LAUNCH_TABLES:
+            if table_re.match(line):
+                skipping_table = True
+                break
+        else:
+            stripped.append(raw)
+            continue
+
+        # matched an ollama-launch table header; skip it and its body
+        continue
 
     return "".join(stripped)
+
+
+def strip_legacy_ollama_launch_profile(config_toml: str) -> str:
+    """Remove legacy ollama-launch profile directives from a Codex config.toml."""
+
+    return strip_ollama_launch_overrides(config_toml)
 
 
 def prepare_isolated_codex_home(*, source_home: Path, dest_home: Path) -> None:
@@ -64,7 +99,7 @@ def prepare_isolated_codex_home(*, source_home: Path, dest_home: Path) -> None:
     dest_config = dest_home / "config.toml"
     if source_config.exists():
         config_toml = source_config.read_text()
-        dest_config.write_text(strip_legacy_ollama_launch_profile(config_toml))
+        dest_config.write_text(strip_ollama_launch_overrides(config_toml))
     else:
         dest_config.write_text("")
 
@@ -76,23 +111,51 @@ def prepare_isolated_codex_home(*, source_home: Path, dest_home: Path) -> None:
             (dest_home / filename).write_text(src.read_text())
 
 
+def prepare_subscription_codex_home(*, source_home: Path, dest_home: Path) -> None:
+    """Materialize a ChatGPT-linked Codex home without Ollama provider overrides."""
+
+    dest_home.mkdir(parents=True, exist_ok=True)
+    source_config = source_home / "config.toml"
+    dest_config = dest_home / "config.toml"
+    if source_config.exists():
+        config_toml = source_config.read_text()
+        dest_config.write_text(strip_ollama_launch_overrides(config_toml))
+    else:
+        dest_config.write_text("")
+
+    auth_src = source_home / "auth.json"
+    if auth_src.exists():
+        (dest_home / "auth.json").write_text(auth_src.read_text())
+
+
 def codex_env_for_phase(
     base_env: dict[str, str],
     *,
     result_dir: Path,
     command_prefix: list[str] | None,
 ) -> dict[str, str]:
-    """Return phase env, isolating Codex home only for ``ollama launch codex``."""
+    """Return phase env with benchmark-scoped Codex home when isolation is required."""
 
     integration = ollama_launch_integration(command_prefix or [])
-    if integration != "codex":
-        return dict(base_env)
+    source_home = Path.home() / ".codex"
+    source_config = source_home / "config.toml"
+    config_toml = source_config.read_text() if source_config.exists() else ""
 
-    env = dict(base_env)
-    dest_home = result_dir / ".codex-home"
-    prepare_isolated_codex_home(source_home=Path.home() / ".codex", dest_home=dest_home)
-    env["CODEX_HOME"] = str(dest_home)
-    return env
+    if integration == "codex":
+        env = dict(base_env)
+        dest_home = result_dir / ".codex-home"
+        prepare_isolated_codex_home(source_home=source_home, dest_home=dest_home)
+        env["CODEX_HOME"] = str(dest_home)
+        return env
+
+    if config_has_ollama_launch_overrides(config_toml):
+        env = dict(base_env)
+        dest_home = result_dir / ".codex-home"
+        prepare_subscription_codex_home(source_home=source_home, dest_home=dest_home)
+        env["CODEX_HOME"] = str(dest_home)
+        return env
+
+    return dict(base_env)
 
 
 def benchmark_env_for_harness(
