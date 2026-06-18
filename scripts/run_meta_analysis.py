@@ -77,6 +77,8 @@ def _required_meta_binary(harness: str, meta_model: dict) -> str:
         return "ollama"
     if harness == "codex":
         return "codex"
+    if harness == "cursor":
+        return "agent"
     return "claude"
 
 

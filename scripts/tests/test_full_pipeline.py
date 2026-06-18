@@ -130,15 +130,15 @@ def test_build_benchmark_argv_includes_jobs() -> None:
     assert argv[j_index + 1] == str(DEFAULT_JOBS)
 
 
-def test_default_auditor_is_codex_gpt_5_5() -> None:
-    assert DEFAULT_AUDITOR_SLUG == "codex_gpt_5_5"
+def test_default_auditor_is_composer_2_5() -> None:
+    assert DEFAULT_AUDITOR_SLUG == "composer_2_5"
 
 
 def test_default_jobs_is_three() -> None:
     assert DEFAULT_JOBS == 3
 
 
-def test_resolve_meta_config_default_auditor_uses_codex() -> None:
+def test_resolve_meta_config_default_auditor_uses_cursor() -> None:
     auditor_harness, meta_slug, meta_harness, meta_input = resolve_meta_config(
         HARNESSES_CONFIG,
         MODELS_CONFIG,
@@ -147,26 +147,26 @@ def test_resolve_meta_config_default_auditor_uses_codex() -> None:
         None,
         None,
     )
-    assert auditor_harness == "codex"
+    assert auditor_harness == "cursor"
     assert meta_slug == DEFAULT_AUDITOR_SLUG
-    assert meta_harness == "codex"
+    assert meta_harness == "cursor"
     assert meta_input == DEFAULT_AUDITOR_SLUG
 
 
-def test_phase_audit_dry_run_passes_codex_harness(capsys: pytest.CaptureFixture[str]) -> None:
+def test_phase_audit_dry_run_passes_cursor_harness(capsys: pytest.CaptureFixture[str]) -> None:
     phase_audit(
         MODELS_CONFIG,
         REPO_ROOT / "results" / "run_02" / "projects",
         REPO_ROOT / "results" / "run_02" / "audit-reports",
         DEFAULT_AUDITOR_SLUG,
-        "codex",
+        "cursor",
         jobs=DEFAULT_JOBS,
         run_id="run_02",
         dry_run=True,
     )
     out = capsys.readouterr().out
     assert "--run-id run_02" in out
-    assert "--harness codex" in out
+    assert "--harness cursor" in out
     assert f"--model {DEFAULT_AUDITOR_SLUG}" in out
     assert f"-j {DEFAULT_JOBS}" in out
 

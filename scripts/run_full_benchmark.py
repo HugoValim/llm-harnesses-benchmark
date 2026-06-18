@@ -8,7 +8,7 @@ Phase 2 audits all benchmark results; Phase 3 runs cross-auditor meta-analysis.
 
 All outputs land under ``results/<run_id>/`` (``--run-id`` required).
 
-Environment (defaults: ``codex_gpt_5_5`` / codex harness for audit and meta):
+Environment (defaults: ``composer_2_5`` / cursor harness for audit and meta):
   AUDITOR_SLUG, META_ANALYSIS_AUDITOR_SLUG, META_ANALYSIS_HARNESS, META_ANALYSIS_INPUT_DIR
 
 Examples:

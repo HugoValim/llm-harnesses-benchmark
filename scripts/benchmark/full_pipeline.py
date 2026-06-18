@@ -33,7 +33,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.0"
 
-_AUDIT_DISPATCH_HARNESSES = frozenset({"claude", "codex"})
+_AUDIT_DISPATCH_HARNESSES = frozenset({"claude", "codex", "cursor"})
 
 
 @dataclass(frozen=True)
@@ -631,7 +631,7 @@ def resolve_meta_config(
         )
     if resolved_harness not in _AUDIT_DISPATCH_HARNESSES:
         raise SystemExit(
-            f"ERROR: META_ANALYSIS_HARNESS must be claude or codex "
+            f"ERROR: META_ANALYSIS_HARNESS must be claude, codex, or cursor "
             f"(got {resolved_harness})"
         )
 

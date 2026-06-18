@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-# GPT-5.5 xhigh via Codex CLI (config/models.json: codex_reasoning_effort=xhigh).
-DEFAULT_AUDITOR_SLUG = "codex_gpt_5_5"
+# Composer 2.5 via Cursor Agent CLI (config/models.json: composer_2_5).
+DEFAULT_AUDITOR_SLUG = "composer_2_5"
 
-# Harness for DEFAULT_AUDITOR_SLUG (openai provider -> codex).
-DEFAULT_AUDIT_HARNESS = "codex"
+# Harness for DEFAULT_AUDITOR_SLUG (cursor provider -> cursor).
+DEFAULT_AUDIT_HARNESS = "cursor"
 
 # Default concurrent workers for build, audit, and full-pipeline phases.
 DEFAULT_JOBS = 3

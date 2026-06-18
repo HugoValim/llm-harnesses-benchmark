@@ -206,15 +206,15 @@ def run_ai_meta_analysis(
     """Dispatch an LLM to write the meta-analysis markdown file.
 
     The LLM (selected by ``variant`` + ``harness``) is invoked via the
-    Claude Code runner.
+    registered harness runner (Claude Code, Codex, or Cursor Agent CLI).
 
-    Supported harnesses: ``"claude"``, ``"codex"``, ``"ollama"``.
+    Supported harnesses: ``"claude"``, ``"codex"``, ``"cursor"``, ``"ollama"``.
     """
     harness_name = canonical_harness_name(harness)
-    if harness_name not in {"claude", "codex"}:
+    if harness_name not in {"claude", "codex", "cursor"}:
         raise NotImplementedError(
             f"meta-analysis harness={harness!r} not supported; "
-            "expected one of 'claude', 'codex', 'ollama'."
+            "expected one of 'claude', 'codex', 'cursor', 'ollama'."
         )
     harness_adapter = get_harness(harness_name)
 
