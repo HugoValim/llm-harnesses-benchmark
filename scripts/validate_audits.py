@@ -28,6 +28,7 @@ from benchmark.result_layout import (  # noqa: E402
     resolve_default_run_id,
     resolve_run_layout,
 )
+from benchmark.result_validation import wipe_result_dir  # noqa: E402
 from benchmark.util import print_line  # noqa: E402
 
 
@@ -99,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         "--require-full-rubric",
         action="store_true",
         help="Fail when report.md parses fewer than ten dimension rows.",
+    )
+    parser.add_argument(
+        "--remove-on-fail",
+        action="store_true",
+        help="Delete the audit leaf directory when validation or coverage fails.",
     )
     parser.add_argument(
         "--verbose",
@@ -179,6 +185,24 @@ def _print_coverage_gaps(
         print_line(f"[GAP] {gap.auditor_slug}/{gap.target_slug}: {gap.reason}")
 
 
+def _remove_coverage_gap_leaves(
+    gaps: list[AuditCoverageGap],
+    audit_root: Path,
+    *,
+    remove_on_fail: bool,
+) -> int:
+    if not remove_on_fail:
+        return 0
+    removed = 0
+    for gap in gaps:
+        leaf_dir = audit_target_dir(audit_root, gap.auditor_slug, gap.target_slug)
+        if leaf_dir.exists():
+            wipe_result_dir(leaf_dir, recreate=False)
+            removed += 1
+            print_line(f"  removed {leaf_dir}")
+    return removed
+
+
 def main() -> int:
     args = parse_args()
     projects_root, audit_root, effective_run_id, auto_resolved = _resolve_scope(args)
@@ -216,6 +240,12 @@ def main() -> int:
         )
         _print_coverage_gaps(gaps, verbose=args.verbose)
         coverage_failures = len(gaps)
+
+    removed = _remove_coverage_gap_leaves(
+        gaps,
+        audit_root,
+        remove_on_fail=args.remove_on_fail,
+    )
 
     leaves_to_check: list[tuple[str, Path]] = []
     if enforce_coverage and required_targets:
@@ -256,10 +286,16 @@ def main() -> int:
         print_line(_format_leaf_line(status, label, vr, verbose=args.verbose))
         if not vr.ok:
             failures += 1
+            if args.remove_on_fail and leaf_dir.exists():
+                wipe_result_dir(leaf_dir, recreate=False)
+                removed += 1
+                print_line(f"  removed {leaf_dir}")
 
     if coverage_failures:
         print_line(f"coverage_gaps={coverage_failures}")
     print_line(f"checked={checked} failed={failures}")
+    if args.remove_on_fail and removed:
+        print_line(f"removed={removed}")
     return 1 if failures else 0
 
 

@@ -259,6 +259,117 @@ def test_validate_audits_failed_count_not_doubled(tmp_path: Path) -> None:
     assert "failed=2" not in completed.stdout
 
 
+def test_validate_audits_remove_on_fail_wipes_usage_limit_gap(tmp_path: Path) -> None:
+    results_base = tmp_path / "results"
+    projects_root = results_base / "run_02" / "projects"
+    audit_root = results_base / "run_02" / "audit-reports"
+    (projects_root / "opencode-demo" / "run_01" / "project").mkdir(parents=True)
+    (projects_root / "claude-demo" / "run_01" / "project").mkdir(parents=True)
+    _write_complete_report(
+        audit_root / TEST_AUDITOR / "opencode-demo" / "run_01" / "report.md"
+    )
+    gap_leaf = audit_root / TEST_AUDITOR / "claude-demo" / "run_01"
+    gap_leaf.mkdir(parents=True)
+    (gap_leaf / "result.json").write_text(
+        json.dumps({"status": USAGE_LIMIT_REACHED})
+    )
+
+    script = REPO_ROOT / "scripts" / "validate_audits.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--results-dir",
+            str(results_base),
+            "--run-id",
+            "run_02",
+            "--auditor",
+            TEST_AUDITOR,
+            "--remove-on-fail",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert completed.returncode == 1
+    assert f"[GAP] {TEST_AUDITOR}/claude-demo/run_01" in completed.stdout
+    assert "removed" in completed.stdout
+    assert not gap_leaf.exists()
+
+
+def test_validate_audits_remove_on_fail_wipes_never_audited_partial_leaf(
+    tmp_path: Path,
+) -> None:
+    results_base = tmp_path / "results"
+    projects_root = results_base / "run_02" / "projects"
+    audit_root = results_base / "run_02" / "audit-reports"
+    (projects_root / "opencode-demo" / "run_01" / "project").mkdir(parents=True)
+    (projects_root / "claude-demo" / "run_01" / "project").mkdir(parents=True)
+    _write_complete_report(
+        audit_root / TEST_AUDITOR / "opencode-demo" / "run_01" / "report.md"
+    )
+    gap_leaf = audit_root / TEST_AUDITOR / "claude-demo" / "run_01"
+    gap_leaf.mkdir(parents=True)
+    (gap_leaf / "stream.ndjson").write_text("{}\n")
+
+    script = REPO_ROOT / "scripts" / "validate_audits.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--results-dir",
+            str(results_base),
+            "--run-id",
+            "run_02",
+            "--auditor",
+            TEST_AUDITOR,
+            "--remove-on-fail",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert completed.returncode == 1
+    assert f"[GAP] {TEST_AUDITOR}/claude-demo/run_01: never audited" in completed.stdout
+    assert "removed" in completed.stdout
+    assert not gap_leaf.exists()
+
+
+def test_validate_audits_remove_on_fail_cli(tmp_path: Path) -> None:
+    results_base = tmp_path / "results"
+    projects_root = results_base / "run_02" / "projects"
+    audit_root = results_base / "run_02" / "audit-reports"
+    (projects_root / "opencode-demo" / "run_01" / "project").mkdir(parents=True)
+    leaf = audit_root / TEST_AUDITOR / "opencode-demo" / "run_01"
+    leaf.mkdir(parents=True)
+    (leaf / "report.md").write_text("no score here\n")
+
+    script = REPO_ROOT / "scripts" / "validate_audits.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--results-dir",
+            str(results_base),
+            "--run-id",
+            "run_02",
+            "--auditor",
+            TEST_AUDITOR,
+            "--no-enforce-coverage",
+            "--remove-on-fail",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert completed.returncode == 1
+    assert "removed" in completed.stdout
+    assert not leaf.exists()
+
+
 def test_validate_audits_verbose_includes_issue_details(tmp_path: Path) -> None:
     results_base = tmp_path / "results"
     projects_root = results_base / "run_02" / "projects"
