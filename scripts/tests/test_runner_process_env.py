@@ -189,7 +189,9 @@ class TestRunnerProcessEnv(unittest.TestCase):
             self.assertEqual(env.get("BENCHMARK_ENV_PROBE"), "codex-parent")
             self.assertNotIn("CODEX_HOME", env)
 
-    def test_run_codex_phase_sets_codex_home_when_home_has_ollama_provider_override(self) -> None:
+    def test_run_codex_phase_keeps_parent_env_when_home_has_ollama_provider_override(
+        self,
+    ) -> None:
         captured: dict[str, Any] = {}
 
         def fake_popen(*args: Any, **kwargs: Any) -> MagicMock:
@@ -262,11 +264,11 @@ class TestRunnerProcessEnv(unittest.TestCase):
             env = captured.get("env")
             self.assertIsInstance(env, dict)
             assert isinstance(env, dict)
-            self.assertIn("CODEX_HOME", env)
-            self.assertEqual(env["CODEX_HOME"], str(result_dir / ".codex-home"))
-            self.assertTrue((result_dir / ".codex-home" / "auth.json").is_file())
+            self.assertEqual(env.get("BENCHMARK_ENV_PROBE"), "codex-parent")
+            self.assertNotIn("CODEX_HOME", env)
+            self.assertFalse((result_dir / ".codex-home").exists())
 
-    def test_run_codex_phase_sets_codex_home_for_ollama_launch_codex(self) -> None:
+    def test_run_codex_phase_keeps_parent_env_for_ollama_launch_codex(self) -> None:
         captured: dict[str, Any] = {}
 
         def fake_popen(*args: Any, **kwargs: Any) -> MagicMock:
@@ -339,8 +341,9 @@ class TestRunnerProcessEnv(unittest.TestCase):
             env = captured.get("env")
             self.assertIsInstance(env, dict)
             assert isinstance(env, dict)
-            self.assertIn("CODEX_HOME", env)
-            self.assertEqual(env["CODEX_HOME"], str(result_dir / ".codex-home"))
+            self.assertEqual(env.get("BENCHMARK_ENV_PROBE"), "codex-parent")
+            self.assertNotIn("CODEX_HOME", env)
+            self.assertFalse((result_dir / ".codex-home").exists())
 
     def test_build_claude_env_uses_parent_env(self) -> None:
         with patch.dict(os.environ, {"BENCHMARK_ENV_PROBE": "claude-parent"}, clear=False):

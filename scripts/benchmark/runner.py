@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from benchmark.backends import LocalModelBackend
-from benchmark.agent_runtime_env import codex_env_for_phase, runtime_isolation_for_env
+from benchmark.agent_runtime_env import benchmark_env_for_harness, runtime_isolation_for_env
 from benchmark.build_parity import FOLLOWUP_CONTINUITY_COLD
 from benchmark.commands import (
     build_codex_command,
@@ -612,7 +612,8 @@ def run_codex_phase(
     )
     wall_start = time.monotonic()
 
-    process_env = codex_env_for_phase(
+    process_env = benchmark_env_for_harness(
+        "codex",
         os.environ.copy(),
         result_dir=prompt_path.parent,
         command_prefix=command_prefix,
