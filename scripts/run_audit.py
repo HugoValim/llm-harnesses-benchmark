@@ -33,11 +33,16 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from benchmark.audit_layout import (  # noqa: E402
+    auditor_dir_has_reports,
+    iter_auditor_report_paths,
+)
 from benchmark.audit_report import (  # noqa: E402
     build_comparison_table,
     build_statistical_summary,
     load_rubric_result,
 )
+from benchmark.audit_rollup import saturated_dimension_warnings  # noqa: E402
 from benchmark.harnesses import check_harness_cli_requirements  # noqa: E402
 from benchmark.audit_dispatch import (  # noqa: E402
     AuditDispatchConfig,
@@ -312,11 +317,6 @@ def _target_metadata_rows(config: dict[str, Any]) -> list[dict[str, Any]]:
     return list(config.get("models", []))
 
 
-def _auditor_dir_has_reports(auditor_dir: Path) -> bool:
-    """True when ``auditor_dir`` contains at least one ``<target>/report.md``."""
-    return auditor_dir.is_dir() and any(auditor_dir.glob("*/report.md"))
-
-
 def _write_auditor_comparison(
     auditor_dir: Path,
     *,
@@ -352,7 +352,7 @@ def _auditor_dirs_for_comparison_rollup(
     dirs: list[Path] = []
     for auditor in auditors:
         auditor_dir = results_dir / auditor["slug"]
-        if _auditor_dir_has_reports(auditor_dir):
+        if auditor_dir_has_reports(auditor_dir):
             dirs.append(auditor_dir)
     return dirs
 
@@ -465,9 +465,7 @@ def normalize_audit_paths(args: argparse.Namespace) -> argparse.Namespace:
 def _print_calibration_warnings(auditor_dir: Path) -> None:
     """Warn when parsed cohort scores suggest rubric saturation."""
     reports = [
-        load_rubric_result(p)
-        for p in sorted(auditor_dir.glob("**/report.md"))
-        if p.is_file()
+        load_rubric_result(p) for p in iter_auditor_report_paths(auditor_dir)
     ]
     totals = [r.total for r in reports if r.total is not None]
     if not totals:
@@ -479,14 +477,15 @@ def _print_calibration_warnings(auditor_dir: Path) -> None:
             f"WARN calibration: median total={median} > 85 for {auditor_dir.name} "
             "(rubric may be too lenient — see meta-analysis Check 1)"
         )
-    d2_scores = [r.dim_score(2) for r in reports if r.dim_score(2) is not None]
-    if d2_scores:
-        d2_full = sum(1 for s in d2_scores if s >= 20)
-        if d2_full / len(d2_scores) >= 0.8:
-            print_line(
-                f"WARN calibration: D2 saturated ({d2_full}/{len(d2_scores)} at 20/20) "
-                f"for {auditor_dir.name}"
-            )
+    for index, full_count, scored_count, max_score in saturated_dimension_warnings(
+        reports
+    ):
+        max_display = max_score if max_score is not None else "?"
+        print_line(
+            f"WARN calibration: D{index} saturated "
+            f"({full_count}/{scored_count} at {max_display}/{max_display}) "
+            f"for {auditor_dir.name}"
+        )
 
 
 def main() -> int:

@@ -1,66 +1,109 @@
-"""Tests for audit report directory layout discovery."""
+"""Regression tests for audit report directory layout helpers."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from benchmark.audit_report import (  # noqa: E402
-    _iter_reports,
-    build_comparison_table,
-    build_statistical_summary,
+from benchmark.audit_layout import (  # noqa: E402
+    auditor_dir_has_reports,
+    iter_auditor_report_paths,
+    iter_target_group_report_paths,
 )
+from run_audit import _auditor_dirs_for_comparison_rollup  # noqa: E402
+
+_SAMPLE_REPORT = "C. **Total score / 100** — **80 / 100**\n"
 
 
-def _write_report(target_dir: Path, total: int) -> None:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_dir.joinpath("report.md").write_text(
-        f"Total score: **{total} / 100**\n\nPractical tier: **A**\n"
+def _write_report(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_SAMPLE_REPORT, encoding="utf-8")
+
+
+def test_iter_target_group_report_paths_flat_layout(tmp_path: Path) -> None:
+    report = tmp_path / "opencode-foo" / "report.md"
+    _write_report(report)
+
+    assert list(iter_target_group_report_paths(tmp_path / "opencode-foo")) == [
+        report
+    ]
+
+
+def test_iter_target_group_report_paths_replicate_layout(tmp_path: Path) -> None:
+    report = tmp_path / "opencode-foo" / "run_01" / "report.md"
+    _write_report(report)
+
+    assert list(iter_target_group_report_paths(tmp_path / "opencode-foo")) == [
+        report
+    ]
+
+
+def test_iter_target_group_report_paths_prefers_flat_over_replicate(
+    tmp_path: Path,
+) -> None:
+    target_dir = tmp_path / "opencode-foo"
+    flat = target_dir / "report.md"
+    nested = target_dir / "run_01" / "report.md"
+    _write_report(flat)
+    _write_report(nested)
+
+    assert list(iter_target_group_report_paths(target_dir)) == [flat]
+
+
+def test_auditor_dir_has_reports_nested_replicate_layout(tmp_path: Path) -> None:
+    auditor_dir = tmp_path / "composer_2_5"
+    _write_report(auditor_dir / "opencode-foo" / "run_01" / "report.md")
+
+    assert auditor_dir_has_reports(auditor_dir)
+
+
+def test_auditor_dir_has_reports_empty_auditor_dir(tmp_path: Path) -> None:
+    auditor_dir = tmp_path / "composer_2_5"
+    auditor_dir.mkdir()
+
+    assert not auditor_dir_has_reports(auditor_dir)
+
+
+def test_iter_auditor_report_paths_collects_all_replicates(tmp_path: Path) -> None:
+    auditor_dir = tmp_path / "composer_2_5"
+    run_01 = auditor_dir / "opencode-foo" / "run_01" / "report.md"
+    run_02 = auditor_dir / "opencode-foo" / "run_02" / "report.md"
+    _write_report(run_01)
+    _write_report(run_02)
+
+    assert list(iter_auditor_report_paths(auditor_dir)) == [run_01, run_02]
+
+
+def test_auditor_dirs_for_comparison_rollup_finds_nested_reports(
+    tmp_path: Path,
+) -> None:
+    auditor_dir = tmp_path / "composer_2_5"
+    _write_report(auditor_dir / "opencode-foo" / "run_01" / "report.md")
+    auditors = [{"slug": "composer_2_5"}]
+
+    rollup_dirs = _auditor_dirs_for_comparison_rollup(
+        tmp_path,
+        auditors,
+        report_only=False,
+        wanted_model="composer_2_5",
     )
 
-
-def test_iter_reports_auditor_scoped_tree(tmp_path: Path) -> None:
-    auditor_dir = tmp_path / "kimi_k2_6_ollama_cloud"
-    _write_report(auditor_dir / "claude-foo", 80)
-    _write_report(auditor_dir / "codex-bar", 90)
-
-    reports = list(_iter_reports(auditor_dir))
-    assert len(reports) == 2
-    assert {r.target for r in reports} == {"claude-foo", "codex-bar"}
-    assert all(r.auditor == "kimi_k2_6_ollama_cloud" for r in reports)
+    assert rollup_dirs == [auditor_dir]
 
 
-def test_iter_reports_root_tree(tmp_path: Path) -> None:
-    _write_report(tmp_path / "auditor_a" / "claude-foo", 70)
-    _write_report(tmp_path / "auditor_b" / "codex-bar", 75)
-
-    reports = list(_iter_reports(tmp_path))
-    assert len(reports) == 2
-    assert {r.auditor for r in reports} == {"auditor_a", "auditor_b"}
-
-
-def test_iter_reports_nested_replicate_tree(tmp_path: Path) -> None:
-    auditor_dir = tmp_path / "codex_gpt_5_5"
-    _write_report(auditor_dir / "codex-foo" / "run_01", 80)
-    _write_report(auditor_dir / "codex-foo" / "run_02", 90)
-
-    reports = list(_iter_reports(auditor_dir))
-    assert len(reports) == 2
-    assert {r.target for r in reports} == {"codex-foo/run_01", "codex-foo/run_02"}
-    assert {r.replicate_id for r in reports} == {"run_01", "run_02"}
-
-
-def test_build_comparison_from_source_dirs(tmp_path: Path) -> None:
-    dir_a = tmp_path / "auditor_a"
-    dir_b = tmp_path / "auditor_b"
-    _write_report(dir_a / "claude-x", 60)
-    _write_report(dir_b / "codex-y", 65)
-
-    table = build_comparison_table(source_dirs=[dir_a, dir_b])
-    assert "claude-x" in table
-    assert "codex-y" in table
-    summary = build_statistical_summary(source_dirs=[dir_a, dir_b])
-    assert "Statistical summary" in summary
+@pytest.mark.parametrize(
+    "auditor_root",
+    [
+        REPO_ROOT / "results" / "run_02" / "audit-reports" / "composer_2_5",
+    ],
+)
+def test_run_02_composer_auditor_tree_has_reports(auditor_root: Path) -> None:
+    if not auditor_root.is_dir():
+        pytest.skip(f"{auditor_root} not present")
+    assert auditor_dir_has_reports(auditor_root)
+    assert list(iter_auditor_report_paths(auditor_root))

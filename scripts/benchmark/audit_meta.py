@@ -15,6 +15,7 @@ from benchmark.harnesses import (
     dispatch_harness,
     get_harness,
 )
+from benchmark.audit_layout import auditor_dir_has_reports
 from benchmark.config import registry_harness_values
 from benchmark.result_layout import HARNESS_PREFIXES
 from benchmark.timeouts import (
@@ -135,7 +136,7 @@ def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
     - does not start with one of the harness prefixes (``claude-``,
       ``codex-``, ``opencode-``) — those are stray target outputs that
       ended up at the wrong nesting level and should not be globbed,
-    - contains at least one ``*/report.md`` file (one report per audited target).
+    - contains at least one audit ``report.md`` in flat or replicate layout,
 
     Returns paths sorted by name. Empty list when ``reports_dir`` does
     not exist or contains no auditor-shaped subdirs.
@@ -151,7 +152,7 @@ def discover_auditor_subdirs(reports_dir: Path) -> list[Path]:
             continue
         if any(name.startswith(f"{p}-") for p in HARNESS_PREFIXES):
             continue
-        if not any(child.glob("**/report.md")):
+        if not auditor_dir_has_reports(child):
             continue
         found.append(child)
     return found

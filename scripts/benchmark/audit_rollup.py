@@ -32,6 +32,11 @@ from benchmark.util import load_json, migrate_to_v2
 LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = ("gpt_5_5", "claude_opus_4_7")
 
 _NORMALIZED_PCT_CAP = 150.0
+_SATURATION_FULL_MARKS_RATIO = 0.80
+_BLIND_SPOT_MAX_AVG_RATIO = 0.70
+_BLIND_SPOT_MAX_HARNESS_SPREAD = 1.0
+_HARNESS_ATTRIBUTABLE_MIN_SPREAD = 2.0
+_CLEAN_NEAR_MAX_RATIO = 0.75
 
 
 @dataclass(frozen=True)
@@ -137,6 +142,20 @@ class DimensionBlindSpot:
     max_score: int | None
     all_avg: float
     harness_averages: tuple[DimensionHarnessAverage, ...]
+
+
+@dataclass(frozen=True)
+class DimensionSignalRow:
+    index: int
+    label: str
+    max_score: int | None
+    all_avg: float | None
+    harness_averages: tuple[DimensionHarnessAverage, ...]
+    full_marks_count: int
+    scored_count: int
+    full_marks_ratio: float | None
+    harness_spread: float | None
+    classification: str
 
 
 @dataclass(frozen=True)
@@ -827,7 +846,7 @@ def build_model_coverage_table(
         "``harness_count`` is the number of distinct contest harnesses with a "
         "parseable total for that model slug. Cursor-only slugs have harness "
         "count `0` — see **Cursor agent models**. Used for appendix context; "
-        "section 2 uses **All runs ranking**.",
+        "section 2 uses **Aggregated runs ranking**.",
         "",
         "| Model slug | Harnesses | Harness count | Runs | Avg total |",
         "|---|---|---:|---:|---:|",
@@ -1008,6 +1027,481 @@ def build_all_runs_ranking_table(
             )
             + " |"
         )
+    return "\n".join(lines) + "\n"
+
+
+def _load_generation_metrics(
+    report: ParsedReport,
+    *,
+    source_dirs: list[Path] | None,
+) -> dict[str, object] | None:
+    """Load ``generation-metrics.json`` for one parsed audit report."""
+    metrics_path = _generation_metrics_path(report, source_dirs)
+    if metrics_path is None:
+        return None
+    try:
+        payload = load_json(metrics_path)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _report_gen_minutes(
+    report: ParsedReport,
+    *,
+    source_dirs: list[Path] | None,
+) -> float | None:
+    metrics = _load_generation_metrics(report, source_dirs=source_dirs)
+    if not metrics:
+        return None
+    seconds = metrics.get("generation_time_seconds")
+    if isinstance(seconds, (int, float)):
+        return float(seconds) / 60.0
+    return None
+
+
+def _report_tokens_millions(
+    report: ParsedReport,
+    *,
+    source_dirs: list[Path] | None,
+) -> float | None:
+    metrics = _load_generation_metrics(report, source_dirs=source_dirs)
+    if not metrics:
+        return None
+    tokens = metrics.get("total_tokens")
+    if isinstance(tokens, (int, float)):
+        return float(tokens) / 1_000_000.0
+    return None
+
+
+def _report_cost_usd(
+    report: ParsedReport,
+    *,
+    source_dirs: list[Path] | None,
+) -> float | None:
+    metrics = _load_generation_metrics(report, source_dirs=source_dirs)
+    if not metrics:
+        return None
+    cost = metrics.get("estimated_cost_usd")
+    if isinstance(cost, (int, float)):
+        return float(cost)
+    return None
+
+
+def _mean_optional(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    return mean(present) if present else None
+
+
+def _quality_per_dollar(mean_total: float, mean_cost: float | None) -> str:
+    if mean_cost is None or mean_cost == 0:
+        return "n/a"
+    return f"{mean_total / mean_cost:.2f}"
+
+
+def _quality_per_minute(mean_total: float, mean_gen_minutes: float | None) -> str:
+    if mean_gen_minutes is None or mean_gen_minutes == 0:
+        return "n/a"
+    return f"{mean_total / mean_gen_minutes:.2f}"
+
+
+def _group_reports_by_harness_model(
+    reports: list[ParsedReport],
+) -> dict[tuple[str, str], list[ParsedReport]]:
+    groups: dict[tuple[str, str], list[ParsedReport]] = {}
+    for report in reports:
+        if report.total is None or not report.model_slug:
+            continue
+        if not (
+            _is_benchmark_harness(report.harness)
+            or report.harness == CURSOR_AGENT_PREFIX
+        ):
+            continue
+        key = (report.harness, report.model_slug)
+        groups.setdefault(key, []).append(report)
+    return groups
+
+
+def _group_reports_by_auditor_harness_model(
+    reports: list[ParsedReport],
+) -> dict[tuple[str, str, str], list[ParsedReport]]:
+    groups: dict[tuple[str, str, str], list[ParsedReport]] = {}
+    for report in reports:
+        if not report.model_slug:
+            continue
+        key = (report.auditor, report.harness, report.model_slug)
+        groups.setdefault(key, []).append(report)
+    return groups
+
+
+def _mean_dimension_score(reports: list[ParsedReport], index: int) -> float | None:
+    scores = [float(score) for report in reports if (score := report.dim_score(index)) is not None]
+    return mean(scores) if scores else None
+
+
+def _classify_dimension_signal(
+    *,
+    max_score: int | None,
+    all_avg: float | None,
+    full_marks_ratio: float | None,
+    harness_spread: float | None,
+) -> str:
+    """Classify one dimension for meta-analysis section 5."""
+    if (
+        full_marks_ratio is not None
+        and full_marks_ratio >= _SATURATION_FULL_MARKS_RATIO
+    ):
+        return "saturated"
+    if (
+        max_score is not None
+        and max_score > 0
+        and all_avg is not None
+        and all_avg / max_score < _BLIND_SPOT_MAX_AVG_RATIO
+        and harness_spread is not None
+        and harness_spread < _BLIND_SPOT_MAX_HARNESS_SPREAD
+    ):
+        return "universal blind spot"
+    if (
+        harness_spread is not None
+        and harness_spread >= _HARNESS_ATTRIBUTABLE_MIN_SPREAD
+    ):
+        return "harness-attributable"
+    if (
+        max_score is not None
+        and max_score > 0
+        and all_avg is not None
+        and all_avg / max_score >= _CLEAN_NEAR_MAX_RATIO
+    ):
+        return "clean"
+    return "discriminating"
+
+
+def calculate_dimension_signals(
+    reports: list[ParsedReport],
+) -> tuple[DimensionSignalRow, ...]:
+    """Return per-dimension signal rows for contest-cohort meta-analysis section 5.
+
+    Example:
+        signals = calculate_dimension_signals(reports)
+        saturated = [row for row in signals if row.classification == "saturated"]
+    """
+    harnesses = _contest_harnesses_in_data(reports)
+    contest = _benchmark_reports(reports)
+    if not contest:
+        return ()
+
+    dim_labels = _dimension_labels(reports)
+    rows: list[DimensionSignalRow] = []
+    for index in range(1, NUM_DIMENSIONS + 1):
+        max_score = _max_for_dimension(reports, index)
+        scored = [
+            float(r.dim_score(index))
+            for r in contest
+            if r.dim_score(index) is not None
+        ]
+        all_avg = _avg(scored)
+        full_marks_count = sum(
+            1 for score in scored if max_score is not None and score >= max_score
+        )
+        scored_count = len(scored)
+        full_marks_ratio = (
+            full_marks_count / scored_count if scored_count else None
+        )
+        harness_avgs: list[float] = []
+        harness_averages: list[DimensionHarnessAverage] = []
+        for harness in harnesses:
+            subset = [
+                float(r.dim_score(index))
+                for r in contest
+                if r.harness == harness and r.dim_score(index) is not None
+            ]
+            harness_avg = _avg(subset)
+            harness_averages.append(DimensionHarnessAverage(harness, harness_avg))
+            if harness_avg is not None:
+                harness_avgs.append(harness_avg)
+        harness_spread = (
+            max(harness_avgs) - min(harness_avgs) if len(harness_avgs) >= 2 else None
+        )
+        label = dim_labels[index - 1] if index - 1 < len(dim_labels) else f"D{index}"
+        rows.append(
+            DimensionSignalRow(
+                index=index,
+                label=label,
+                max_score=max_score,
+                all_avg=all_avg,
+                harness_averages=tuple(harness_averages),
+                full_marks_count=full_marks_count,
+                scored_count=scored_count,
+                full_marks_ratio=full_marks_ratio,
+                harness_spread=harness_spread,
+                classification=_classify_dimension_signal(
+                    max_score=max_score,
+                    all_avg=all_avg,
+                    full_marks_ratio=full_marks_ratio,
+                    harness_spread=harness_spread,
+                ),
+            )
+        )
+    return tuple(rows)
+
+
+def _format_dimension_signal_harness_avgs(
+    harness_averages: tuple[DimensionHarnessAverage, ...],
+) -> str:
+    parts = [
+        f"{item.harness}={_fmt(item.avg_score)}"
+        for item in harness_averages
+        if item.avg_score is not None
+    ]
+    return " / ".join(parts)
+
+
+def build_dimension_signal_section(reports: list[ParsedReport]) -> str:
+    """Precomputed section-5 dimension lines for the meta-analysis prompt."""
+    signals = calculate_dimension_signals(reports)
+    if not signals:
+        return "## Dimension-level signal (precomputed)\n\n*(no contest reports parsed)*\n"
+
+    lines = [
+        "## Dimension-level signal (precomputed)",
+        "",
+        "Copy these lines into section 5 verbatim (averages and Classify labels).",
+        "",
+    ]
+    for row in signals:
+        harness_parts = _format_dimension_signal_harness_avgs(row.harness_averages)
+        max_display = row.max_score if row.max_score is not None else "?"
+        lines.append(
+            f"- **D{row.index} — {row.label}** (max {max_display}): "
+            f"universal-avg {_fmt(row.all_avg)}; per-harness avg {harness_parts}. "
+            f"Classify: **{row.classification}**."
+        )
+    return "\n".join(lines) + "\n"
+
+
+def saturated_dimension_warnings(
+    reports: list[ParsedReport],
+) -> list[tuple[int, int, int, int | None]]:
+    """Return saturated dimensions as ``(index, full_count, scored_count, max_score)``."""
+    return [
+        (row.index, row.full_marks_count, row.scored_count, row.max_score)
+        for row in calculate_dimension_signals(reports)
+        if row.classification == "saturated"
+    ]
+
+
+def build_aggregated_performance_cost_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Markdown table: mean performance/cost per ``(harness, model_slug)`` cell."""
+    groups = _group_reports_by_harness_model(reports)
+    if not groups:
+        return (
+            "## Aggregated performance & cost\n\n"
+            "*(no contest or cursor runs with parseable totals)*\n"
+        )
+
+    rows: list[tuple[float, float | None, list[str]]] = []
+    for (harness, slug), subset in groups.items():
+        totals = [float(r.total) for r in subset if r.total is not None]
+        mean_total = mean(totals)
+        mean_gen = _mean_optional(
+            [_report_gen_minutes(r, source_dirs=source_dirs) for r in subset]
+        )
+        mean_tokens = _mean_optional(
+            [_report_tokens_millions(r, source_dirs=source_dirs) for r in subset]
+        )
+        mean_cost = _mean_optional(
+            [_report_cost_usd(r, source_dirs=source_dirs) for r in subset]
+        )
+        target_label = f"{harness}-{_display_slug(slug, display_slug_map)}"
+        cells = [
+            target_label,
+            _fmt(mean_gen) if mean_gen is not None else "n/a",
+            f"{mean_tokens:.2f}" if mean_tokens is not None else "n/a",
+            f"{mean_cost:.2f}" if mean_cost is not None else "n/a",
+            _fmt(mean_total),
+            _quality_per_dollar(mean_total, mean_cost),
+            _quality_per_minute(mean_total, mean_gen),
+        ]
+        rows.append((mean_total, mean_cost, cells))
+
+    rows.sort(key=lambda item: (-item[0], item[1] if item[1] is not None else float("inf")))
+    lines = [
+        "## Aggregated performance & cost",
+        "",
+        "Authoritative rows for section 6. One row per ``(harness, model_slug)``",
+        "with mean generation time, tokens, cost, and total across replicate",
+        "audits. Use **Performance & cost (detail)** for per-replicate citations.",
+        "",
+        "| Target (harness-model) | Gen-time (min) | Tokens (M) | Cost (USD) | "
+        "Mean total | Quality per $ | Quality per minute |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for _, _, cells in rows:
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_performance_cost_detail_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Markdown table: per-replicate performance/cost rows for citations."""
+    eligible = [
+        r
+        for r in reports
+        if r.total is not None
+        and r.model_slug
+        and (
+            _is_benchmark_harness(r.harness)
+            or r.harness == CURSOR_AGENT_PREFIX
+        )
+    ]
+    if not eligible:
+        return "## Performance & cost (detail)\n\n*(no parseable runs)*\n"
+
+    ranked = sorted(eligible, key=lambda r: float(r.total), reverse=True)  # type: ignore[arg-type]
+    lines = [
+        "## Performance & cost (detail)",
+        "",
+        "Individual replicate audits. Section 6 primary table uses "
+        "**Aggregated performance & cost**.",
+        "",
+        "| Target (harness-model) | Replicate | Gen-time (min) | Tokens (M) | "
+        "Cost (USD) | Total score | Quality per $ | Quality per minute |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for report in ranked:
+        gen_min = _report_gen_minutes(report, source_dirs=source_dirs)
+        tokens_m = _report_tokens_millions(report, source_dirs=source_dirs)
+        cost = _report_cost_usd(report, source_dirs=source_dirs)
+        total = float(report.total)  # type: ignore[arg-type]
+        target_label = (
+            f"{report.harness}-{_display_slug(report.model_slug or '-', display_slug_map)}"
+        )
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    target_label,
+                    report.replicate_id or "-",
+                    _fmt(gen_min) if gen_min is not None else "n/a",
+                    f"{tokens_m:.2f}" if tokens_m is not None else "n/a",
+                    f"{cost:.2f}" if cost is not None else "n/a",
+                    _fmt(total),
+                    _quality_per_dollar(total, cost),
+                    _quality_per_minute(total, gen_min),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def build_aggregated_dimension_matrix_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Markdown table: mean dimension scores per ``(auditor, harness, model)`` cell."""
+    groups = _group_reports_by_auditor_harness_model(reports)
+    if not groups:
+        return "## Aggregated dimension score matrix\n\n*(no reports parsed)*\n"
+
+    rows: list[tuple[str, str, str, float | None, list[str]]] = []
+    for (auditor, harness, slug), subset in sorted(groups.items()):
+        mean_total = _mean_optional(
+            [float(r.total) if r.total is not None else None for r in subset]
+        )
+        cells = [
+            auditor,
+            harness,
+            _display_slug(slug, display_slug_map),
+            str(len(subset)),
+        ]
+        for index in range(1, NUM_DIMENSIONS + 1):
+            dim_avg = _mean_dimension_score(subset, index)
+            cells.append(_fmt(dim_avg) if dim_avg is not None else "n/a")
+        cells.append(_fmt(mean_total) if mean_total is not None else "n/a")
+        rows.append((auditor, harness, slug, mean_total, cells))
+
+    rows.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+            item[2],
+            -(item[3] if item[3] is not None else -1.0),
+        )
+    )
+    header = (
+        ["Auditor", "Harness", "Model", "N"]
+        + [f"D{i}" for i in range(1, NUM_DIMENSIONS + 1)]
+        + ["Mean total"]
+    )
+    lines = [
+        "## Aggregated dimension score matrix",
+        "",
+        "Authoritative appendix rows: one mean score row per "
+        "``(auditor, harness, model_slug)`` across replicate audits. "
+        "Use **Dimension score matrix (detail)** for per-replicate evidence.",
+        "",
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for _, _, _, _, cells in rows:
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_dimension_matrix_detail_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Markdown table: per-replicate dimension scores for appendix citations."""
+    if not reports:
+        return "## Dimension score matrix (detail)\n\n*(no reports parsed)*\n"
+
+    header = (
+        ["Auditor", "Harness", "Model", "Replicate"]
+        + [f"D{i}" for i in range(1, NUM_DIMENSIONS + 1)]
+        + ["Total"]
+    )
+    lines = [
+        "## Dimension score matrix (detail)",
+        "",
+        "Individual replicate audits. Appendix primary matrix uses "
+        "**Aggregated dimension score matrix**.",
+        "",
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for report in sorted(
+        reports,
+        key=lambda r: (
+            r.auditor,
+            r.harness,
+            r.model_slug or "",
+            r.replicate_id or "",
+        ),
+    ):
+        cells = [
+            report.auditor,
+            report.harness,
+            _display_slug(report.model_slug or "-", display_slug_map),
+            report.replicate_id or "-",
+        ]
+        for index in range(1, NUM_DIMENSIONS + 1):
+            score = report.dim_score(index)
+            cells.append(str(score) if score is not None else "n/a")
+        cells.append(str(report.total) if report.total is not None else "n/a")
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -1662,9 +2156,9 @@ def build_precomputed_rollup(
         "## Precomputed rollup",
         "",
         "Harness-computed from parsed ``report.md`` files. **Section 1 verdict "
-        "bullets, section 2, 2a, 3, 4 numeric tables, and the harness CLI "
-        "versions table in meta-analysis.md MUST match these values.** Use "
-        "individual reports only for citations and narrative.",
+        "bullets, section 2, 2a, 3, 4, 6, appendix dimension matrix, and the "
+        "harness CLI versions table in meta-analysis.md MUST match these values.** "
+        "Use individual reports only for citations and narrative.",
         "",
         build_executive_summary_skeleton(
             reports,
@@ -1699,6 +2193,28 @@ def build_precomputed_rollup(
             source_dirs=source_dirs,
             display_slug_map=display_slug_map,
         ).rstrip(),
+        "",
+        build_dimension_signal_section(reports).rstrip(),
+        "",
+        build_aggregated_performance_cost_table(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
+        "",
+        build_performance_cost_detail_table(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
+        "",
+        build_aggregated_dimension_matrix_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
+        "",
+        build_dimension_matrix_detail_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
     ]
     from benchmark.d9_preflight import build_d9_subcheck_cohort_section  # noqa: PLC0415
 
@@ -1711,6 +2227,13 @@ def build_precomputed_rollup(
     return "\n".join(parts) + "\n"
 
 
+def _meta_table_float_equal(expected: float | None, reported: float | None) -> bool:
+    """True when two rollup/meta table floats match at one decimal place."""
+    if expected is None or reported is None:
+        return expected is reported
+    return round(expected, 1) == round(reported, 1)
+
+
 def validate_meta_analysis_coverage(
     meta_path: Path,
     *,
@@ -1718,7 +2241,7 @@ def validate_meta_analysis_coverage(
     reports_dir: Path | None = None,
     display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
-    """Compare section-2 per-run rows in meta-analysis.md to the rollup."""
+    """Compare section-2 aggregated rows in meta-analysis.md to the rollup."""
     import re
 
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
@@ -1763,7 +2286,7 @@ def validate_meta_analysis_coverage(
         if (
             exp_harness != got_harness
             or exp_slug != got_slug
-            or exp_total != got_total
+            or not _meta_table_float_equal(exp_total, got_total)
         ):
             errors.append(
                 f"row {index}: expected "
@@ -1836,8 +2359,8 @@ def validate_meta_analysis_ollama_ranking(
         if (
             exp_slug != got_slug
             or exp_n != got_n
-            or exp_avg != got_avg
-            or exp_std != got_std
+            or not _meta_table_float_equal(exp_avg, got_avg)
+            or not _meta_table_float_equal(exp_std, got_std)
             or exp_tier != got_tier
         ):
             errors.append(
@@ -1933,6 +2456,59 @@ def validate_meta_analysis_executive_summary(
             errors.append(
                 f"section 1 missing best open-source avg {avg_token} "
                 f"for {ollama_slug!r}"
+            )
+
+    return errors
+
+
+def validate_meta_analysis_dimension_signals(
+    meta_path: Path,
+    *,
+    source_dirs: list[Path] | None = None,
+    reports_dir: Path | None = None,
+) -> list[str]:
+    """Compare section-5 dimension classifications in meta-analysis.md to rollup."""
+    import re
+
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    expected = calculate_dimension_signals(reports)
+    if not expected or not meta_path.is_file():
+        return []
+
+    text = meta_path.read_text(encoding="utf-8")
+    section_match = re.search(
+        r"#{2,3}\s*5\.\s*Dimension-level signal(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not section_match:
+        return ["section 5 (Dimension-level signal) not found in meta-analysis.md"]
+
+    section = section_match.group(1)
+    line_re = re.compile(
+        r"^\s*-\s*\*\*D(\d+)\b.*?\bClassify:\s*\*\*([^*]+)\*\*",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    reported = {
+        int(match.group(1)): match.group(2).strip().lower()
+        for match in line_re.finditer(section)
+    }
+
+    errors: list[str] = []
+    if len(reported) != len(expected):
+        errors.append(
+            f"section 5 has {len(reported)} dimension lines but rollup has {len(expected)}"
+        )
+
+    for row in expected:
+        got = reported.get(row.index)
+        exp = row.classification.lower()
+        if got is None:
+            errors.append(f"D{row.index}: missing classification line in section 5")
+            continue
+        if got != exp:
+            errors.append(
+                f"D{row.index}: expected classification {exp!r} but meta-analysis has {got!r}"
             )
 
     return errors

@@ -18,6 +18,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from benchmark.audit_layout import (
+    auditor_dir_has_reports,
+    iter_auditor_report_paths,
+    iter_target_group_report_entries,
+    iter_target_group_report_paths,
+    target_group_has_reports,
+)
 from benchmark.result_layout import (
     REPLICATE_DIR_PATTERN,
     parse_benchmark_target_path,
@@ -253,44 +260,14 @@ def _iter_target_reports(
     for target_dir in sorted(auditor_dir.iterdir()):
         if not target_dir.is_dir():
             continue
-        direct_report = target_dir / "report.md"
-        if direct_report.exists():
-            try:
-                text = direct_report.read_text()
-            except OSError:
-                continue
-            yield parse_report_scores(
-                text, auditor=auditor_name, target=target_dir.name
-            )
-            continue
-        for replicate_dir in sorted(target_dir.iterdir()):
-            if not replicate_dir.is_dir():
-                continue
-            if not REPLICATE_DIR_PATTERN.match(replicate_dir.name):
-                continue
-            report_path = replicate_dir / "report.md"
-            if not report_path.exists():
-                continue
+        for report_path, target_label in iter_target_group_report_entries(target_dir):
             try:
                 text = report_path.read_text()
             except OSError:
                 continue
             yield parse_report_scores(
-                text,
-                auditor=auditor_name,
-                target=f"{target_dir.name}/{replicate_dir.name}",
+                text, auditor=auditor_name, target=target_label
             )
-
-
-def _target_group_has_reports(target_dir: Path) -> bool:
-    if (target_dir / "report.md").is_file():
-        return True
-    return any(
-        REPLICATE_DIR_PATTERN.match(child.name)
-        and (child / "report.md").is_file()
-        for child in target_dir.iterdir()
-        if child.is_dir()
-    )
 
 
 def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
@@ -309,7 +286,7 @@ def _iter_reports(reports_dir: Path) -> Iterable[ParsedReport]:
     child_dirs = [c for c in sorted(reports_dir.iterdir()) if c.is_dir()]
     if not child_dirs:
         return
-    if any(_target_group_has_reports(c) for c in child_dirs):
+    if any(target_group_has_reports(c) for c in child_dirs):
         yield from _iter_target_reports(reports_dir, auditor_name=reports_dir.name)
         return
     for auditor_dir in child_dirs:

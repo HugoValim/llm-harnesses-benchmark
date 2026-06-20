@@ -45,6 +45,7 @@ from benchmark.audit_report import (  # noqa: E402
 )
 from benchmark.audit_rollup import (  # noqa: E402
     validate_meta_analysis_coverage,
+    validate_meta_analysis_dimension_signals,
     validate_meta_analysis_executive_summary,
     validate_meta_analysis_ollama_ranking,
 )
@@ -358,7 +359,11 @@ def main() -> int:
             source_dirs=meta_input_dirs,
             display_slug_map=display_slug_map,
         )
-        all_errors = coverage_errors + ollama_errors + exec_errors
+        dimension_errors = validate_meta_analysis_dimension_signals(
+            meta_output,
+            source_dirs=meta_input_dirs,
+        )
+        all_errors = coverage_errors + ollama_errors + exec_errors + dimension_errors
         if all_errors:
             print_line("Meta-analysis strict validation failed:")
             for err in all_errors:

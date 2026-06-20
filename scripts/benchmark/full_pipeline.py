@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from benchmark.audit_meta import audit_model_harness
+from benchmark.audit_layout import iter_auditor_report_paths
 from benchmark.campaign_dispatch import kill_stale_opencode_processes
 from benchmark.config import (
     _normalize_registry_models,
@@ -652,7 +653,7 @@ def assert_no_stale_audit_reports(audit_reports_dir: Path, auditor_slug: str) ->
 
     stale = [
         path
-        for path in auditor_dir.glob("*/report.md")
+        for path in iter_auditor_report_paths(auditor_dir)
         if STALE_AUDIT_PROMPT_MARKER in path.read_text(encoding="utf-8", errors="replace")
     ]
     if not stale:

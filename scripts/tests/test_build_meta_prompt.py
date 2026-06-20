@@ -9,15 +9,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.audit_meta import build_meta_prompt  # noqa: E402
-from benchmark.audit_report import DimensionScore, ParsedReport  # noqa: E402
+from benchmark.audit_report import DimensionScore, ParsedReport, _collect_reports  # noqa: E402
 from benchmark.audit_rollup import (  # noqa: E402
+    build_aggregated_performance_cost_table,
     build_aggregated_runs_ranking_table,
     build_all_runs_ranking_table,
+    build_aggregated_dimension_matrix_table,
+    build_dimension_matrix_detail_table,
+    build_dimension_signal_section,
     build_executive_summary_skeleton,
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
+    build_performance_cost_detail_table,
     calculate_aggregated_runs_ranking,
+    calculate_dimension_signals,
     calculate_executive_summary_expectations,
     calculate_harness_comparison,
     calculate_model_coverage,
@@ -26,6 +32,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     executive_summary_expectations,
     model_harness_coverage,
     validate_meta_analysis_coverage,
+    validate_meta_analysis_dimension_signals,
     validate_meta_analysis_executive_summary,
     validate_meta_analysis_ollama_ranking,
     _cross_harness_cohort_slugs,
@@ -115,6 +122,10 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
     assert "Model coverage" in prompt
     assert "Executive summary skeleton" in rollup
     assert "Aggregated runs ranking" in rollup
+    prompt_template = (
+        REPO_ROOT / "prompts" / "audit_meta_analysis_prompt.txt"
+    ).read_text(encoding="utf-8")
+    assert "Build section 2 from the **Aggregated runs ranking**" in prompt_template
     assert "All runs ranking (detail)" in rollup
     assert "All runs ranking (detail)" in prompt
     assert "Harness CLI versions" in rollup
@@ -407,9 +418,13 @@ def test_precomputed_rollup_includes_cursor_table(tmp_path: Path) -> None:
     rollup = build_precomputed_rollup(source_dirs=[input_dir])
     assert "Cursor agent models" in rollup
     assert "composer_2_5" in rollup
-    assert "| cursor |" not in rollup.split("## Harness comparison")[1].split(
-        "## Cursor agent models"
-    )[0]
+    import re
+
+    harness_match = re.search(
+        r"## Harness comparison(.*?)(?=\n## |\Z)", rollup, re.DOTALL
+    )
+    assert harness_match is not None
+    assert "| cursor |" not in harness_match.group(1)
 
 
 def _ollama_row(harness: str, base: str, total: int) -> ParsedReport:
@@ -762,3 +777,267 @@ def test_validate_meta_executive_summary_detects_paragraph_format(
     errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
     assert any("bullet list" in err for err in errors)
     assert any("report.md citations" in err for err in errors)
+
+
+def test_validate_meta_analysis_ollama_ranking_accepts_rounded_values(
+    tmp_path: Path,
+) -> None:
+    reports = [
+        _ollama_row("claude", "deepseek_v4_pro", 71),
+        _ollama_row("codex", "deepseek_v4_pro", 76),
+        _ollama_row("opencode", "deepseek_v4_pro", 75),
+    ]
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir()
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 2a. Open-source (Ollama) model ranking",
+                "",
+                "| Rank | Model slug | N harnesses | Avg total | Std dev | Tier | Claude | Codex | Opencode |",
+                "|---:|---|---:|---:|---:|---|---:|---:|---:|",
+                "| 1 | deepseek_v4_pro | 3 | 74.0 | 2.6 | B | 71 | 76 | 75 |",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_ollama_ranking(meta, source_dirs=[input_dir])
+    assert errors == []
+
+
+def test_validate_meta_analysis_coverage_rejects_per_replicate_rows(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "auditor_a"
+    for replicate_id, total in (("run_01", 70), ("run_02", 80)):
+        target = input_dir / f"codex-demo/{replicate_id}"
+        target.mkdir(parents=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{total} / 100**",
+                ]
+            )
+        )
+
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 2. Best model overall",
+                "",
+                "| Rank | Harness | Model slug | Mean total | N | Std dev | Tier |",
+                "|---:|---|---|---:|---:|---:|---|",
+                "| 1 | codex | demo | 80 | A |",
+                "| 2 | codex | demo | 70 | B |",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_coverage(meta, source_dirs=[input_dir])
+    assert any("section 2 has 2 run rows but rollup has 1" in err for err in errors)
+
+
+def test_aggregated_performance_cost_table_averages_replicates(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    for replicate_id, total, seconds, cost in (
+        ("run_01", 70, 600.0, 1.0),
+        ("run_02", 80, 1200.0, 3.0),
+    ):
+        target = input_dir / f"codex-demo/{replicate_id}"
+        target.mkdir(parents=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{total} / 100**",
+                ]
+            )
+        )
+        (target / "generation-metrics.json").write_text(
+            f'{{"generation_time_seconds": {seconds}, '
+            f'"total_tokens": 1000000, "estimated_cost_usd": {cost}}}'
+        )
+
+    reports = _collect_reports(None, source_dirs=[input_dir])
+    table = build_aggregated_performance_cost_table(
+        reports, source_dirs=[input_dir]
+    )
+    assert "Aggregated performance & cost" in table
+    assert "| codex-demo | 15.0 | 1.00 | 2.00 | 75.0 | 37.50 | 5.00 |" in table
+    detail = build_performance_cost_detail_table(reports, source_dirs=[input_dir])
+    assert "Performance & cost (detail)" in detail
+    assert detail.count("| codex-demo |") == 2
+
+
+def test_aggregated_dimension_matrix_table_averages_replicates(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "composer_2_5"
+    for replicate_id, total, d1 in (("run_01", 70, 10), ("run_02", 80, 12)):
+        target = input_dir / f"codex-demo/{replicate_id}"
+        target.mkdir(parents=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    f"| D1 | Deliverable completeness | **{d1} / 15** | ok |",
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{total} / 100**",
+                ]
+            )
+        )
+
+    reports = _collect_reports(None, source_dirs=[input_dir])
+    table = build_aggregated_dimension_matrix_table(reports)
+    assert "Aggregated dimension score matrix" in table
+    assert "| composer_2_5 | codex | demo | 2 | 11.0 |" in table
+    assert "| 75.0 |" in table
+    detail = build_dimension_matrix_detail_table(reports)
+    assert "Dimension score matrix (detail)" in detail
+    assert detail.count("| run_01 |") == 1
+    assert detail.count("| run_02 |") == 1
+
+
+def test_build_precomputed_rollup_includes_aggregated_section6_and_matrix(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "auditor_a"
+    target = input_dir / "codex-demo/run_01"
+    target.mkdir(parents=True)
+    (target / "report.md").write_text("C. **Total score / 100**\n\n**80 / 100**")
+    (target / "generation-metrics.json").write_text(
+        '{"generation_time_seconds": 600, "total_tokens": 1000000, '
+        '"estimated_cost_usd": 1.0}'
+    )
+    rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "Aggregated performance & cost" in rollup
+    assert "Performance & cost (detail)" in rollup
+    assert "Aggregated dimension score matrix" in rollup
+    assert "Dimension score matrix (detail)" in rollup
+    assert "Dimension-level signal (precomputed)" in rollup
+
+
+def _dimension_report(
+    harness: str,
+    slug: str,
+    *,
+    dimensions: list[tuple[int, str, int, int]],
+    total: int = 80,
+) -> ParsedReport:
+    return ParsedReport(
+        auditor="auditor_a",
+        target=f"{harness}-{slug}",
+        harness=harness,
+        model_slug=slug,
+        total=total,
+        dimensions=[
+            DimensionScore(index, label, score, max_score)
+            for index, label, score, max_score in dimensions
+        ],
+    )
+
+
+def test_calculate_dimension_signals_marks_only_true_saturation() -> None:
+    dims = [
+        (1, "Deliverable completeness", 15, 15),
+        (2, "LLM integration correctness", 9, 10),
+        (3, "Test quality", 9, 10),
+        (4, "Error handling", 8, 10),
+        (5, "Persistence / multi-turn", 5, 5),
+        (6, "Streaming & frontend", 7, 10),
+        (7, "Architecture", 9, 15),
+        (8, "Secrets & config hygiene", 0, 5),
+        (9, "Production hardening", 10, 10),
+        (10, "Code quality", 8, 10),
+    ]
+    reports = [
+        _dimension_report("claude", "demo_claude", dimensions=dims),
+        _dimension_report("codex", "demo_codex", dimensions=dims),
+        _dimension_report(
+            "opencode",
+            "demo_opencode",
+            dimensions=[
+                (index, label, score - (1 if index == 2 else 0), max_score)
+                for index, label, score, max_score in dims
+            ],
+        ),
+        _dimension_report(
+            "opencode",
+            "demo_opencode_2",
+            dimensions=[
+                (index, label, score - (1 if index == 2 else 0), max_score)
+                for index, label, score, max_score in dims
+            ],
+        ),
+        _dimension_report(
+            "opencode",
+            "demo_opencode_3",
+            dimensions=[
+                (index, label, score - (1 if index == 2 else 0), max_score)
+                for index, label, score, max_score in dims
+            ],
+        ),
+    ]
+    by_index = {row.index: row for row in calculate_dimension_signals(reports)}
+    assert by_index[2].classification == "clean"
+    assert by_index[3].classification == "clean"
+    assert by_index[5].classification == "saturated"
+    assert by_index[7].classification == "universal blind spot"
+    assert by_index[9].classification == "saturated"
+
+
+def test_validate_meta_analysis_dimension_signals_detects_mismatch(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "auditor_a"
+    target = input_dir / "codex-demo/run_01"
+    target.mkdir(parents=True)
+    (target / "report.md").write_text(
+        "\n".join(
+            [
+                "B. Scores per dimension",
+                "| 1 | Deliverable completeness | 15 / 15 | ok |",
+                "| 2 | LLM integration correctness | 9 / 10 | ok |",
+                "| 3 | Test quality | 9 / 10 | ok |",
+                "| 4 | Error handling | 8 / 10 | ok |",
+                "| 5 | Persistence / multi-turn | 5 / 5 | ok |",
+                "| 6 | Streaming & frontend | 7 / 10 | ok |",
+                "| 7 | Architecture | 9 / 15 | ok |",
+                "| 8 | Secrets & config hygiene | 0 / 5 | ok |",
+                "| 9 | Production hardening | 10 / 10 | ok |",
+                "| 10 | Code quality | 8 / 10 | ok |",
+                "C. **Total score / 100**",
+                "",
+                "**80 / 100**",
+            ]
+        )
+    )
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 5. Dimension-level signal",
+                "",
+                "- **D2 — D2 LLM integration correctness** (max 10): universal-avg 9.0; "
+                "per-harness avg codex=9.0. Classify: **saturated**.",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_dimension_signals(meta, source_dirs=[input_dir])
+    assert any("D2" in err and "clean" in err for err in errors)
