@@ -103,6 +103,7 @@ def run_cli_stream_loop(
     project_dir: Path,
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
+    append_output: bool = False,
 ) -> ResultT:
     """Drive a CLI-style harness subprocess and return the adapter-built result.
 
@@ -130,7 +131,8 @@ def run_cli_stream_loop(
             stall_reason=stall_reason,
         )
 
-    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
+    output_mode = "a" if append_output else "w"
+    with stdout_path.open(output_mode) as stdout_file, stderr_path.open(output_mode) as stderr_file:
         while True:
             now = time.monotonic()
             elapsed = now - started

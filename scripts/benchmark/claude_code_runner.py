@@ -15,7 +15,9 @@ from benchmark.agent_runtime_env import runtime_isolation_for_env
 from benchmark.cli_stream import CliStreamAdapter, EventDecision, run_cli_stream_loop
 from benchmark.harnesses.stall_policy import ERROR_LOOP_THRESHOLD
 from benchmark.rate_limit import (
+    RATE_LIMIT_RESUME_PROMPT,
     RateLimitWaitPolicy,
+    run_with_rate_limit_resume,
     stream_event_looks_rate_limited,
     text_looks_rate_limited,
 )
@@ -56,10 +58,16 @@ class ClaudeCodeStreamResult:
     tool_use_counts: Counter = field(default_factory=Counter)
     subagent_invocations: list[dict[str, Any]] = field(default_factory=list)
     assistant_turns: int = 0
+    session_id: str | None = None
 
 
 def build_command(
-    model: str, prompt: str, command_prefix: list[str] | None = None
+    model: str,
+    prompt: str,
+    command_prefix: list[str] | None = None,
+    *,
+    continue_session: bool = False,
+    resume_session_id: str | None = None,
 ) -> list[str]:
     """Build the claude -p command. Prompt is passed as positional arg.
 
@@ -75,7 +83,13 @@ def build_command(
     is_ollama_launch = (
         len(prefix) >= 2 and prefix[0] == "ollama" and prefix[1] == "launch"
     )
+    resume_args: list[str] = []
+    if resume_session_id:
+        resume_args = ["-r", resume_session_id]
+    elif continue_session:
+        resume_args = ["-c"]
     claude_args = [
+        *resume_args,
         "-p",
         "--output-format",
         "stream-json",
@@ -261,6 +275,7 @@ class _ClaudeCliAdapter(CliStreamAdapter[ClaudeCodeStreamResult]):
             tool_use_counts=self._tool_use_counts,
             subagent_invocations=self._subagent_invocations,
             assistant_turns=self._assistant_turns,
+            session_id=self._session_id,
         )
 
 
@@ -272,6 +287,8 @@ def stream_process(
     model_slug: str,
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
+    *,
+    append_output: bool = False,
 ) -> ClaudeCodeStreamResult:
     return run_cli_stream_loop(
         process,
@@ -281,6 +298,7 @@ def stream_process(
         project_dir=project_dir,
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
+        append_output=append_output,
     )
 
 
@@ -330,8 +348,17 @@ def _run_claude_phase(
     phase_name: str,
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
+    continue_session: bool = False,
+    resume_session_id: str | None = None,
+    append_output: bool = False,
 ) -> tuple[ClaudeCodeStreamResult, subprocess.Popen[str], float]:
-    command = build_command(variant["main_model"], prompt, command_prefix)
+    command = build_command(
+        variant["main_model"],
+        prompt,
+        command_prefix,
+        continue_session=continue_session,
+        resume_session_id=resume_session_id,
+    )
     wall_start = time.monotonic()
     process = subprocess.Popen(
         command,
@@ -351,6 +378,7 @@ def _run_claude_phase(
         model_slug=stream_log_prefix(harness, slug, phase_name),
         timeout_seconds=timeout_seconds,
         no_progress_timeout_seconds=no_progress_timeout_seconds,
+        append_output=append_output,
     )
     return result, process, round(time.monotonic() - wall_start, 2)
 
@@ -466,33 +494,129 @@ def _run_claude_lifecycle_phase(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
     elapsed_field: str = "elapsed_seconds",
+    rate_limit_policy: RateLimitWaitPolicy | None = None,
 ) -> dict[str, Any]:
-    request.prompt_path.write_text(request.prompt)
-    result, process, elapsed = _run_claude_phase(
-        variant=variant,
-        prompt=request.prompt,
-        project_dir=request.project_dir,
-        stdout_path=request.stdout_path,
-        stderr_path=request.stderr_path,
-        command_prefix=command_prefix,
-        isolated_env=isolated_env,
-        harness=harness,
-        slug=slug,
-        phase_name=request.phase_name,
-        timeout_seconds=timeout_seconds,
-        no_progress_timeout_seconds=no_progress_timeout_seconds,
-    )
-    return _claude_phase_payload(
-        request=request,
-        variant=variant,
-        result=result,
-        process=process,
-        elapsed=elapsed,
-        command_prefix=command_prefix,
-        timeout_seconds=timeout_seconds,
-        no_progress_timeout_seconds=no_progress_timeout_seconds,
-        elapsed_field=elapsed_field,
-    )
+    segments: list[tuple[ClaudeCodeStreamResult, subprocess.Popen[str], float, bool, str | None]] = []
+    policy = rate_limit_policy or RateLimitWaitPolicy()
+
+    def run_segment(resume: bool, session_id: str | None) -> dict[str, Any]:
+        if not resume:
+            request.prompt_path.write_text(request.prompt)
+        prompt = RATE_LIMIT_RESUME_PROMPT if resume else request.prompt
+        result, process, elapsed = _run_claude_phase(
+            variant=variant,
+            prompt=prompt,
+            project_dir=request.project_dir,
+            stdout_path=request.stdout_path,
+            stderr_path=request.stderr_path,
+            command_prefix=command_prefix,
+            isolated_env=isolated_env,
+            harness=harness,
+            slug=slug,
+            phase_name=request.phase_name,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            continue_session=resume and session_id is None,
+            resume_session_id=session_id,
+            append_output=resume,
+        )
+        segments.append((result, process, elapsed, resume, session_id))
+        return _claude_phase_payload(
+            request=request,
+            variant=variant,
+            result=result,
+            process=process,
+            elapsed=elapsed,
+            command_prefix=command_prefix,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            elapsed_field=elapsed_field,
+            resume=resume,
+            resume_session_id=session_id,
+        )
+
+    log_tag = stream_log_prefix(harness, slug, request.phase_name)
+    if policy.cap_seconds <= 0:
+        payload = run_segment(False, None)
+    else:
+        payload = run_with_rate_limit_resume(
+            log_tag=log_tag,
+            policy=policy,
+            run_segment=run_segment,
+            capture_paths=_claude_phase_capture_paths,
+        )
+
+    if len(segments) > 1:
+        payload = _merge_claude_resume_segments(
+            payload,
+            segments=segments,
+            request=request,
+            variant=variant,
+            command_prefix=command_prefix,
+            timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
+            elapsed_field=elapsed_field,
+        )
+    return payload
+
+
+def _claude_phase_capture_paths(payload: dict[str, Any]) -> list[Path | None]:
+    paths = payload.get("paths")
+    if not isinstance(paths, dict):
+        return []
+    captured: list[Path | None] = []
+    for key in ("stream_ndjson", "stderr_log"):
+        value = paths.get(key)
+        captured.append(Path(value) if isinstance(value, str) else None)
+    return captured
+
+
+def _merge_claude_resume_segments(
+    payload: dict[str, Any],
+    *,
+    segments: list[tuple[ClaudeCodeStreamResult, subprocess.Popen[str], float, bool, str | None]],
+    request: PhaseRunRequest,
+    variant: dict[str, Any],
+    command_prefix: list[str] | None,
+    timeout_seconds: int,
+    no_progress_timeout_seconds: int,
+    elapsed_field: str,
+) -> dict[str, Any]:
+    merged = dict(payload)
+    total_elapsed = round(sum(segment[2] for segment in segments), 2)
+    merged_tool_counts: dict[str, int] = {}
+    merged_model_usage: dict[str, Any] = {}
+    merged_invocations: list[dict[str, Any]] = []
+    total_turns = 0
+    for result, _, _, _, _ in segments:
+        total_turns += result.assistant_turns
+        merged_tool_counts = _merge_counts(merged_tool_counts, dict(result.tool_use_counts))
+        final = result.final_result_event or {}
+        merged_model_usage = _merge_claude_model_usage(
+            merged_model_usage,
+            _dict_or_empty(final.get("modelUsage")),
+        )
+        merged_invocations.extend(result.subagent_invocations)
+
+    last_result, last_process, _, last_resume, last_session_id = segments[-1]
+    final = last_result.final_result_event or {}
+    merged[elapsed_field] = total_elapsed
+    merged["assistant_turns"] = total_turns
+    merged["num_turns"] = final.get("num_turns", total_turns)
+    merged["tool_use_counts"] = merged_tool_counts
+    merged["model_usage"] = merged_model_usage
+    merged["subagent_invocations"] = merged_invocations
+    merged["subagent_invocation_counts"] = _subagent_counts(merged_invocations)
+    merged["exit_code"] = last_process.returncode
+    merged["stop_reason"] = final.get("stop_reason")
+    merged["command"] = build_command(
+        variant["main_model"],
+        RATE_LIMIT_RESUME_PROMPT if last_resume else request.prompt,
+        command_prefix,
+        continue_session=last_resume and last_session_id is None,
+        resume_session_id=last_session_id,
+    )[:-1] + ["<prompt>"]
+    return merged
 
 
 def _claude_phase_payload(
@@ -506,13 +630,22 @@ def _claude_phase_payload(
     timeout_seconds: int,
     no_progress_timeout_seconds: int,
     elapsed_field: str = "elapsed_seconds",
+    resume: bool = False,
+    resume_session_id: str | None = None,
 ) -> dict[str, Any]:
     final = result.final_result_event or {}
     usage = _dict_or_empty(final.get("usage"))
     model_usage = _dict_or_empty(final.get("modelUsage"))
     status = _phase_status_from_stream(result, final)
-    command = build_command(variant["main_model"], request.prompt, command_prefix)
-    return {
+    prompt = RATE_LIMIT_RESUME_PROMPT if resume else request.prompt
+    command = build_command(
+        variant["main_model"],
+        prompt,
+        command_prefix,
+        continue_session=resume and resume_session_id is None,
+        resume_session_id=resume_session_id,
+    )
+    payload = {
         "phase": request.phase_name,
         "status": status,
         "started_at": request.started_at,
@@ -540,6 +673,9 @@ def _claude_phase_payload(
             "stderr_log": str(request.stderr_path),
         },
     }
+    if result.session_id:
+        payload["claude_session_id"] = result.session_id
+    return payload
 
 
 def _claude_phase_record(
@@ -764,6 +900,7 @@ def run_variant(
             timeout_seconds=timeout_seconds,
             no_progress_timeout_seconds=no_progress_timeout_seconds,
             elapsed_field=elapsed_field,
+            rate_limit_policy=rate_limit_policy or RateLimitWaitPolicy(),
         )
 
     def finalize_payload(
@@ -800,6 +937,7 @@ def run_variant(
         num_runs=effective_num_runs,
         include_agent_rules=include_agent_rules,
         wrap_primary_prompt=wrap_primary_prompt,
+        rate_limit_resumable=True,
         extra_payload_fields={"runtime_isolation": runtime_isolation},
         elapsed_field=elapsed_field,
     ).run()

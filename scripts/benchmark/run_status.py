@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit
+from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit, text_has_http_429
 
 STATUS_COMPLETED = "completed"
 STATUS_COMPLETED_WITH_ERRORS = "completed_with_errors"
@@ -31,7 +30,6 @@ RETRYABLE_AUDIT_STATUSES = frozenset(
         "stalled",
     }
 )
-_STANDALONE_429_RE = re.compile(r"(?<![0-9])429(?![0-9])")
 
 
 def derive_run_status(
@@ -145,8 +143,7 @@ def _payload_text_hit_usage_limit(payload: dict[str, Any]) -> bool:
 def _text_hit_usage_limit(text: str) -> bool:
     if contains_usage_limit(text):
         return True
-    lowered = text.lower()
-    return bool(_STANDALONE_429_RE.search(lowered)) or '"error":"rate_limit"' in lowered
+    return text_has_http_429(text)
 
 
 def _completed_status(works_as_intended: bool) -> str:

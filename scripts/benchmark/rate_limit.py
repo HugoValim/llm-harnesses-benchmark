@@ -14,13 +14,19 @@ from pathlib import Path
 from typing import Any
 
 from benchmark.run_status import payload_hit_usage_limit
-from benchmark.util import USAGE_LIMIT_REACHED, contains_usage_limit, print_line
+from benchmark.util import (
+    USAGE_LIMIT_REACHED,
+    contains_usage_limit,
+    print_line,
+    text_has_http_429,
+)
 
 DEFAULT_RATE_LIMIT_WAIT_CAP_HOURS = 6
 DEFAULT_RATE_LIMIT_BACKOFF_INITIAL_SECONDS = 60
-DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS = 900
-DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS = 1800
+DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS = 60
+DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS = 300
 _RATE_LIMIT_JITTER_SECONDS = 30
+RATE_LIMIT_RESUME_PROMPT = "Continue from where you left off."
 
 _RESETS_AT_KEYS = ("resetsAt", "resets_at", "reset_at")
 _RETRY_AFTER_KEYS = ("retry_after", "retry-after", "retryAfter")
@@ -33,8 +39,8 @@ _RETRY_AFTER_SECONDS_RE = re.compile(
     r"retry\s+(?:after|in)\s+(\d+)\s*(second|minute|hour)s?",
     re.IGNORECASE,
 )
-# Match HTTP 429 / API status 429, not unrelated digit runs (e.g. ls -la byte counts).
-_STANDALONE_429_RE = re.compile(r"(?<![0-9])429(?![0-9])")
+# Payload-bearing stream events can echo file bytes/metadata — scan only control events.
+_STREAM_PAYLOAD_EVENT_TYPES = frozenset({"tool_call", "user", "assistant", "thinking"})
 
 
 @dataclass(frozen=True)
@@ -76,7 +82,7 @@ def add_rate_limit_cli_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS,
         help=(
             "Max sleep before retrying after a rate limit (checks whether the "
-            f"limit recharged; default: {DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS}s / 30min)."
+            f"limit recharged; default: {DEFAULT_RATE_LIMIT_POLL_INTERVAL_SECONDS}s / 5min)."
         ),
     )
 
@@ -120,8 +126,7 @@ def text_looks_rate_limited(text: str) -> bool:
         return True
     if _SESSION_LIMIT_RE.search(text):
         return True
-    lowered = text.lower()
-    return bool(_STANDALONE_429_RE.search(lowered)) or '"error":"rate_limit"' in lowered
+    return text_has_http_429(text)
 
 
 def _rate_limit_info_rejected(info: dict[str, Any]) -> bool:
@@ -141,6 +146,8 @@ def stream_event_looks_rate_limited(event: dict[str, Any]) -> bool:
     rate_info = event.get("rate_limit_info")
     if isinstance(rate_info, dict) and _rate_limit_info_rejected(rate_info):
         return True
+    if event.get("type") in _STREAM_PAYLOAD_EVENT_TYPES:
+        return False
     return text_looks_rate_limited(json.dumps(event))
 
 
@@ -285,12 +292,8 @@ def wait_for_rate_limit_reset(
         sleep_for = min(_apply_jitter(wait_seconds), policy.cap_seconds)
         reason = f"provider reset in ~{wait_seconds}s"
     else:
-        sleep_for = min(
-            policy.backoff_initial_seconds * (2 ** max(0, attempt - 1)),
-            policy.backoff_max_seconds,
-            policy.cap_seconds,
-        )
-        reason = f"unknown reset; backoff attempt {attempt}"
+        sleep_for = min(policy.poll_interval_seconds, policy.cap_seconds)
+        reason = f"unknown reset; wait attempt {attempt}"
 
     if sleep_for <= 0:
         return True, 0
@@ -307,6 +310,101 @@ def wait_for_rate_limit_reset(
     )
     time.sleep(sleep_chunk)
     return True, sleep_chunk
+
+
+def extract_session_id_from_paths(*sources: Path | str | None) -> str | None:
+    """Return the first CLI ``session_id`` found in NDJSON stream artifacts."""
+    for source in sources:
+        if source is None:
+            continue
+        text = source.read_text() if isinstance(source, Path) else str(source)
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                event = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            session_id = event.get("session_id") or event.get("sessionID")
+            if isinstance(session_id, str) and session_id:
+                return session_id
+    return None
+
+
+def run_with_rate_limit_resume(
+    *,
+    log_tag: str,
+    policy: RateLimitWaitPolicy,
+    run_segment: Callable[[bool, str | None], dict[str, Any]],
+    capture_paths: Callable[[dict[str, Any]], list[Path | None]],
+) -> dict[str, Any]:
+    """Wait on rate limits, then resume the same CLI session instead of cold restarts."""
+    total_waited = 0
+    wait_attempt = 0
+    resume_count = 0
+    resume_session_id: str | None = None
+    last_payload: dict[str, Any] | None = None
+
+    while True:
+        payload = run_segment(resume_count > 0, resume_session_id)
+        last_payload = payload
+
+        paths = [path for path in capture_paths(payload) if path is not None]
+        resume_session_id = extract_session_id_from_paths(*paths) or resume_session_id
+
+        if not payload_hit_usage_limit(payload):
+            if resume_count:
+                payload = dict(payload)
+                payload["rate_limit_resume_count"] = resume_count
+                payload["rate_limit_total_wait_seconds"] = total_waited
+            return payload
+
+        remaining_cap = policy.cap_seconds - total_waited
+        if remaining_cap <= 0:
+            break
+
+        wait_seconds = extract_rate_limit_wait_seconds(*paths)
+        if wait_seconds is not None:
+            wait_seconds = min(wait_seconds, remaining_cap)
+
+        wait_attempt += 1
+        limited_policy = RateLimitWaitPolicy(
+            cap_seconds=remaining_cap,
+            backoff_initial_seconds=min(policy.backoff_initial_seconds, remaining_cap),
+            backoff_max_seconds=min(policy.backoff_max_seconds, remaining_cap),
+            poll_interval_seconds=min(policy.poll_interval_seconds, remaining_cap),
+        )
+        should_retry, slept = wait_for_rate_limit_reset(
+            log_tag=log_tag,
+            policy=limited_policy,
+            wait_seconds=wait_seconds,
+            attempt=wait_attempt,
+        )
+        total_waited += slept
+        if not should_retry or total_waited >= policy.cap_seconds:
+            break
+
+        resume_count += 1
+        session_hint = resume_session_id or "continue"
+        print_line(
+            f"[{log_tag}] resuming paused session ({session_hint}) "
+            f"after {slept}s rate-limit wait"
+        )
+
+    assert last_payload is not None
+    last_payload = dict(last_payload)
+    last_payload["status"] = USAGE_LIMIT_REACHED
+    last_payload["stall_reason"] = (
+        f"{USAGE_LIMIT_REACHED}: wait cap of {policy.cap_seconds}s exhausted "
+        f"after {wait_attempt} wait(s) and {resume_count} resume(s)"
+    )
+    last_payload["rate_limit_wait_exhausted"] = True
+    last_payload["rate_limit_total_wait_seconds"] = total_waited
+    last_payload["rate_limit_resume_count"] = resume_count
+    return last_payload
 
 
 def run_with_rate_limit_retry(

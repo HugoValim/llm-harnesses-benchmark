@@ -16,7 +16,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.rate_limit import (  # noqa: E402
     RateLimitWaitPolicy,
     extract_rate_limit_wait_seconds,
+    extract_session_id_from_paths,
     payload_hit_usage_limit,
+    run_with_rate_limit_resume,
     run_with_rate_limit_retry,
     stream_event_looks_rate_limited,
     text_looks_rate_limited,
@@ -51,6 +53,28 @@ class TestRateLimitDetection(unittest.TestCase):
         )
         self.assertFalse(text_looks_rate_limited(tool_result))
         self.assertFalse(stream_event_looks_rate_limited(json.loads(tool_result)))
+
+    def test_cursor_read_tool_filesize_429_is_not_rate_limited(self) -> None:
+        """Cursor readToolCall metadata uses fileSize bytes — not HTTP 429."""
+        event = {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {
+                "readToolCall": {
+                    "args": {"path": "/project/config/asgi.py"},
+                    "result": {
+                        "success": {
+                            "content": '"""ASGI config."""\n',
+                            "totalLines": 18,
+                            "fileSize": 429,
+                            "path": "/project/config/asgi.py",
+                        }
+                    },
+                }
+            },
+        }
+        self.assertFalse(text_looks_rate_limited(json.dumps(event)))
+        self.assertFalse(stream_event_looks_rate_limited(event))
 
     def test_http_429_status_still_detected(self) -> None:
         self.assertTrue(text_looks_rate_limited('{"status":429,"error":"too many requests"}'))
@@ -134,6 +158,20 @@ class TestWaitPolicy(unittest.TestCase):
         sleep_mock.assert_called_once()
 
     @patch("benchmark.rate_limit.time.sleep")
+    def test_unknown_reset_waits_at_poll_interval(self, sleep_mock) -> None:
+        policy = RateLimitWaitPolicy(cap_seconds=3600, poll_interval_seconds=300)
+        should_retry, slept = wait_for_rate_limit_reset(
+            log_tag="test",
+            policy=policy,
+            wait_seconds=None,
+            attempt=3,
+        )
+        self.assertTrue(should_retry)
+        self.assertGreaterEqual(slept, 300)
+        self.assertLessEqual(slept, 330)
+        sleep_mock.assert_called_once()
+
+    @patch("benchmark.rate_limit.time.sleep")
     def test_zero_cap_does_not_wait(self, sleep_mock) -> None:
         policy = RateLimitWaitPolicy(cap_seconds=0)
         should_retry, slept = wait_for_rate_limit_reset(
@@ -145,6 +183,51 @@ class TestWaitPolicy(unittest.TestCase):
         self.assertFalse(should_retry)
         self.assertEqual(slept, 0)
         sleep_mock.assert_not_called()
+
+
+class TestSessionExtraction(unittest.TestCase):
+    def test_extract_session_id_from_stream(self) -> None:
+        line = json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "abc-123",
+            }
+        )
+        self.assertEqual(extract_session_id_from_paths(line), "abc-123")
+
+
+class TestResumeLoop(unittest.TestCase):
+    @patch("benchmark.rate_limit.wait_for_rate_limit_reset")
+    def test_resumes_same_session_after_rate_limit(self, wait_mock) -> None:
+        wait_mock.return_value = (True, 10)
+        calls: list[tuple[bool, str | None]] = []
+
+        def run_segment(resume: bool, session_id: str | None) -> dict:
+            calls.append((resume, session_id))
+            if len(calls) == 1:
+                return {
+                    "status": USAGE_LIMIT_REACHED,
+                    "paths": {
+                        "stream_ndjson": json.dumps(
+                            {"type": "system", "session_id": "sess-1"}
+                        )
+                    },
+                }
+            return {"status": "completed", "paths": {}}
+
+        payload = run_with_rate_limit_resume(
+            log_tag="test",
+            policy=RateLimitWaitPolicy(cap_seconds=3600),
+            run_segment=run_segment,
+            capture_paths=lambda phase_payload: [
+                phase_payload.get("paths", {}).get("stream_ndjson")
+            ],
+        )
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(calls[0], (False, None))
+        self.assertEqual(calls[1], (True, "sess-1"))
+        wait_mock.assert_called_once()
 
 
 class TestRetryLoop(unittest.TestCase):

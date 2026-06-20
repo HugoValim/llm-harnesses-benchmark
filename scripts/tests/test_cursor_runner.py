@@ -39,6 +39,16 @@ class TestCursorBuildCommand(unittest.TestCase):
         self.assertIn("--continue", cmd)
         self.assertEqual(cmd[cmd.index("--model") + 1], "composer-2")
 
+    def test_resume_session_id(self) -> None:
+        cmd = build_command(
+            "composer-2",
+            "validate docker",
+            resume_session_id="sess-123",
+        )
+        self.assertIn("--resume", cmd)
+        self.assertEqual(cmd[cmd.index("--resume") + 1], "sess-123")
+        self.assertNotIn("--continue", cmd)
+
     def test_command_prefix(self) -> None:
         cmd = build_command(
             "composer-2.5",

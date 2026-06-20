@@ -161,6 +161,7 @@ class TargetRunLifecycle:
     include_agent_rules: bool = True
     elapsed_field: str = "elapsed_seconds"
     extra_payload_fields: dict[str, Any] = field(default_factory=dict)
+    rate_limit_resumable: bool = False
     _effective_prompt: str = field(default="", init=False, repr=False)
 
     def run(self) -> dict[str, Any]:
@@ -275,7 +276,7 @@ class TargetRunLifecycle:
             result_path=result_path,
             continue_session_id=continue_session_id,
         )
-        return run_with_rate_limit_retry(
+        return self.run_phase(request) if self.rate_limit_resumable else run_with_rate_limit_retry(
             log_tag=self._phase_log_tag(phase_name),
             policy=self.rate_limit_policy,
             run_once=lambda: self.run_phase(request),

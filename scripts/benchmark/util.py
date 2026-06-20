@@ -7,6 +7,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 from collections.abc import Iterable
@@ -29,6 +30,8 @@ _USAGE_LIMIT_PHRASES = (
     "too many requests",
     "overloaded",
 )
+_STANDALONE_429_RE = re.compile(r"(?<![0-9])429(?![0-9])")
+_READ_TOOL_FILESIZE_429_RE = re.compile(r'"fileSize"\s*:\s*429\b')
 
 
 def contains_usage_limit(text: str) -> bool:
@@ -42,6 +45,14 @@ def contains_usage_limit(text: str) -> bool:
     """
     lowered = text.lower()
     return any(phrase in lowered for phrase in _USAGE_LIMIT_PHRASES)
+
+
+def text_has_http_429(text: str) -> bool:
+    """True for HTTP/API 429 markers, excluding known tool-metadata false positives."""
+    if _READ_TOOL_FILESIZE_429_RE.search(text):
+        return False
+    lowered = text.lower()
+    return bool(_STANDALONE_429_RE.search(lowered)) or '"error":"rate_limit"' in lowered
 
 
 # Directories that contain vendored / generated artifacts rather than
