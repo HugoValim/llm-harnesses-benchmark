@@ -1,4 +1,4 @@
-Last-Updated: 2026-06-18
+Last-Updated: 2026-06-20
 
 Sources:
 - https://openrouter.ai/ (model pages, snapshot 2026-05-25)
@@ -45,6 +45,8 @@ This file is the **source of truth** for `Estimated-Cost-USD` in audit reports. 
 | claude_sonnet_4_6 | anthropic | openrouter/anthropic/claude-sonnet-4.6 | openrouter | 3.00 | 15.00 | | | yes | openrouter.ai/anthropic/claude-sonnet-4.6 | 2026-05-25 |
 | claude_opus_4_7 | anthropic | claude-opus-4-7 | native | 5.00 | 25.00 | | | yes | openrouter.ai/anthropic/claude-opus-4.7 | 2026-05-25 |
 | claude_opus_4_7 | anthropic | openrouter/anthropic/claude-opus-4.7 | openrouter | 5.00 | 25.00 | | | yes | openrouter.ai/anthropic/claude-opus-4.7 | 2026-05-25 |
+| claude_opus_4_8 | anthropic | claude-opus-4-8 | native | 5.00 | 25.00 | | | yes | anthropic.com/claude/opus | 2026-06-20 |
+| claude_opus_4_8 | anthropic | openrouter/anthropic/claude-opus-4.8 | openrouter | 5.00 | 25.00 | | | yes | openrouter.ai/anthropic/claude-opus-4.8 | 2026-06-20 |
 | codex_gpt_5_5 | openai | gpt-5.5 | native | 5.00 | 30.00 | 0.50 | | yes | openai.com/api/pricing | 2026-05-25 |
 | codex_gpt_5_4 | openai | gpt-5.4 | native | 2.50 | 15.00 | 0.25 | | yes | openai.com/api/pricing | 2026-05-25 |
 | codex_gpt_5_3_codex | openai | gpt-5.3-codex | native | 1.75 | 14.00 | | | yes | openai.com/api/pricing | 2026-05-25 |

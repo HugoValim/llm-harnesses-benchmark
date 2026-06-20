@@ -47,6 +47,7 @@ def test_build_display_slug_map_from_models_json() -> None:
     display_map = build_display_slug_map(REPO_ROOT / "config" / "models.json")
     assert display_map["codex_gpt_5_5"] == "codex_gpt_5_5(xhigh)"
     assert display_map["claude_opus_4_7"] == "claude_opus_4_7"
+    assert display_map["claude_opus_4_8"] == "claude_opus_4_8"
 
 
 def test_all_runs_ranking_table_shows_reasoning_effort() -> None:

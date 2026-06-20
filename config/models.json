@@ -10,6 +10,15 @@
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
     },
     {
+      "slug": "claude_opus_4_8",
+      "label": "Claude Opus 4.8",
+      "provider": "anthropic",
+      "id": "claude-opus-4-8",
+      "harness": ["claude"],
+      "num_runs": 3,
+      "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
+    },
+    {
       "slug": "claude_sonnet_4_6",
       "label": "Claude Sonnet 4.6",
       "provider": "anthropic",

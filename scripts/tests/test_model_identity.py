@@ -20,6 +20,7 @@ from benchmark.model_identity import cohort_slug  # noqa: E402
         ("glm_5_1_codex", "glm_5_1"),
         ("glm_5_1_opencode", "glm_5_1"),
         ("claude_opus_4_7", "claude_opus_4_7"),
+        ("claude_opus_4_8", "claude_opus_4_8"),
         ("claude_sonnet_4_6_opencode", "claude_sonnet_4_6_opencode"),
     ],
 )

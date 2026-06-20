@@ -24,6 +24,7 @@ _TABLE_HEADER = (
 OPENROUTER_ID_TO_SLUG: dict[str, str] = {
     "openrouter/anthropic/claude-sonnet-4.6": "claude_sonnet_4_6",
     "openrouter/anthropic/claude-opus-4.7": "claude_opus_4_7",
+    "openrouter/anthropic/claude-opus-4.8": "claude_opus_4_8",
     "moonshotai/kimi-k2.6": "kimi_k2_6",
     "moonshotai/kimi-k2.7-code": "kimi_k2_7",
     "z-ai/glm-5.1": "glm_5_1",

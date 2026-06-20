@@ -64,6 +64,23 @@ def test_compute_cost_claude_model_usage() -> None:
     assert cost == pytest.approx(10.0 + 2.5)
 
 
+def test_compute_cost_claude_opus_4_8_model_usage() -> None:
+    row = pricing_row_for_target("claude_opus_4_8", "claude")
+    tokens = extract_token_totals(
+        {
+            "model_usage": {
+                "claude-opus-4-8": {
+                    "inputTokens": 2_000_000,
+                    "outputTokens": 100_000,
+                }
+            }
+        },
+        harness="claude",
+    )
+    cost = compute_estimated_cost(row, tokens)
+    assert cost == pytest.approx(10.0 + 2.5)
+
+
 def test_compute_cost_composer_cursor_list() -> None:
     row = pricing_row_for_target("composer_2_5", "cursor")
     tokens = extract_token_totals(
