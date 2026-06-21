@@ -102,15 +102,6 @@
       "selection_reason": "Qwen 3.5 served by Ollama Cloud for agentic Python-stack benchmark coverage."
     },
     {
-      "slug": "gemma4",
-      "label": "Gemma 4 31B (Ollama Cloud)",
-      "provider": "ollama_cloud",
-      "id": "gemma4:31b-cloud",
-      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
-      "num_runs": 3,
-      "selection_reason": "Google Gemma 4 31B served by Ollama Cloud for agentic workflow and multimodal benchmark coverage."
-    },
-    {
       "slug": "minimax_m3",
       "label": "MiniMax M3 (Ollama Cloud)",
       "provider": "ollama_cloud",
