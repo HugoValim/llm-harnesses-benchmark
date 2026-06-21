@@ -10,9 +10,9 @@ See [`CONTEXT.md`](../CONTEXT.md) for vocabulary (`harness`, `target`, `auditor`
 
 | Phase | Version | Prompt file |
 |-------|---------|-------------|
-| Generation | `benchmark-v3.3` | [`prompts/benchmark_prompt.txt`](../prompts/benchmark_prompt.txt) |
-| Generation follow-up | `benchmark-followup-v3.3` | [`prompts/benchmark_followup_prompt.txt`](../prompts/benchmark_followup_prompt.txt) |
-| Role 1 audit | `audit-v3.10` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
+| Generation | `benchmark-v3.5` | [`prompts/benchmark_prompt.txt`](../prompts/benchmark_prompt.txt) |
+| Generation follow-up | `benchmark-followup-v3.5` | [`prompts/benchmark_followup_prompt.txt`](../prompts/benchmark_followup_prompt.txt) |
+| Role 1 audit | `audit-v3.13` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
 | Role 2 meta-analysis | `meta-v3.16` | [`prompts/audit_meta_analysis_prompt.txt`](../prompts/audit_meta_analysis_prompt.txt) |
 
 Prompt versions for older campaigns are recorded in each

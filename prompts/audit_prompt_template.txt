@@ -1,4 +1,4 @@
-Prompt-Version: audit-v3.11
+Prompt-Version: audit-v3.13
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
@@ -50,7 +50,7 @@ Key facts about the installed packages (DO NOT guess — grep the source):
 17. Verification summary in README or `VERIFY.md` listing commands run, pass/fail result, and unresolved environment blockers
 18. Production hardening (benchmark-v3.3 deliverable #18 — maps to D9 sub-checks):
     - **D9.1** Docker `HEALTHCHECK` and/or compose `healthcheck:` probing the **web HTTP port** (not Ollama)
-    - **D9.2** Django `LOGGING` dict with structured console handler (not print-only)
+    - **D9.2** Django `LOGGING` dict with structured console handler using a formatter dictConfig `"()"` factory key to a JSON/structured class (not print-only; `%`-style format strings without a `"()"` factory do not pass)
     - **D9.3** compose `restart` policy on the web/ASGI service
     - **D9.4** non-root `USER` in Dockerfile
     - **D9.5** consumer `.astream()` loop handles `asyncio.CancelledError` / SIGTERM stream shutdown
@@ -81,7 +81,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D10 | Code quality | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10. **v3.10 calibration tightenings** (run_02 meta-analysis): D9 sub-check pass bar requires verified `file:line` evidence (not Dockerfile/compose presence alone); D8 auto-fails on compose `${VAR:-placeholder}` secret defaults; D10 bare-`except` triggers from ≥1 handler; D8/D9 calibration cap lowers D10 ceiling to 7; CF#9 split cap blocks 9+/10 on integration-heavy suites. **v3.11 tightenings** (run_02 meta-analysis review): D9 uses **2 points per passing sub-check** (partial credit); D9.1 requires reading the probed view/handler body and confirming no Ollama/LLM call on that path; D9 capped at **7** when D6 ≤3; harness preflight hits are mandatory CF evidence; D5 requires cited multi-turn accumulation evidence; D10 bare-`except` ≥1 costs **-2** and caps at **8** without explicit clean justification.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10. **v3.10 calibration tightenings** (run_02 meta-analysis): D9 sub-check pass bar requires verified `file:line` evidence (not Dockerfile/compose presence alone); D8 auto-fails on compose `${VAR:-placeholder}` secret defaults; D10 bare-`except` triggers from ≥1 handler; D8/D9 calibration cap lowers D10 ceiling to 7; CF#9 split cap blocks 9+/10 on integration-heavy suites. **v3.11 tightenings** (run_02 meta-analysis review): D9 uses **2 points per passing sub-check** (partial credit); D9.1 requires reading the probed view/handler body and confirming no Ollama/LLM call on that path; D9 capped at **7** when D6 ≤3; harness preflight hits are mandatory CF evidence; D5 requires cited multi-turn accumulation evidence; D10 bare-`except` ≥1 costs **-2** and caps at **8** without explicit clean justification. **v3.12 tightenings** (run_02 meta-analysis §10): D9.2 requires a JSON or structured formatter in `LOGGING` (not a bare `StreamHandler` with default format); D9.3 requires an explicit web-service `restart:` policy value (`unless-stopped`, `always`, or equivalent — key alone insufficient); D9.5 requires `asyncio.CancelledError` handling inside the `.astream()` loop at a cited `file:line` independent of `disconnect`; each D9 sub-check must cite its own `file:line` (reuse across sub-checks counts as `fail`); D7 splits **Protocol** (−3) and **settings split** (−2) into separate mandatory deductions; D8=0 automatically caps D10 at **7** with no auditor override prose; D5 requires a pytest asserting prior `AIMessage` content in the second `.astream()` call. **v3.13 tightenings** (run_02 meta-analysis §10 review): D9.2 `pass` requires a cited dictConfig `"()"` factory to a JSON formatter class (e.g. `pythonjsonlogger.jsonlogger.JsonFormatter`, custom `logging.Formatter` subclass, or `structlog` processor) — a `%`-style `format` string keyed `"json"` without a `"()"` factory is **fail**; when D8=0 **and** ≥2 bare `except Exception:` handlers, D10 ceiling drops to **6** (stricter than the D8-only cap of 7).
 
 ## Benchmark anchors (scoring calibration)
 
@@ -140,6 +140,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - Class variable / module global (race-prone across consumers): -3.
    - No history (single-turn only): -4.
    - **Saturation bar (v3.11):** D5=5/5 only when you cite `file:line` evidence that assistant/model turns are appended to per-session history (consumer or service code **and** at least one test asserting multi-turn context). In-memory list that only stores `HumanMessage` without assistant replies: -4.
+   - **Multi-turn test bar (v3.12):** D5 cannot exceed **3/5** unless a pytest (or async test) asserts that a **second** `.astream()` / service call receives message history containing a prior **`AIMessage`** (or equivalent assistant turn) from the first call — cite `test_*.py:line` showing the assertion on `messages` passed to the mock or service.
 
 6. **Streaming & frontend wiring** (0-10)
    - Single template dump (no {% include %} / partials): -3.
@@ -155,15 +156,16 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - Consumer wires LLM client inline with no service layer (U4): -6.
    - Settings monolith (no BASE_DIR constants, hard-coded paths): -2.
    - View doing template + LLM in one function: -2.
-   - No settings split (base vs prod/docker) when Docker path exists: -2.
+   - **Settings split (v3.12, mandatory):** No `base` + `production`/`docker` settings split when a Docker/production path exists: **-2** (apply independently; cite missing module or monolithic `settings.py:line`).
    - Consumer class body exceeds 30 non-blank lines (excluding docstrings): -2.
-   - Service layer lacks a typed/protocol interface or dedicated module boundary: -3.
+   - **LLM Protocol (v3.12, mandatory):** LLM service lacks a `typing.Protocol` (or ABC) interface that the consumer depends on — concrete class or ad-hoc functions only: **-3** (apply independently; cite `llm_service.py:line` or consumer import site).
+   - Service layer lacks a dedicated module boundary (logic inlined in consumer/views despite a nominal service file): -2.
    - LLM or channel imports leaked into views/templates (layer violation): -2.
    - Single module exceeds 200 non-blank lines of mixed concerns (god file): -3.
-   - Floor at 0. A bare `llm_service.py` file alone does not earn full marks.
+   - Floor at 0. A bare `llm_service.py` file alone does not earn full marks; both Protocol and settings-split deductions apply when triggers are met.
 
 8. **Secrets & config hygiene** (0-5)
-   - Any `SECRET_KEY` / `DJANGO_SECRET_KEY` literal or insecure string fallback in source, Dockerfile, compose, or README: cap this dimension at 0 (treat as CF#1 in ledger).
+   - Any `SECRET_KEY` / `DJANGO_SECRET_KEY` literal or insecure string fallback in source, Dockerfile, compose, README, **`VERIFY.md`**, **`conftest.py`**, or Dockerfile **`RUN`/`ARG` build steps**: cap this dimension at 0 (treat as CF#1 in ledger).
    - `DEBUG=True` hardcoded as the default for the production/Docker path, or compose hardcodes debug on: -2.
    - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -2.
    - Required secret/env vars read without startup validation (silent fallback to insecure default): -1.
@@ -178,7 +180,11 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - **D9.5** No graceful shutdown handling for in-flight WebSocket streams on SIGTERM (`asyncio.CancelledError` in stream loop or equivalent): sub-check **fail** (−2).
    - **Partial credit (v3.11):** Start at 0; award **+2 per passing sub-check** (max 10). A failed sub-check scores 0 for that slot — do not award partial points within a sub-check.
    - **Sub-check pass bar (v3.11):** Mark a sub-check `pass` only after reading/grepping the cited `file:line` and confirming the implementation (not merely that Dockerfile/compose/settings files exist). Presence of a `HEALTHCHECK` line alone is insufficient for D9.1 — verify the probe command/URL targets a **web liveness** route that returns 200 without calling Ollama.
+   - **Independent evidence (v3.12):** Each passing sub-check MUST cite a distinct `file:line` from the others. Reusing the same citation for D9.2–D9.5, or citing only Dockerfile/compose without opening the probed settings/consumer module, counts that sub-check as `fail`.
    - **D9.1 view verification (v3.11):** For D9.1 `pass`, open the probed view/handler at the cited `file:line` and confirm the code path does **not** import or call Ollama/LLM clients, does not delegate to Ollama health helpers, and returns 200/JsonResponse without upstream model calls. Probing `/health/` that calls Ollama is **fail** for D9.1 even if documented elsewhere.
+   - **D9.2 structured logging (v3.12/v3.13):** For D9.2 `pass`, the cited `LOGGING` block must wire a console handler to a formatter with an explicit dictConfig **`"()"`** factory key (or equivalent class reference) pointing to a JSON/structured formatter implementation (e.g. `pythonjsonlogger.jsonlogger.JsonFormatter`, a project-defined `logging.Formatter` subclass that emits JSON, or a `structlog` handler/processor) — cite the factory/class path at `file:line`. A formatter entry with only a `%`-style `format` string (even if the dict key is named `"json"`) and **no** `"()"` factory is **fail**. A bare `StreamHandler` with Django's default `%`-style format only is **fail**.
+   - **D9.3 restart policy (v3.12):** For D9.3 `pass`, `docker-compose.yml` (or equivalent) must set an explicit web/ASGI service `restart:` value such as `unless-stopped` or `always` at the cited `file:line` — omitting the key or leaving an empty/null value is **fail**.
+   - **D9.5 SIGTERM handling (v3.12):** For D9.5 `pass`, cite `file:line` inside the consumer's `.astream()` loop (or the service method it calls) showing `except asyncio.CancelledError:` (or equivalent) that stops forwarding and re-raises or cleans up. `disconnect`-only cleanup without a stream-loop handler is **fail** for D9.5.
    - **D6 cross-check (v3.11):** When D6 ≤3/10 (broken HTMX/ws path or missing built CSS), D9 cannot exceed **7/10** regardless of Docker checklist presence.
    - **Fail closed:** Any sub-check marked `pass` without `file:line` evidence counts as `fail` for scoring purposes.
    - **Section B D9 row (mandatory format):** In the D9 justification, include an inline sub-checklist: `D9.1=pass|fail`, `D9.2=pass|fail`, `D9.3=pass|fail`, `D9.4=pass|fail`, `D9.5=pass|fail` each with `file:line` evidence before the aggregate score. For D9.1 include a one-clause note that the probed view body has no Ollama/LLM calls.
@@ -194,7 +200,9 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
     - **Bare-handler ceiling (v3.11):** when count ≥1 and section F has no CF#13, D10 cannot exceed **8/10** unless justification cites why each handler is narrowly scoped with `file:line`.
     - Floor at **0**.
     - **CF#13 cap**: if Section F lists CF#13, D10 is **capped at 0**.
-    - **D8/D9 calibration cap**: if D8 scores **0** or D9 scores **≤7**, D10 cannot exceed **7** unless the justification explicitly explains why maintainability is independent of the security/production failure (cite both dimensions).
+    - **D8 calibration cap (v3.12, automatic):** when D8 scores **0**, apply `min(computed_d10, 7)` — no auditor override or independence prose can raise D10 above 7.
+    - **D8+bare-except calibration cap (v3.13, automatic):** when D8 scores **0** **and** grep finds **≥2** bare `except Exception:` handlers in application source, apply `min(computed_d10, 6)` — this supersedes the D8-only cap of 7; cite each handler at `file:line` in the D10 justification.
+    - **D9 calibration cap (v3.12, automatic):** when D9 scores **≤7**, apply `min(computed_d10, 7)` — same hard ceiling with no override.
 
 ## Auto-critical-failure classification
 
@@ -202,7 +210,7 @@ The items below are **always critical failures**, regardless of how this rubric'
 
 | # | Trigger | Primary dimension | Evidence to cite |
 |---|---------|-------------------|------------------|
-| 1 | Any hardcoded secret in source / Dockerfile / compose / README / `.env` (including "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`, and compose `${VAR:-placeholder}` default expansion for those vars). Django `SECRET_KEY` literals count. | D8 Secrets & config hygiene | `file:line` of the literal or `${VAR:-...}` pattern |
+| 1 | Any hardcoded secret in source / Dockerfile / compose / README / **`VERIFY.md`** / **`conftest.py`** / `.env` (including Dockerfile `RUN`/`ARG` build steps, "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`, and compose `${VAR:-placeholder}` default expansion for those vars). Django `SECRET_KEY` literals count. | D8 Secrets & config hygiene | `file:line` of the literal or `${VAR:-...}` pattern |
 | 2 | A spec hard-requirement deliverable is entirely absent OR loaded-but-unused (e.g. spec requires HTMX with WebSocket extension and the submission either omits it or imports it without wiring it to the streaming consumer) | D6 Streaming & frontend / D1 Deliverable completeness | `file:line` showing absence or unused import |
 | 3 | A spec functional behavior is broken by an anti-pattern (e.g. spec requires real-time token streaming and the consumer buffers via `list(.astream(...))`, `[chunk async for chunk in ...]` collected before send, or `await asyncio.to_thread(lambda: list(...))`) | D2 LLM integration | `file:line` of the buffering pattern |
 | 4 | Missing framework-default security middleware that the spec's stack assumes (CSRF, security middleware, `SecurityMiddleware`) | D4 Error handling | `file:line` of `MIDDLEWARE` list, with the missing entry called out |
@@ -228,7 +236,7 @@ Target: under 800 words total. No speculation — code excerpts and package-sour
 
 A. **Quick summary line** (1 sentence: did the submission meet the spec?).
 
-B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. Row 9 (D9) **must** include the `D9.1`–`D9.5` pass/fail sub-checklist in the justification cell. The D10 justification must cite specific `file:line` evidence from source inspection (which rubric trigger fired, or why the codebase is clean); apply the D8/D9 calibration cap when applicable.
+B. **Scores per dimension** with 1-line justification each (exact file:line refs when claiming bugs). Use a table with **ten** rows numbered 1–10 (D1–D10): `# | Dimension | Score / Max | Justification (file:line)`. Row 9 (D9) **must** include the `D9.1`–`D9.5` pass/fail sub-checklist in the justification cell. The D10 justification must cite specific `file:line` evidence from source inspection (which rubric trigger fired, or why the codebase is clean); apply the D8, D8+bare-except, and D9 calibration caps when applicable.
 
 C. **Total score / 100** (rubric sum after all trigger deductions, including ledger-mapped ones).
 
@@ -252,7 +260,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.11`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.13`; primary benchmark prompt must be `benchmark-v3.5`; follow-up prompt must be `benchmark-followup-v3.5` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/<run_id>/projects/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

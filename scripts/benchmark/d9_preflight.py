@@ -118,7 +118,7 @@ def scan_d9_preflight(project_dir: Path) -> dict[str, Any]:
             passed += 1
         checks[key] = {"pass": ok, "evidence": evidence}
     return {
-        "prompt_version": "benchmark-v3.3",
+        "prompt_version": "benchmark-v3.5",
         "project_dir": str(project_dir),
         "checks": checks,
         "passed_count": passed,

@@ -87,7 +87,7 @@ flowchart LR
 
 ### Fixed task (generation)
 
-**Prompt version:** `benchmark-v3.3` ([`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt))
+**Prompt version:** `benchmark-v3.5` ([`prompts/benchmark_prompt.txt`](prompts/benchmark_prompt.txt))
 
 Each agent must build, in the current working directory:
 
@@ -101,7 +101,7 @@ Each agent must build, in the current working directory:
 - Real README with setup, Tailwind build, tests, and Docker commands
 
 **Phase 2** ([`prompts/benchmark_followup_prompt.txt`](prompts/benchmark_followup_prompt.txt),
-`benchmark-followup-v3.3`) asks the agent to boot the app, run tests and static checks,
+`benchmark-followup-v3.5`) asks the agent to boot the app, run tests and static checks,
 validate Docker, and record results in README or `VERIFY.md`.
 
 Four harness backends run the same brief: **opencode**, **codex**, **claude**, **cursor**
@@ -109,7 +109,7 @@ Four harness backends run the same brief: **opencode**, **codex**, **claude**, *
 
 ### Role 1 audit (rubric scoring)
 
-**Prompt version:** `audit-v3.10` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
+**Prompt version:** `audit-v3.13` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
 
 An LLM **auditor** reads one generated `project/` and writes a structured report with
 sections A–I. The auditor verifies API claims against the project's own installed
