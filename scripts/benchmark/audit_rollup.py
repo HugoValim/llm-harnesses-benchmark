@@ -29,7 +29,11 @@ from benchmark.util import load_json, migrate_to_v2
 
 # Model slug substrings that identify benchmark leader runs (substring match,
 # case-insensitive), e.g. ``codex-gpt_5_5`` → ``gpt_5_5``, ``opencode-claude_opus_4_7``.
-LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = ("gpt_5_5", "claude_opus_4_7")
+LEADER_MODEL_SLUG_SUBSTRINGS: tuple[str, ...] = (
+    "gpt_5_5",
+    "claude_opus_4_7",
+    "claude_opus_4_8",
+)
 
 _NORMALIZED_PCT_CAP = 150.0
 _SATURATION_FULL_MARKS_RATIO = 0.80
@@ -130,6 +134,30 @@ class CursorRunExpectation:
 
 
 @dataclass(frozen=True)
+class PerformanceCostCell:
+    harness: str
+    model_slug: str
+    mean_total: float
+    mean_gen_minutes: float | None
+    quality_per_minute: float | None
+    tier: str
+
+
+@dataclass(frozen=True)
+class QualityTimeTradeoffExpectation:
+    overall_harness: str
+    overall_model_slug: str
+    overall_mean_total: float
+    overall_gen_minutes: float
+    overall_quality_per_minute: float
+    contest_harness: str | None
+    contest_model_slug: str | None
+    contest_mean_total: float | None
+    contest_gen_minutes: float | None
+    contest_quality_per_minute: float | None
+
+
+@dataclass(frozen=True)
 class DimensionHarnessAverage:
     harness: str
     avg_score: float | None
@@ -166,6 +194,7 @@ class ExecutiveSummaryExpectations:
     cursor_runs: CursorRunExpectation | None
     mixed_version_harnesses: tuple[str, ...]
     blind_spot: DimensionBlindSpot | None
+    quality_time: QualityTimeTradeoffExpectation | None
 
 
 @dataclass(frozen=True)
@@ -1105,6 +1134,275 @@ def _quality_per_minute(mean_total: float, mean_gen_minutes: float | None) -> st
     return f"{mean_total / mean_gen_minutes:.2f}"
 
 
+def calculate_performance_cost_cells(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> tuple[PerformanceCostCell, ...]:
+    """Mean performance/cost metrics per ``(harness, model_slug)`` cell."""
+    groups = _group_reports_by_harness_model(reports)
+    cells: list[PerformanceCostCell] = []
+    for (harness, slug), subset in sorted(groups.items()):
+        totals = [float(r.total) for r in subset if r.total is not None]
+        if not totals:
+            continue
+        mean_total = mean(totals)
+        mean_gen = _mean_optional(
+            [_report_gen_minutes(r, source_dirs=source_dirs) for r in subset]
+        )
+        qpm = (
+            mean_total / mean_gen
+            if mean_gen is not None and mean_gen > 0
+            else None
+        )
+        cells.append(
+            PerformanceCostCell(
+                harness=harness,
+                model_slug=slug,
+                mean_total=mean_total,
+                mean_gen_minutes=mean_gen,
+                quality_per_minute=qpm,
+                tier=_tier_from_total(mean_total),
+            )
+        )
+    return tuple(cells)
+
+
+def calculate_quality_time_tradeoff(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> QualityTimeTradeoffExpectation | None:
+    """Best Tier-A quality-per-minute overall and on contest harnesses only."""
+    tier_a = [
+        cell
+        for cell in calculate_performance_cost_cells(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        )
+        if cell.tier == "A" and cell.quality_per_minute is not None
+    ]
+    if not tier_a:
+        return None
+
+    best_overall = max(tier_a, key=lambda cell: cell.quality_per_minute or 0.0)
+    contest = [
+        cell
+        for cell in tier_a
+        if _is_benchmark_harness(cell.harness)
+    ]
+    best_contest = (
+        max(contest, key=lambda cell: cell.quality_per_minute or 0.0)
+        if contest
+        else None
+    )
+    return QualityTimeTradeoffExpectation(
+        overall_harness=best_overall.harness,
+        overall_model_slug=_display_slug(
+            best_overall.model_slug, display_slug_map
+        ),
+        overall_mean_total=best_overall.mean_total,
+        overall_gen_minutes=float(best_overall.mean_gen_minutes or 0.0),
+        overall_quality_per_minute=float(best_overall.quality_per_minute or 0.0),
+        contest_harness=best_contest.harness if best_contest else None,
+        contest_model_slug=(
+            _display_slug(best_contest.model_slug, display_slug_map)
+            if best_contest
+            else None
+        ),
+        contest_mean_total=best_contest.mean_total if best_contest else None,
+        contest_gen_minutes=(
+            float(best_contest.mean_gen_minutes or 0.0) if best_contest else None
+        ),
+        contest_quality_per_minute=(
+            float(best_contest.quality_per_minute or 0.0)
+            if best_contest
+            else None
+        ),
+    )
+
+
+def _methodology_cohort_stats(
+    reports: list[ParsedReport],
+) -> dict[str, int]:
+    """Counts for the cross-harness contest cohort used in harness ranking."""
+    cohort_slugs = _cross_harness_cohort_slugs(reports)
+    contest_harnesses = _contest_harnesses_in_data(reports)
+    cohort_audits = [
+        r
+        for r in reports
+        if _is_benchmark_harness(r.harness)
+        and cohort_slug(r.model_slug) in cohort_slugs
+        and r.total is not None
+    ]
+    replicate_counts: list[int] = []
+    for harness in contest_harnesses:
+        for slug in cohort_slugs:
+            cell_n = sum(
+                1
+                for r in cohort_audits
+                if r.harness == harness and cohort_slug(r.model_slug) == slug
+            )
+            if cell_n:
+                replicate_counts.append(cell_n)
+    return {
+        "n_cohort_models": len(cohort_slugs),
+        "n_contest_harnesses": len(contest_harnesses),
+        "n_cohort_audits": len(cohort_audits),
+        "n_replicates_per_cell": max(replicate_counts) if replicate_counts else 0,
+    }
+
+
+def build_methodology_skeleton(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Deterministic methodology intro for meta-analysis section 0."""
+    parsed = sum(1 for report in reports if report.total is not None)
+    contest = _contest_harnesses_label(reports)
+    with_time = sum(
+        1
+        for report in reports
+        if report.total is not None
+        and _report_gen_minutes(report, source_dirs=source_dirs) is not None
+    )
+    cohort = _methodology_cohort_stats(reports)
+    n_models = cohort["n_cohort_models"]
+    n_harnesses = cohort["n_contest_harnesses"]
+    n_replicates = cohort["n_replicates_per_cell"]
+    n_cohort_audits = cohort["n_cohort_audits"]
+    grid_clause = (
+        f"The cross-harness grid covers {n_models} open-weight models × "
+        f"{n_replicates} independent replicates × {n_harnesses} contest "
+        f"harnesses ({n_cohort_audits} audits in the harness-ranking cohort)."
+        if n_cohort_audits
+        else "No cross-harness model grid is available for harness ranking."
+    )
+    lines = [
+        "## Methodology skeleton",
+        "",
+        "Copy this block into **Methodology** immediately after the document title.",
+        "",
+        "### Benchmark task",
+        "",
+        "Every agent receives the same fixed implementation brief: build a "
+        "Django + Django Channels single-page chat application that streams "
+        "tokens from a local Ollama server through LangChain, forwards them "
+        "over WebSockets to an HTMX-driven UI styled with Tailwind CSS, and "
+        "ships with Docker, pytest coverage, and static-analysis tooling. The "
+        "brief enumerates required deliverables, forbidden alternatives, and "
+        "security constraints. Agents work autonomously in the project workspace "
+        "without human confirmation.",
+        "",
+        "### Experimental design",
+        "",
+        "Three factors vary across runs:",
+        "",
+        "1. **Agent harness** — the autonomous coding CLI (Claude Code, Codex, "
+        "or OpenCode). Each contest harness executes the identical brief.",
+        "2. **Language model** — either a proprietary model bound to one harness "
+        "(Anthropic Claude, OpenAI GPT via Codex, or Cursor Composer) or an "
+        "open-weight model served through Ollama Cloud and dispatched to all "
+        "three contest harnesses via the Ollama launch integration.",
+        f"3. **Replicate** — independent regeneration runs per `(harness, model)` "
+        f"cell ({n_replicates} replicates per cell in this campaign when the "
+        "full grid is present).",
+        "",
+        "Each cell runs in two sequential phases without session continuity "
+        "between them: phase 1 is greenfield implementation from the brief; "
+        "phase 2 is a cold validation pass that installs dependencies, runs "
+        "tests and static checks, boots the ASGI server, and builds Docker "
+        "images.",
+        "",
+        "### Assessment protocol",
+        "",
+        "Quality is measured by a separate LLM auditor that reads each generated "
+        "codebase and assigns a **100-point rubric score** decomposed of ten "
+        "dimensions: deliverable completeness, LLM integration correctness, "
+        "test quality, error handling, multi-turn conversation state, "
+        "streaming and frontend wiring, architecture, secrets and configuration "
+        "hygiene, production hardening, and maintainability. The auditor "
+        "verifies API claims against installed package source, records "
+        "per-dimension evidence, and flags auto-critical failures. This "
+        "meta-analysis aggregates those audit scores; it does not re-grade "
+        "projects.",
+        "",
+        "### Cohort and comparability",
+        "",
+        f"**Contest harness comparison** (harness rankings, cross-harness "
+        f"pairings, harness-attributable patterns) is restricted to "
+        f"{{{contest}}} on the **cross-harness model grid** — open-weight "
+        "models executed under every contest harness. Proprietary "
+        "single-harness models and Cursor Agent runs are reported separately "
+        "and excluded from harness ranking.",
+        "",
+        "**Cross-harness model comparison** pairs the same Ollama Cloud model "
+        "slug across harnesses to isolate harness effects holding the backend "
+        "model constant. **Cell aggregation** averages replicate audit scores "
+        "within each `(harness, model)` cell; spread is reported as standard "
+        "deviation across replicates.",
+        "",
+        f"**This run:** {parsed} scored audit reports ({with_time} with "
+        f"recorded generation time). {grid_clause}",
+        "",
+        "### Derived metrics",
+        "",
+        "**Generation time** is wall-clock elapsed for phase 1 plus phase 2, "
+        "recorded when the benchmark completes. **Quality–time tradeoff** ranks "
+        "Tier-A cells (mean score ≥ 81/100) by quality per minute (mean total "
+        "÷ mean generation time in minutes); higher values indicate better "
+        "speed-adjusted output (section 6). **Performance tiers** classify "
+        "mean cell totals as A (81–100), B (61–80), C (41–60), or D (0–40).",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _quality_time_tradeoff_bullet(
+    tradeoff: QualityTimeTradeoffExpectation,
+) -> str:
+    overall_target = f"{tradeoff.overall_harness}-{tradeoff.overall_model_slug}"
+    overall_clause = (
+        f"`{overall_target}` — {_fmt(tradeoff.overall_mean_total)}/100 in "
+        f"{_fmt(tradeoff.overall_gen_minutes)} min "
+        f"({_fmt(tradeoff.overall_quality_per_minute)} pts/min)"
+    )
+    if (
+        tradeoff.contest_harness is not None
+        and tradeoff.contest_model_slug is not None
+        and tradeoff.contest_mean_total is not None
+        and tradeoff.contest_gen_minutes is not None
+        and tradeoff.contest_quality_per_minute is not None
+    ):
+        contest_target = (
+            f"{tradeoff.contest_harness}-{tradeoff.contest_model_slug}"
+        )
+        same_cell = (
+            tradeoff.contest_harness == tradeoff.overall_harness
+            and tradeoff.contest_model_slug == tradeoff.overall_model_slug
+        )
+        if same_cell:
+            contest_clause = "also best on contest harnesses"
+        else:
+            contest_clause = (
+                f"best on contest harnesses: `{contest_target}` — "
+                f"{_fmt(tradeoff.contest_mean_total)}/100 in "
+                f"{_fmt(tradeoff.contest_gen_minutes)} min "
+                f"({_fmt(tradeoff.contest_quality_per_minute)} pts/min)"
+            )
+        return (
+            f"- **Best quality–time tradeoff**: {overall_clause}; "
+            f"{contest_clause} (Tier-A quality per minute; section 6)."
+        )
+    return (
+        f"- **Best quality–time tradeoff**: {overall_clause} "
+        f"(Tier-A quality per minute; section 6)."
+    )
+
+
 def _group_reports_by_harness_model(
     reports: list[ParsedReport],
 ) -> dict[tuple[str, str], list[ParsedReport]]:
@@ -1763,14 +2061,14 @@ def build_harness_versions_table(
     return "\n".join(lines) + "\n"
 
 
-def _top_contest_run(reports: list[ParsedReport]) -> ParsedReport | None:
-    """Rank-1 contest-harness run by total (peak Phase-1 score on the brief)."""
-    contest_runs = [
-        r
-        for r in _ranked_run_reports(reports)
-        if _is_benchmark_harness(r.harness)
-    ]
-    return contest_runs[0] if contest_runs else None
+def _top_contest_cell(
+    reports: list[ParsedReport],
+) -> AggregatedRunRankingRow | None:
+    """Rank-1 contest ``(harness, model_slug)`` by mean total across replicates."""
+    for row in calculate_aggregated_runs_ranking(reports):
+        if _is_benchmark_harness(row.harness):
+            return row
+    return None
 
 
 def _harness_contest_stats(
@@ -1807,6 +2105,19 @@ def _contest_harness_rankings(
         if stats["avg"] is not None:
             rows.append((harness, stats))
     rows.sort(key=lambda item: float(item[1]["avg"]), reverse=True)  # type: ignore[arg-type]
+    return rows
+
+
+def _contest_harness_median_rankings(
+    reports: list[ParsedReport],
+) -> list[tuple[str, dict[str, float | int | None]]]:
+    """Contest harnesses sorted by cross-harness-cohort median total descending."""
+    rows: list[tuple[str, dict[str, float | int | None]]] = []
+    for harness in _contest_harnesses_in_data(reports):
+        stats = _harness_contest_stats(reports, harness)
+        if stats["median"] is not None:
+            rows.append((harness, stats))
+    rows.sort(key=lambda item: float(item[1]["median"]), reverse=True)  # type: ignore[arg-type]
     return rows
 
 
@@ -1943,21 +2254,25 @@ def calculate_executive_summary_expectations(
             _mixed_version_contest_harnesses(reports, source_dirs=source_dirs)
         ),
         blind_spot=_lowest_dimension_candidate(reports),
+        quality_time=calculate_quality_time_tradeoff(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ),
     )
 
 
 def _top_model_expectation(
     reports: list[ParsedReport], display_slug_map: dict[str, str] | None
 ) -> TopModelExpectation | None:
-    top_run = _top_contest_run(reports)
-    if top_run is None or top_run.total is None:
+    top_cell = _top_contest_cell(reports)
+    if top_cell is None:
         return None
-    model_slug = top_run.model_slug or "-"
     return TopModelExpectation(
-        harness=top_run.harness,
-        model_slug=_display_slug(model_slug, display_slug_map),
-        total=float(top_run.total),
-        note=_single_harness_run_note(reports, model_slug),
+        harness=top_cell.harness,
+        model_slug=_display_slug(top_cell.model_slug, display_slug_map),
+        total=top_cell.mean_total,
+        note=_single_harness_run_note(reports, top_cell.model_slug),
     )
 
 
@@ -2007,6 +2322,13 @@ def executive_summary_expectations(
         best_harness = typed.harness_rankings[0]
         expectations["best_harness"] = best_harness.harness
         expectations["best_harness_avg"] = best_harness.avg_total
+        median_rows = _contest_harness_median_rankings(reports)
+        if median_rows:
+            best_median_harness, best_median_stats = median_rows[0]
+            expectations["best_harness_median_harness"] = best_median_harness
+            expectations["best_harness_median_total"] = float(
+                best_median_stats["median"]  # type: ignore[arg-type]
+            )
     if typed.top_model is not None:
         expectations["top_model_slug"] = typed.top_model.model_slug
         expectations["top_model_total"] = typed.top_model.total
@@ -2015,6 +2337,14 @@ def executive_summary_expectations(
         expectations["best_ollama_slug"] = typed.best_ollama.model_slug
         expectations["best_ollama_avg"] = typed.best_ollama.avg_total
         expectations["best_ollama_n_harnesses"] = typed.best_ollama.n_harnesses
+    if typed.quality_time is not None:
+        expectations["quality_time_overall_target"] = (
+            f"{typed.quality_time.overall_harness}-"
+            f"{typed.quality_time.overall_model_slug}"
+        )
+        expectations["quality_time_overall_qpm"] = (
+            typed.quality_time.overall_quality_per_minute
+        )
     expectations["mixed_version_harnesses"] = list(typed.mixed_version_harnesses)
     return expectations
 
@@ -2067,15 +2397,44 @@ def build_executive_summary_skeleton(
             "harness verdict suppressed."
         )
 
-    top_run = _top_contest_run(reports)
-    if top_run is not None and top_run.total is not None:
-        note = _single_harness_run_note(reports, top_run.model_slug or "")
-        note_clause = f" ({note})" if note else ""
-        display_slug = _display_slug(top_run.model_slug or "-", display_slug_map)
+    median_harness_rows = _contest_harness_median_rankings(reports)
+    if median_harness_rows:
+        best_median_harness, best_median_stats = median_harness_rows[0]
+        med = float(best_median_stats["median"])  # type: ignore[arg-type]
+        n = int(best_median_stats["n"])  # type: ignore[arg-type]
+        median_runners = [
+            f"{name} {_fmt(float(stats['median']))}"  # type: ignore[arg-type]
+            for name, stats in median_harness_rows[1:3]
+            if stats["median"] is not None
+        ]
+        median_runner_clause = (
+            f" Runners-up: {', '.join(median_runners)}." if median_runners else ""
+        )
+        lines.append(
+            f"- **Best harness by median**: `{best_median_harness}` — "
+            f"{_fmt(med)}/100 median (N={n})."
+            f"{median_runner_clause}"
+        )
+    else:
+        lines.append(
+            "- **Best harness by median**: insufficient cross-model coverage — "
+            "harness verdict suppressed."
+        )
+
+    top_cell = _top_contest_cell(reports)
+    if top_cell is not None:
+        note = _single_harness_run_note(reports, top_cell.model_slug)
+        note_clause = f"; {note}" if note else ""
+        std_clause = (
+            f", std dev {_fmt(top_cell.std_dev)}"
+            if top_cell.std_dev is not None
+            else ""
+        )
+        display_slug = _display_slug(top_cell.model_slug, display_slug_map)
         lines.append(
             f"- **Best model overall**: `{display_slug}` — "
-            f"{_fmt(float(top_run.total))}/100 under `{top_run.harness}` "
-            f"(top contest-harness run{note_clause})."
+            f"{_fmt(top_cell.mean_total)}/100 mean under `{top_cell.harness}` "
+            f"(N={top_cell.sample_n}{std_clause}{note_clause})."
         )
     else:
         lines.append(
@@ -2112,6 +2471,14 @@ def build_executive_summary_skeleton(
             f"avg {_fmt(cursor_avg)} — model-only benchmarks; excluded from "
             "harness contest."
         )
+
+    quality_time = calculate_quality_time_tradeoff(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+    )
+    if quality_time is not None:
+        lines.append(_quality_time_tradeoff_bullet(quality_time))
 
     mixed = _mixed_version_contest_harnesses(reports, source_dirs=source_dirs)
     if mixed:
@@ -2155,10 +2522,14 @@ def build_precomputed_rollup(
     parts = [
         "## Precomputed rollup",
         "",
-        "Harness-computed from parsed ``report.md`` files. **Section 1 verdict "
-        "bullets, section 2, 2a, 3, 4, 6, appendix dimension matrix, and the "
-        "harness CLI versions table in meta-analysis.md MUST match these values.** "
-        "Use individual reports only for citations and narrative.",
+        "Harness-computed from parsed ``report.md`` files. **Section 0 methodology, "
+        "section 1 verdict bullets, section 2, 2a, 3, 4, 6, appendix dimension "
+        "matrix, and the harness CLI versions table in meta-analysis.md MUST match "
+        "these values.** Use individual reports only for citations and narrative.",
+        "",
+        build_methodology_skeleton(
+            reports, source_dirs=source_dirs
+        ).rstrip(),
         "",
         build_executive_summary_skeleton(
             reports,
@@ -2430,6 +2801,25 @@ def validate_meta_analysis_executive_summary(
                 f"for {best_harness!r}"
             )
 
+    best_harness_median_harness = expectations.get("best_harness_median_harness")
+    best_harness_median_total = expectations.get("best_harness_median_total")
+    if isinstance(best_harness_median_harness, str) and isinstance(
+        best_harness_median_total, float
+    ):
+        if "Best harness by median" not in section:
+            errors.append("section 1 missing **Best harness by median** bullet")
+        if best_harness_median_harness not in section:
+            errors.append(
+                "section 1 missing best harness by median slug "
+                f"{best_harness_median_harness!r}"
+            )
+        median_token = _fmt(best_harness_median_total)
+        if median_token not in section:
+            errors.append(
+                f"section 1 missing best harness median {median_token} "
+                f"for {best_harness_median_harness!r}"
+            )
+
     top_slug = expectations.get("top_model_slug")
     top_total = expectations.get("top_model_total")
     if isinstance(top_slug, str) and isinstance(top_total, float):
@@ -2456,6 +2846,22 @@ def validate_meta_analysis_executive_summary(
             errors.append(
                 f"section 1 missing best open-source avg {avg_token} "
                 f"for {ollama_slug!r}"
+            )
+
+    quality_target = expectations.get("quality_time_overall_target")
+    quality_qpm = expectations.get("quality_time_overall_qpm")
+    if isinstance(quality_target, str) and isinstance(quality_qpm, float):
+        if "Best quality–time tradeoff" not in section:
+            errors.append("section 1 missing **Best quality–time tradeoff** bullet")
+        if quality_target not in section:
+            errors.append(
+                f"section 1 missing quality–time target {quality_target!r}"
+            )
+        qpm_token = _fmt(quality_qpm)
+        if qpm_token not in section:
+            errors.append(
+                f"section 1 missing quality–time pts/min {qpm_token} "
+                f"for {quality_target!r}"
             )
 
     return errors

@@ -46,6 +46,8 @@ def test_is_leader_slug_positive() -> None:
     assert _is_leader_slug("codex_gpt_5_5_ollama_cloud")
     assert _is_leader_slug("claude_opus_4_7")
     assert _is_leader_slug("CLAUDE_OPUS_4_7")
+    assert _is_leader_slug("claude_opus_4_8")
+    assert _is_leader_slug("CLAUDE_OPUS_4_8")
 
 
 def test_is_leader_slug_negative() -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -18,6 +20,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     build_dimension_matrix_detail_table,
     build_dimension_signal_section,
     build_executive_summary_skeleton,
+    build_methodology_skeleton,
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
@@ -28,6 +31,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     calculate_harness_comparison,
     calculate_model_coverage,
     calculate_ollama_model_ranking,
+    calculate_quality_time_tradeoff,
     expected_section2_run_rows,
     executive_summary_expectations,
     model_harness_coverage,
@@ -38,6 +42,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     _cross_harness_cohort_slugs,
     _dimension_labels,
     _harness_section,
+    _top_contest_cell,
 )
 
 
@@ -610,10 +615,12 @@ def test_build_executive_summary_skeleton_splits_peak_and_open_source() -> None:
     skeleton = build_executive_summary_skeleton(reports)
 
     assert "**Best model overall**: `codex_gpt_5_5`" in skeleton
-    assert "86.0/100 under `codex`" in skeleton
+    assert "86.0/100 mean under `codex`" in skeleton
     assert "single-harness anchor" in skeleton
     assert "**Best open-source model overall**: `deepseek_v4_pro`" in skeleton
     assert "74.0/100 cross-harness avg" in skeleton
+    assert "**Best harness by median**: `opencode`" in skeleton
+    assert "75.5/100 median (N=2)" in skeleton
     assert "same as best model overall" not in skeleton.lower()
 
 
@@ -625,6 +632,38 @@ def test_executive_summary_expectations_track_distinct_verdicts() -> None:
     assert expectations["top_model_total"] == 86.0
     assert expectations["best_ollama_slug"] == "deepseek_v4_pro"
     assert expectations["best_ollama_avg"] == 74.0
+
+
+def test_top_contest_cell_uses_mean_not_peak_single_run() -> None:
+    def row(
+        harness: str,
+        slug: str,
+        total: int,
+        *,
+        replicate_id: str | None = None,
+    ) -> ParsedReport:
+        return ParsedReport(
+            auditor="auditor_a",
+            target=f"{harness}-{slug}",
+            harness=harness,
+            model_slug=slug,
+            replicate_id=replicate_id,
+            total=total,
+        )
+
+    reports = [
+        row("codex", "codex_gpt_5_5", 99),
+        row("codex", "glm_5_2", 100, replicate_id="run_01"),
+        row("codex", "glm_5_2", 95, replicate_id="run_02"),
+        row("codex", "glm_5_2", 90, replicate_id="run_03"),
+    ]
+
+    top_cell = _top_contest_cell(reports)
+    assert top_cell is not None
+    assert top_cell.harness == "codex"
+    assert top_cell.model_slug == "codex_gpt_5_5"
+    assert top_cell.mean_total == 99.0
+    assert top_cell.sample_n == 1
 
 
 def test_calculate_executive_summary_expectations_returns_typed_result() -> None:
@@ -926,11 +965,85 @@ def test_build_precomputed_rollup_includes_aggregated_section6_and_matrix(
         '"estimated_cost_usd": 1.0}'
     )
     rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "Methodology skeleton" in rollup
     assert "Aggregated performance & cost" in rollup
     assert "Performance & cost (detail)" in rollup
     assert "Aggregated dimension score matrix" in rollup
     assert "Dimension score matrix (detail)" in rollup
     assert "Dimension-level signal (precomputed)" in rollup
+
+
+def test_calculate_quality_time_tradeoff_picks_tier_a_leader(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    fixtures = (
+        ("cursor-composer_2_5", "cursor", "composer_2_5", 94, 900.0),
+        ("claude-glm_5_2", "claude", "glm_5_2", 93, 1200.0),
+        ("codex-gemma4", "codex", "gemma4", 70, 600.0),
+    )
+    for target, harness, slug, total, seconds in fixtures:
+        path = input_dir / f"{target}/run_01"
+        path.mkdir(parents=True)
+        (path / "report.md").write_text(
+            f"C. **Total score / 100**\n\n**{total} / 100**"
+        )
+        (path / "generation-metrics.json").write_text(
+            f'{{"generation_time_seconds": {seconds}}}'
+        )
+
+    reports = _collect_reports(None, source_dirs=[input_dir])
+    tradeoff = calculate_quality_time_tradeoff(reports, source_dirs=[input_dir])
+    assert tradeoff is not None
+    assert tradeoff.overall_harness == "cursor"
+    assert tradeoff.overall_model_slug == "composer_2_5"
+    assert tradeoff.overall_quality_per_minute == pytest.approx(94 / 15.0, rel=0.01)
+    assert tradeoff.contest_harness == "claude"
+    assert tradeoff.contest_model_slug == "glm_5_2"
+    assert tradeoff.contest_quality_per_minute == pytest.approx(93 / 20.0, rel=0.01)
+
+    skeleton = build_executive_summary_skeleton(reports, source_dirs=[input_dir])
+    assert "**Best quality–time tradeoff**" in skeleton
+    assert "cursor-composer_2_5" in skeleton
+    assert "6.27" in skeleton or "6.3" in skeleton
+
+
+def test_build_methodology_skeleton_includes_cohort_counts(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    for harness, slug, total in (
+        ("claude", "glm_5_1", 82),
+        ("codex", "glm_5_1", 84),
+    ):
+        path = input_dir / f"{harness}-{slug}/run_01"
+        path.mkdir(parents=True)
+        (path / "report.md").write_text(
+            f"C. **Total score / 100**\n\n**{total} / 100**"
+        )
+        (path / "generation-metrics.json").write_text(
+            '{"generation_time_seconds": 600}'
+        )
+
+    reports = _collect_reports(None, source_dirs=[input_dir])
+    methodology = build_methodology_skeleton(reports, source_dirs=[input_dir])
+    assert "### Benchmark task" in methodology
+    assert "### Experimental design" in methodology
+    assert "**This run:** 2 scored audit reports" in methodology
+    assert "cross-harness grid covers 1 open-weight models" in methodology
+    assert "Quality–time tradeoff" in methodology
+
+
+def test_validate_run_02_meta_executive_summary_includes_quality_time() -> None:
+    meta = REPO_ROOT / "results" / "run_02" / "meta-analysis.md"
+    source = REPO_ROOT / "results" / "run_02" / "audit-reports" / "composer_2_5"
+    if not meta.is_file() or not source.is_dir():
+        return
+
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[source])
+    assert errors == []
+    text = meta.read_text(encoding="utf-8")
+    assert "## 0. Methodology" in text
+    assert "### Experimental design" in text
+    assert "**Best quality–time tradeoff**" in text
+    assert "cursor-composer_2_5" in text
+    assert "6.10" in text
 
 
 def _dimension_report(

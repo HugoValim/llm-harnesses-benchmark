@@ -92,7 +92,9 @@ def test_audit_prompt_v310_auditor_owned_d10_no_probe() -> None:
 def test_meta_prompt_v313_includes_precomputed_rollup() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: meta-v3.13")
+    assert prompt.startswith("Prompt-Version: meta-v3.16")
+    assert "Methodology skeleton" in prompt
+    assert "Best quality–time tradeoff" in prompt
     assert "Executive summary skeleton" in prompt
     assert "Best open-source model overall" in prompt
     assert "not a single paragraph" in prompt.lower() or "not** a single paragraph" in prompt
@@ -103,7 +105,7 @@ def test_meta_prompt_v313_includes_precomputed_rollup() -> None:
     assert "{precomputed_rollup}" in prompt
     assert "Harness CLI versions" in prompt
     assert "mixed-harness-version" in prompt
-    assert "audit-v3.9" in prompt
+    assert "audit-v3.10" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.3`" in prompt
     assert "`benchmark-followup-v3.3` when follow-up is present" in prompt
     assert "D9 sub-check" in prompt or "D9.1" in prompt
