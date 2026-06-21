@@ -1,0 +1,8 @@
+{
+  "run_id": "run_03",
+  "reason": "run_02 meta-analysis: gemma4 cells depressed by universal CF#6 tooling gaps and CF#12 disallowed alternatives; re-run to measure replicate variance vs model floor.",
+  "cells": [
+    {"harness": "codex", "model": "gemma4"},
+    {"harness": "opencode", "model": "gemma4"}
+  ]
+}
