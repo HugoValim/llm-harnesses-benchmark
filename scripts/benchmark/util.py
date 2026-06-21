@@ -435,15 +435,58 @@ def resolve_harness_cli_versions(
         if integration_bin:
             out["harness_cli_version"] = probe_cli_version([integration_bin])
             out["harness_cli_probe_argv"] = [integration_bin, "--version"]
-        return out
+        return enrich_cli_version_with_pin(out, harness)
 
     default_bin = _HARNESS_DEFAULT_CLI.get(harness, harness)
     probe_argv = [default_bin, "--version"]
+    return enrich_cli_version_with_pin(
+        {
+            "harness_cli_version": probe_cli_version([default_bin]),
+            "harness_cli_probe_argv": probe_argv,
+            "command_shim_version": None,
+            "command_shim_probe_argv": None,
+        },
+        harness,
+    )
+
+
+_DEFAULT_HARNESSES_CONFIG = (
+    Path(__file__).resolve().parents[2] / "config" / "harnesses.json"
+)
+
+
+def load_harness_cli_pin(
+    harness: str,
+    harnesses_config: Path | None = None,
+) -> str | None:
+    """Return configured CLI pin for a harness, if any."""
+    path = harnesses_config or _DEFAULT_HARNESSES_CONFIG
+    if not path.is_file():
+        return None
+    payload = load_json(path)
+    row = payload.get(harness)
+    if not isinstance(row, dict):
+        return None
+    pin = row.get("cli_version_pin")
+    return pin.strip() if isinstance(pin, str) and pin.strip() else None
+
+
+def enrich_cli_version_with_pin(
+    fields: dict[str, Any],
+    harness: str,
+    *,
+    harnesses_config: Path | None = None,
+) -> dict[str, Any]:
+    """Attach pin metadata when ``config/harnesses.json`` declares ``cli_version_pin``."""
+    pin = load_harness_cli_pin(harness, harnesses_config=harnesses_config)
+    probed = fields.get("harness_cli_version")
+    mismatch: bool | None = None
+    if pin:
+        mismatch = bool(not probed or pin not in str(probed))
     return {
-        "harness_cli_version": probe_cli_version([default_bin]),
-        "harness_cli_probe_argv": probe_argv,
-        "command_shim_version": None,
-        "command_shim_probe_argv": None,
+        **fields,
+        "harness_cli_version_pinned": pin,
+        "harness_cli_version_mismatch": mismatch,
     }
 
 

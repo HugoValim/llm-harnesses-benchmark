@@ -71,3 +71,23 @@ def test_resolve_harness_cli_versions_ollama_shim() -> None:
     assert fields["harness_cli_version"] == "v:codex"
     assert fields["command_shim_version"] == "v:ollama"
     assert fields["command_shim_probe_argv"] == ["ollama", "--version"]
+
+
+def test_resolve_harness_cli_versions_records_pin_mismatch() -> None:
+    with patch(
+        "benchmark.util.probe_cli_version",
+        return_value="codex-cli 0.135.0",
+    ):
+        fields = resolve_harness_cli_versions(harness="codex")
+    assert fields["harness_cli_version_pinned"] == "0.141.0"
+    assert fields["harness_cli_version_mismatch"] is True
+
+
+def test_resolve_harness_cli_versions_records_pin_match() -> None:
+    with patch(
+        "benchmark.util.probe_cli_version",
+        return_value="codex-cli 0.141.0",
+    ):
+        fields = resolve_harness_cli_versions(harness="codex")
+    assert fields["harness_cli_version_pinned"] == "0.141.0"
+    assert fields["harness_cli_version_mismatch"] is False

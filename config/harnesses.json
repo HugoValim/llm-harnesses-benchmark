@@ -1,6 +1,7 @@
 {
   "opencode": {
     "command": "opencode",
+    "cli_version_pin": "1.17.7",
     "args": [
       "run",
       "--agent",
@@ -17,6 +18,7 @@
   },
   "codex": {
     "command": "codex",
+    "cli_version_pin": "0.141.0",
     "notes": [
       "ChatGPT-linked Codex: plain `codex` on PATH. Authenticate with `codex login` (ChatGPT OAuth) or subscription-backed credentials.",
       "openai provider -> runner_type=ollama -> `ollama launch --yes codex` (non-interactive).",
@@ -26,6 +28,7 @@
   },
   "claude": {
     "command": "claude",
+    "cli_version_pin": "2.1.150",
     "notes": [
       "Uses Claude Code CLI in headless mode (-p with --output-format stream-json --dangerously-skip-permissions).",
       "anthropic provider -> runs claude directly. ollama_cloud provider -> command_prefix=[ollama, launch, --yes, claude].",
