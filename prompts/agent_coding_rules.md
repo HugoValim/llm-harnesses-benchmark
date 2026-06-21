@@ -1,4 +1,4 @@
-Prompt-Version: agent-coding-rules-v1.0
+Prompt-Version: agent-coding-rules-v1.1
 
 ## Operating mode (AI-driver directives)
 
@@ -38,6 +38,13 @@ Prompt-Version: agent-coding-rules-v1.0
 - Exception messages must include the offending value and expected shape.
 - Prefer immutable data and pure functions when practical.
 - Keep diffs minimal and atomic per concern.
+
+## Architecture (Django / Channels benchmark)
+
+- Split LLM integration into a service module; WebSocket consumers delegate streaming to that service — no inline `ChatOllama` construction in the consumer body.
+- Define a `typing.Protocol` (or ABC) for the streaming service boundary; inject or construct the implementation in one place.
+- When shipping Docker, use a settings split (`base` + `production`/`docker`) rather than one monolithic settings file with environment branches.
+- Keep consumers and views thin; extract helpers when a class/function exceeds ~20 lines of non-blank logic.
 
 ## Comments
 

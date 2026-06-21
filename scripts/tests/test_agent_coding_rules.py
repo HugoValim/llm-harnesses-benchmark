@@ -21,7 +21,7 @@ from benchmark.util import (  # noqa: E402
 class TestAgentCodingRules(unittest.TestCase):
     def test_load_agent_coding_rules_has_version_header(self) -> None:
         rules = load_agent_coding_rules()
-        self.assertTrue(rules.startswith("Prompt-Version: agent-coding-rules-v1.0"))
+        self.assertTrue(rules.startswith("Prompt-Version: agent-coding-rules-v1.1"))
         self.assertIn("Operating mode", rules)
         self.assertNotIn("caveman mode", rules.lower())
 

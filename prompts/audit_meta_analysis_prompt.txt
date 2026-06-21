@@ -262,11 +262,14 @@ Each bullet:
 
 ### 10. Recommendations
 
-3-6 concrete, actionable recommendations for the benchmark owner. Each one is tagged:
-- `[harness]` — change to a specific agent harness (e.g. opencode config, claude-code env)
-- `[prompt]` — change to `prompts/benchmark_prompt.txt` (the brief sent to the agent)
+4-8 concrete, actionable recommendations for the benchmark owner. Each one is tagged:
+- `[harness]` — change to a specific agent harness (e.g. opencode config, claude-code env, CLI version pin in `config/harnesses.json`)
+- `[prompt]` — change to `prompts/benchmark_prompt.txt` or `prompts/agent_coding_rules.md` (the brief sent to the agent)
 - `[rubric]` — change to `prompts/audit_prompt_template.txt` (auditor deduction triggers)
-- `[retry]` — re-run a specific (model, harness) cell with explained reason
+- `[retry]` — re-run a specific (model, harness) cell with explained reason; cite `config/retry_targets_*.json` when applicable
+- `[analysis]` — document a pattern for future runs without implying a harness bug (e.g. agent-output quality gaps)
+
+Cover calibration FAIL items from section 8 when present: saturated dimensions (D5/D9), D10 leniency, D8 blind spots, single-auditor limitation. Use corrected counts from section 7 — do not understate CF incidence.
 
 No vague advice ("be more thorough"). Each recommendation must say what to change and why, citing evidence from above sections.
 
@@ -290,7 +293,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.10` and whose underlying benchmark prompt metadata is `benchmark-v3.3` (and `benchmark-followup-v3.3` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.9` or benchmark `v3.2` are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.11` and whose underlying benchmark prompt metadata is `benchmark-v3.3` (and `benchmark-followup-v3.3` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.10` or benchmark `v3.2` are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:

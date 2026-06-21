@@ -1,6 +1,8 @@
-Prompt-Version: audit-v3.10
+Prompt-Version: audit-v3.11
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
+
+{audit_preflight_block}
 
 ## Source of truth for LLM / Channels / Django API claims
 
@@ -79,7 +81,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D10 | Code quality | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10. **v3.10 calibration tightenings** (run_02 meta-analysis): D9 sub-check pass bar requires verified `file:line` evidence (not Dockerfile/compose presence alone); D8 auto-fails on compose `${VAR:-placeholder}` secret defaults; D10 bare-`except` triggers from ≥1 handler; D8/D9 calibration cap lowers D10 ceiling to 7; CF#9 split cap blocks 9+/10 on integration-heavy suites.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10. **v3.10 calibration tightenings** (run_02 meta-analysis): D9 sub-check pass bar requires verified `file:line` evidence (not Dockerfile/compose presence alone); D8 auto-fails on compose `${VAR:-placeholder}` secret defaults; D10 bare-`except` triggers from ≥1 handler; D8/D9 calibration cap lowers D10 ceiling to 7; CF#9 split cap blocks 9+/10 on integration-heavy suites. **v3.11 tightenings** (run_02 meta-analysis review): D9 uses **2 points per passing sub-check** (partial credit); D9.1 requires reading the probed view/handler body and confirming no Ollama/LLM call on that path; D9 capped at **7** when D6 ≤3; harness preflight hits are mandatory CF evidence; D5 requires cited multi-turn accumulation evidence; D10 bare-`except` ≥1 costs **-2** and caps at **8** without explicit clean justification.
 
 ## Benchmark anchors (scoring calibration)
 
@@ -137,6 +139,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - In-memory per-consumer (per-tab) history is OK per brief — full marks if turns accumulate.
    - Class variable / module global (race-prone across consumers): -3.
    - No history (single-turn only): -4.
+   - **Saturation bar (v3.11):** D5=5/5 only when you cite `file:line` evidence that assistant/model turns are appended to per-session history (consumer or service code **and** at least one test asserting multi-turn context). In-memory list that only stores `HumanMessage` without assistant replies: -4.
 
 6. **Streaming & frontend wiring** (0-10)
    - Single template dump (no {% include %} / partials): -3.
@@ -165,19 +168,20 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -2.
    - Required secret/env vars read without startup validation (silent fallback to insecure default): -1.
    - Compose or env files used by the Docker path set secret-shaped vars via `${VAR:-placeholder}` default expansion (e.g. `${SECRET_KEY:-changeme}`, `${DJANGO_SECRET_KEY:-django-insecure-...}`): cap this dimension at **0** (classify as CF#1; cite `docker-compose.yml:line` or `.env.example:line` of the pattern).
+   - **Harness preflight (v3.11):** when the preflight table lists a hit for this project, you MUST classify the matching CF (#1 or #10) in section F unless disproved by reading the cited file. Do not override preflight hits without `file:line` counter-evidence.
 
 9. **Production hardening** (0-10)
-   - **D9.1** No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck probing web HTTP (U7): -3.
-   - **D9.2** No structured logging configured (print-only, no `LOGGING` in settings) (U5): -3.
-   - **D9.3** Compose service missing `restart` policy for the web/ASGI container: -2.
-   - **D9.4** Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: -2.
-   - **D9.5** No graceful shutdown handling for in-flight WebSocket streams on SIGTERM (`asyncio.CancelledError` in stream loop or equivalent): -2.
-   - Non-root container user alone does not earn full marks — apply the triggers above consistently.
-   - **Sub-check pass bar (v3.10):** Mark a sub-check `pass` only after reading/grepping the cited `file:line` and confirming the implementation (not merely that Dockerfile/compose/settings files exist). Presence of a `HEALTHCHECK` line alone is insufficient for D9.1 — verify the probe command/URL targets a **web liveness** route that returns 200 without calling Ollama.
-   - **Full marks gate:** D9 cannot exceed **7/10** unless all five sub-checks are audited `pass` with `file:line` evidence in section B.
-   - **Perfect score gate:** D9=10 only when all five sub-checks pass with verified evidence and D9.1 probe is confirmed non-Ollama-dependent.
+   - **D9.1** No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck probing web HTTP (U7): sub-check **fail** (−2 from dimension score).
+   - **D9.2** No structured logging configured (print-only, no `LOGGING` in settings) (U5): sub-check **fail** (−2).
+   - **D9.3** Compose service missing `restart` policy for the web/ASGI container: sub-check **fail** (−2).
+   - **D9.4** Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: sub-check **fail** (−2).
+   - **D9.5** No graceful shutdown handling for in-flight WebSocket streams on SIGTERM (`asyncio.CancelledError` in stream loop or equivalent): sub-check **fail** (−2).
+   - **Partial credit (v3.11):** Start at 0; award **+2 per passing sub-check** (max 10). A failed sub-check scores 0 for that slot — do not award partial points within a sub-check.
+   - **Sub-check pass bar (v3.11):** Mark a sub-check `pass` only after reading/grepping the cited `file:line` and confirming the implementation (not merely that Dockerfile/compose/settings files exist). Presence of a `HEALTHCHECK` line alone is insufficient for D9.1 — verify the probe command/URL targets a **web liveness** route that returns 200 without calling Ollama.
+   - **D9.1 view verification (v3.11):** For D9.1 `pass`, open the probed view/handler at the cited `file:line` and confirm the code path does **not** import or call Ollama/LLM clients, does not delegate to Ollama health helpers, and returns 200/JsonResponse without upstream model calls. Probing `/health/` that calls Ollama is **fail** for D9.1 even if documented elsewhere.
+   - **D6 cross-check (v3.11):** When D6 ≤3/10 (broken HTMX/ws path or missing built CSS), D9 cannot exceed **7/10** regardless of Docker checklist presence.
    - **Fail closed:** Any sub-check marked `pass` without `file:line` evidence counts as `fail` for scoring purposes.
-   - **Section B D9 row (mandatory format):** In the D9 justification, include an inline sub-checklist: `D9.1=pass|fail`, `D9.2=pass|fail`, `D9.3=pass|fail`, `D9.4=pass|fail`, `D9.5=pass|fail` each with `file:line` evidence before the aggregate score.
+   - **Section B D9 row (mandatory format):** In the D9 justification, include an inline sub-checklist: `D9.1=pass|fail`, `D9.2=pass|fail`, `D9.3=pass|fail`, `D9.4=pass|fail`, `D9.5=pass|fail` each with `file:line` evidence before the aggregate score. For D9.1 include a one-clause note that the probed view body has no Ollama/LLM calls.
 
 10. **Code quality** (0-10)
     **You assign D10** in section B row 10. Inspect application source under `{project_dir}` (read files, grep patterns). Exclude `tests/`, `test_*.py`, `*_test.py`, and `tests.py` from maintainability/complexity triggers unless the smell is systemic. Start at 10; apply deductions only with `file:line` evidence:
@@ -186,7 +190,8 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
     - **High complexity**: any production function that is clearly a god-method (deep nesting, many branches, or obviously unmaintainable control flow): **-2**. Cite `file:function` and why.
     - **Maintainability**: duplicated logic across modules, single files ≳500 lines without separation, or missing module boundaries: **-1** to **-2**. Cite the worst offender.
     - **Security smells** in application code (`eval`/`exec`, SQL string concat, `verify=False`, unsafe deserialization) not already counted as CF#1: **-2** per distinct class, max **-4**.
-    - **Bare handlers**: bare `except:` or bare `except Exception:` count **≥ 1** (grep `{project_dir}`): **-1**. Count **≥ 3**: additional **-1** (max **-2** from this trigger). Cite each handler at `file:line`.
+    - **Bare handlers**: bare `except:` or bare `except Exception:` count **≥ 1** (grep `{project_dir}`): **-2**. Count **≥ 3**: additional **-1** (max **-3** from this trigger). Cite each handler at `file:line`.
+    - **Bare-handler ceiling (v3.11):** when count ≥1 and section F has no CF#13, D10 cannot exceed **8/10** unless justification cites why each handler is narrowly scoped with `file:line`.
     - Floor at **0**.
     - **CF#13 cap**: if Section F lists CF#13, D10 is **capped at 0**.
     - **D8/D9 calibration cap**: if D8 scores **0** or D9 scores **≤7**, D10 cannot exceed **7** unless the justification explicitly explains why maintainability is independent of the security/production failure (cite both dimensions).
@@ -206,7 +211,7 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 7 | Hallucinated entry class / method that does not exist in the library source (verified by grep against `{project_dir}/.venv/lib/python3.*/site-packages/...`) | D2 LLM integration | grep result from library source proving absence |
 | 8 | Spec required env-driven input but submission hardcodes the value (e.g. OLLAMA_HOST / OLLAMA_MODEL only readable from Python source, never from env) | D2 LLM integration / D7 Architecture | `file:line` of the hardcoded value |
 | 9 | Tests pass against an anti-pattern (e.g. tests assert buffered output instead of streaming chunks, or mock a hallucinated API surface) — tests give a false-green | D3 Test quality | `test_*.py:line` showing the wrong assertion shape |
-| 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` defaults to `DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
+| 10 | `DEBUG = True` hardcoded for the production stack (Dockerfile/compose path), or `.env*` / `.env.example` defaults to `DEBUG=True` / `DJANGO_DEBUG=True` | D8 Secrets & config hygiene | `settings.py:line` or `.env*` showing the default |
 | 11 | `AsyncWebsocketConsumer` has no `disconnect` method OR the method body is a bare `pass` with no channel-layer leave / cleanup — the spec (U2) requires a real disconnect path. Count at most one CF#11 per generated project unless distinct consumer classes independently violate this. | D4 Error handling | `consumers.py:line` showing missing method or `pass`-only body |
 | 12 | The current benchmark pins a single implementation path, but the submission uses an explicitly disallowed alternative (e.g. direct `ollama` client instead of `langchain-ollama`, Tailwind CDN/PostCSS/django-tailwind instead of Tailwind CLI, vanilla JS instead of HTMX ws extension) | D1/D2/D6 depending on trigger | `file:line` showing the alternative path |
 | 13 | Catastrophic code quality visible from source: unmaintainable god modules, pervasive security anti-patterns, or egregious error-handling debt across most of the codebase (not an isolated nit). | D10 Code quality | multiple `file:line` citations showing scope |
@@ -247,7 +252,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.10`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.11`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/<run_id>/projects/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

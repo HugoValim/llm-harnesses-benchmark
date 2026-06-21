@@ -14,6 +14,7 @@ from benchmark.audit_coverage import (
     find_audit_coverage_gaps,
     format_coverage_gaps,
 )
+from benchmark.audit_preflight import format_audit_preflight_block
 from benchmark.audit_finalize import ensure_audit_report, mark_audit_result_incomplete
 from benchmark.config import display_slug_for
 from benchmark.harnesses import canonical_harness_name, get_harness
@@ -79,6 +80,10 @@ def build_audit_prompt(
     )
     prompt = prompt.replace(
         "{generation_metrics_block}", generation_metrics_block or "n/a"
+    )
+    prompt = prompt.replace(
+        "{audit_preflight_block}",
+        format_audit_preflight_block(project_dir),
     )
     pricing_path_value = pricing_doc_path if pricing_doc_path else pricing_path()
     return prompt.replace("{pricing_doc_path}", str(pricing_path_value.resolve()))

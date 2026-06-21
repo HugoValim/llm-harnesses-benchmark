@@ -85,9 +85,15 @@ Use Django's `startproject` and `startapp` generators to scaffold the project. C
 
 Use normal Django project structure. Avoid putting all logic into one template, one consumer, or one static file. Split the LLM client into a small service module that the WebSocket consumer calls. Use Django template partials/includes for repeated UI fragments. Keep production code free of test fakes.
 
+Architecture requirements (maps to audit D7):
+- Expose the LLM service through a dedicated module with a `typing.Protocol` (or ABC) interface; the consumer depends on the protocol, not ad-hoc functions.
+- When Docker/production settings exist, split settings into at least `base` + `production`/`docker` modules (or equivalent) instead of one monolithic `settings.py`.
+- Keep the WebSocket consumer under ~30 non-blank lines by delegating streaming to the service layer.
+
 Security and config requirements:
 - Django `SECRET_KEY` must come from `DJANGO_SECRET_KEY` or `SECRET_KEY` with no hardcoded fallback and no placeholder literal in source, Dockerfile, compose, or docs.
 - Docker/production `DEBUG` must default to `False`; local development may enable it only through an environment variable.
+- `.env.example` must **not** set `DEBUG=True` or `DJANGO_DEBUG=True`; use `False`, omit the variable, or document that debug is enabled only via a local untracked `.env`.
 - Docker/production `ALLOWED_HOSTS` must not be `["*"]`; read a narrowed list from env or default to localhost values.
 - Do not print secret values or copy secret file contents into the repo.
 - `.env.example` should document non-secret config only, unless a secret-shaped variable is left blank with no placeholder default.
