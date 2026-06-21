@@ -14,6 +14,7 @@ from benchmark.build_parity import (
     wrap_primary_prompt,
 )
 from benchmark.config import existing_acceptable_result
+from benchmark.phase_result import sum_phase_tokens
 from benchmark.rate_limit import RateLimitWaitPolicy, run_with_rate_limit_retry
 from benchmark.replicates import attach_replicate_fields
 from benchmark.run_status import payload_hit_usage_limit
@@ -343,6 +344,8 @@ class TargetRunLifecycle:
             **self.extra_payload_fields,
         }
         payload[self.elapsed_field] = total_elapsed
+        if phases:
+            payload["tokens"] = sum_phase_tokens(phases)
         return payload
 
     def _build_paths_payload(self) -> dict[str, str | None]:

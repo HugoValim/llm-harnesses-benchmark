@@ -132,11 +132,42 @@ def parse_event_stream(raw: str) -> list[dict[str, Any]]:
     return events
 
 
+def _sum_opencode_step_tokens(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Sum token counters across every opencode ``step_finish`` in one stream."""
+    total_input = 0
+    total_output = 0
+    total_reasoning = 0
+    cache_read = 0
+    cache_write = 0
+    saw_finish = False
+    for event in events:
+        if event.get("type") != "step_finish":
+            continue
+        saw_finish = True
+        tokens = (event.get("part") or {}).get("tokens") or {}
+        total_input += int(tokens.get("input") or 0)
+        total_output += int(tokens.get("output") or 0)
+        total_reasoning += int(tokens.get("reasoning") or 0)
+        cache = tokens.get("cache")
+        if isinstance(cache, dict):
+            cache_read += int(cache.get("read") or 0)
+            cache_write += int(cache.get("write") or 0)
+    if not saw_finish:
+        return {}
+    return {
+        "input": total_input,
+        "output": total_output,
+        "reasoning": total_reasoning,
+        "total": total_input + total_output,
+        "cache": {"read": cache_read, "write": cache_write},
+    }
+
+
 def extract_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
     finish = next(
         (event for event in reversed(events) if event.get("type") == "step_finish"), {}
     )
-    tokens = finish.get("part", {}).get("tokens", {}) if finish else {}
+    tokens = _sum_opencode_step_tokens(events)
     text_parts = []
     for event in events:
         if event.get("type") != "text":

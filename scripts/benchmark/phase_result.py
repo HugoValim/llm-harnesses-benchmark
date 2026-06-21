@@ -35,6 +35,37 @@ def derive_phase_status(
     )
 
 
+def sum_phase_tokens(phases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Sum token counters across benchmark phases for top-level ``result.json``."""
+    total_input = 0
+    total_output = 0
+    total_reasoning = 0
+    cache_read = 0
+    cache_write = 0
+    saw_tokens = False
+    for phase in phases:
+        tokens = phase.get("tokens")
+        if not isinstance(tokens, dict) or not tokens:
+            continue
+        saw_tokens = True
+        total_input += int(tokens.get("input") or 0)
+        total_output += int(tokens.get("output") or 0)
+        total_reasoning += int(tokens.get("reasoning") or 0)
+        cache = tokens.get("cache")
+        if isinstance(cache, dict):
+            cache_read += int(cache.get("read") or 0)
+            cache_write += int(cache.get("write") or 0)
+    if not saw_tokens:
+        return {}
+    return {
+        "input": total_input,
+        "output": total_output,
+        "reasoning": total_reasoning,
+        "total": total_input + total_output,
+        "cache": {"read": cache_read, "write": cache_write},
+    }
+
+
 def build_phase_payload(
     *,
     phase_name: str,
