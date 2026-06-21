@@ -109,7 +109,7 @@ Four harness backends run the same brief: **opencode**, **codex**, **claude**, *
 
 ### Role 1 audit (rubric scoring)
 
-**Prompt version:** `audit-v3.9` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
+**Prompt version:** `audit-v3.10` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
 
 An LLM **auditor** reads one generated `project/` and writes a structured report with
 sections A–I. The auditor verifies API claims against the project's own installed

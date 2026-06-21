@@ -1,4 +1,4 @@
-Prompt-Version: audit-v3.9
+Prompt-Version: audit-v3.10
 
 Audit the benchmark output for model {model_slug}. Project lives at {project_dir}
 
@@ -79,7 +79,7 @@ The per-dimension deduction triggers below cite the U-row they map to in parenth
 | D10 | Code quality | 10 |
 | **—** | **Total** | **100** |
 
-D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10.
+D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 merged D9 into D1 and raised D10 to 12. **v3.6 rebalances weights** to reduce free points on saturated dimensions (D2, D3, D5) and increase penalty on universal blind spots (D7, D8, D9). D9 is restored as a standalone dimension at max 10. **v3.10 calibration tightenings** (run_02 meta-analysis): D9 sub-check pass bar requires verified `file:line` evidence (not Dockerfile/compose presence alone); D8 auto-fails on compose `${VAR:-placeholder}` secret defaults; D10 bare-`except` triggers from ≥1 handler; D8/D9 calibration cap lowers D10 ceiling to 7; CF#9 split cap blocks 9+/10 on integration-heavy suites.
 
 ## Benchmark anchors (scoring calibration)
 
@@ -120,7 +120,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - Tests mock the hallucinated API: -3.
    - No consumer test (WebsocketCommunicator): -2.
    - No view/template test: -1.
-   - **Cap at 8/10** when CF#9 (false-green tests) is present in section F.
+   - **CF#9 cap (split, v3.10):** when CF#9 (false-green tests) is present in section F:
+     - Cap at **6/10** when the suite is integration-heavy (has both a consumer test — WebsocketCommunicator or equivalent — and an LLM-path mock/monkeypatch test). False-green on wired integration suites is a severe calibration failure.
+     - Cap at **8/10** when CF#9 is present but the suite lacks that integration-heavy shape (e.g. view-only false-green).
+   - D3 cannot score **9+/10** when CF#9 is present — the caps above are hard ceilings.
 
 4. **Error handling** (0-10)
    - No try/except around LLM calls (one upstream blip = 500): -4.
@@ -161,6 +164,7 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - `DEBUG=True` hardcoded as the default for the production/Docker path, or compose hardcodes debug on: -2.
    - `ALLOWED_HOSTS = ['*']` (or equivalent) for the container/production settings path with no narrowing: -2.
    - Required secret/env vars read without startup validation (silent fallback to insecure default): -1.
+   - Compose or env files used by the Docker path set secret-shaped vars via `${VAR:-placeholder}` default expansion (e.g. `${SECRET_KEY:-changeme}`, `${DJANGO_SECRET_KEY:-django-insecure-...}`): cap this dimension at **0** (classify as CF#1; cite `docker-compose.yml:line` or `.env.example:line` of the pattern).
 
 9. **Production hardening** (0-10)
    - **D9.1** No `HEALTHCHECK` in Dockerfile and no compose-level healthcheck probing web HTTP (U7): -3.
@@ -169,6 +173,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
    - **D9.4** Production Dockerfile runs as root (no `USER` directive) when a non-root path is feasible: -2.
    - **D9.5** No graceful shutdown handling for in-flight WebSocket streams on SIGTERM (`asyncio.CancelledError` in stream loop or equivalent): -2.
    - Non-root container user alone does not earn full marks — apply the triggers above consistently.
+   - **Sub-check pass bar (v3.10):** Mark a sub-check `pass` only after reading/grepping the cited `file:line` and confirming the implementation (not merely that Dockerfile/compose/settings files exist). Presence of a `HEALTHCHECK` line alone is insufficient for D9.1 — verify the probe command/URL targets a **web liveness** route that returns 200 without calling Ollama.
+   - **Full marks gate:** D9 cannot exceed **7/10** unless all five sub-checks are audited `pass` with `file:line` evidence in section B.
+   - **Perfect score gate:** D9=10 only when all five sub-checks pass with verified evidence and D9.1 probe is confirmed non-Ollama-dependent.
+   - **Fail closed:** Any sub-check marked `pass` without `file:line` evidence counts as `fail` for scoring purposes.
    - **Section B D9 row (mandatory format):** In the D9 justification, include an inline sub-checklist: `D9.1=pass|fail`, `D9.2=pass|fail`, `D9.3=pass|fail`, `D9.4=pass|fail`, `D9.5=pass|fail` each with `file:line` evidence before the aggregate score.
 
 10. **Code quality** (0-10)
@@ -178,10 +186,10 @@ D1 was capped at 25 in audit-v3.1; v3.2 reallocated 10 points into D10. v3.5 mer
     - **High complexity**: any production function that is clearly a god-method (deep nesting, many branches, or obviously unmaintainable control flow): **-2**. Cite `file:function` and why.
     - **Maintainability**: duplicated logic across modules, single files ≳500 lines without separation, or missing module boundaries: **-1** to **-2**. Cite the worst offender.
     - **Security smells** in application code (`eval`/`exec`, SQL string concat, `verify=False`, unsafe deserialization) not already counted as CF#1: **-2** per distinct class, max **-4**.
-    - **Bare handlers**: bare `except:` or bare `except Exception:` count **> 2** (grep `{project_dir}`): **-1**. Cite the 3rd+ `file:line`.
+    - **Bare handlers**: bare `except:` or bare `except Exception:` count **≥ 1** (grep `{project_dir}`): **-1**. Count **≥ 3**: additional **-1** (max **-2** from this trigger). Cite each handler at `file:line`.
     - Floor at **0**.
     - **CF#13 cap**: if Section F lists CF#13, D10 is **capped at 0**.
-    - **D8/D9 calibration cap**: if D8 scores **0** or D9 scores **≤2**, D10 cannot exceed **8** unless the justification explicitly explains why maintainability is independent of the security/production failure (cite both dimensions).
+    - **D8/D9 calibration cap**: if D8 scores **0** or D9 scores **≤7**, D10 cannot exceed **7** unless the justification explicitly explains why maintainability is independent of the security/production failure (cite both dimensions).
 
 ## Auto-critical-failure classification
 
@@ -189,7 +197,7 @@ The items below are **always critical failures**, regardless of how this rubric'
 
 | # | Trigger | Primary dimension | Evidence to cite |
 |---|---------|-------------------|------------------|
-| 1 | Any hardcoded secret in source / Dockerfile / compose / README / `.env` (including "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`). Django `SECRET_KEY` literals count. | D8 Secrets & config hygiene | `file:line` of the literal |
+| 1 | Any hardcoded secret in source / Dockerfile / compose / README / `.env` (including "fallback" or "dev placeholder" values for secret-shaped variables — `*_SECRET`, `*_KEY`, `*_TOKEN`, `*PASSWORD*`, and compose `${VAR:-placeholder}` default expansion for those vars). Django `SECRET_KEY` literals count. | D8 Secrets & config hygiene | `file:line` of the literal or `${VAR:-...}` pattern |
 | 2 | A spec hard-requirement deliverable is entirely absent OR loaded-but-unused (e.g. spec requires HTMX with WebSocket extension and the submission either omits it or imports it without wiring it to the streaming consumer) | D6 Streaming & frontend / D1 Deliverable completeness | `file:line` showing absence or unused import |
 | 3 | A spec functional behavior is broken by an anti-pattern (e.g. spec requires real-time token streaming and the consumer buffers via `list(.astream(...))`, `[chunk async for chunk in ...]` collected before send, or `await asyncio.to_thread(lambda: list(...))`) | D2 LLM integration | `file:line` of the buffering pattern |
 | 4 | Missing framework-default security middleware that the spec's stack assumes (CSRF, security middleware, `SecurityMiddleware`) | D4 Error handling | `file:line` of `MIDDLEWARE` list, with the missing entry called out |
@@ -204,7 +212,7 @@ The items below are **always critical failures**, regardless of how this rubric'
 | 13 | Catastrophic code quality visible from source: unmaintainable god modules, pervasive security anti-patterns, or egregious error-handling debt across most of the codebase (not an isolated nit). | D10 Code quality | multiple `file:line` citations showing scope |
 
 Operating rules:
-- D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion).
+- D3 Test quality cannot score full marks if a critical failure of type #9 is present, OR if no test exercises real-time token-by-token streaming end-to-end (chunk-by-chunk assertion). When CF#9 is present, apply the §3 split caps (6/10 integration-heavy, 8/10 otherwise); D3 cannot exceed 8/10 with CF#9 and cannot exceed 6/10 when the integration-heavy shape applies.
 - Each critical failure MUST appear in section F (Critical Failures) AND section G (Critical-failure ledger), with the ledger mapping it to a specific rubric deduction trigger above. If no trigger applies, deduct **-5** from the closest dimension and document why.
 - **Tier cap:** when section F lists **≥3 distinct CF types** (by CF number), section D tier cannot exceed **B (61-80)** even if the numeric total would land in A.
 - **Sum check (mandatory):** Before finalising section B, section B must contain exactly **ten** rows, D1–D10 in order, and the denominators in the Score/Max column must sum to exactly 100 (D1=15, D2=10, D3=10, D4=10, D5=5, D6=10, D7=15, D8=5, D9=10, D10=10). If not, correct the table before writing the report. Reports with a non-100 denominator sum or fewer than 10 dimension rows are automatically excluded from cross-run comparison.
@@ -239,7 +247,7 @@ H. **Submission metadata & generation metrics** — one block, `n/a` for any una
    - Estimated-Cost-USD — **copy exactly** from the precomputed block below; do **not** recompute or round differently
    - Pricing-Source — copy from precomputed block (default `{pricing_doc_path}` @ Last-Updated from that file)
    - Date (YYYY-MM-DD of audit)
-   - Prompt-Version (MUST equal `audit-v3.9`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
+   - Prompt-Version (MUST equal `audit-v3.10`; primary benchmark prompt must be `benchmark-v3.3`; follow-up prompt must be `benchmark-followup-v3.3` when present — mismatched submissions are flagged and excluded from comparison until re-run)
    - Source (path under `results/<run_id>/projects/`, git hash, or chat link)
    - Primary-Prompt-SHA256 (from precomputed block or `result.json`; `n/a` if unavailable)
    - Followup-Prompt-SHA256 (from precomputed block or `followup-prompt.txt` hash; `n/a` if unavailable)

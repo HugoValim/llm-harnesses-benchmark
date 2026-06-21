@@ -80,7 +80,7 @@ Each campaign has `data/campaigns/<id>/manifest.json`:
   "prompt_versions": {
     "benchmark": "benchmark-v3.3",
     "benchmark_followup": "benchmark-followup-v3.3",
-    "audit": "audit-v3.9",
+    "audit": "audit-v3.10",
     "meta": "meta-v3.11"
   },
   "auditor_slug": "codex_gpt_5_5",

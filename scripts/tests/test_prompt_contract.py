@@ -52,15 +52,22 @@ def test_agent_coding_rules_v10_has_core_sections() -> None:
     assert "caveman mode" not in rules.lower()
 
 
-def test_audit_prompt_v39_auditor_owned_d10_no_probe() -> None:
+def test_audit_prompt_v310_auditor_owned_d10_no_probe() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.9")
-    assert "MUST equal `audit-v3.9`" in prompt
+    assert prompt.startswith("Prompt-Version: audit-v3.10")
+    assert "MUST equal `audit-v3.10`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.3`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.3`" in prompt
     assert "D9.1=pass|fail" in prompt
+    assert "Sub-check pass bar (v3.10)" in prompt
+    assert "Full marks gate" in prompt
+    assert "${VAR:-placeholder}" in prompt
+    assert "CF#9 cap (split, v3.10)" in prompt
+    assert "integration-heavy" in prompt
     assert "D8/D9 calibration cap" in prompt
+    assert "cannot exceed **7**" in prompt
+    assert "count **≥ 1**" in prompt
     assert "Healthcheck distinction" in prompt
     assert "Count at most one CF#11 per generated project" in prompt
     assert "{static_analysis_path}" not in prompt
