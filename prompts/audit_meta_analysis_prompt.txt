@@ -242,7 +242,7 @@ Run all five checks and record the verdict per check, then an overall verdict:
 - **Check 5 — D10 floor (code quality)**: median D10 across all valid runs.
   - **PASS** if 3 ≤ median D10 < 8 (cohort shows meaningful toolchain spread).
   - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant D10 justification patterns from section B.
-  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.13 D10 triggers and enforcing the D8/D9/D8+bare-except calibration caps on D10.
+  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.14 D10 triggers and enforcing the D8/D9/D8+bare-except calibration caps on D10.
   - **FAIL** if median D10 < 3 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
   - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4/v3.5); list affected runs in the appendix and do NOT let Check 5 influence the overall verdict.
 
@@ -293,7 +293,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.13` and whose underlying benchmark prompt metadata is `benchmark-v3.5` (and `benchmark-followup-v3.5` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.12` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.14` and whose underlying benchmark prompt metadata is `benchmark-v3.5` (and `benchmark-followup-v3.5` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.13` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
 - **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:

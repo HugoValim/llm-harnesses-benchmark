@@ -6,12 +6,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# Compose `${SECRET_KEY:-placeholder}` / `${DJANGO_SECRET_KEY:-...}` patterns (CF#1).
+# Compose `${SECRET_KEY:-placeholder}` / `${DJANGO_SECRET_KEY:-...}` patterns (CF#1-R).
 _COMPOSE_SECRET_DEFAULT = re.compile(
     r"\$\{(?:DJANGO_)?SECRET_KEY\s*:-[^}]+\}",
     re.IGNORECASE,
 )
-# Any secret-shaped compose default expansion (CF#1 table row).
+# Any secret-shaped compose default expansion (CF#1-R table row).
 _COMPOSE_SECRET_SHAPED_DEFAULT = re.compile(
     r"\$\{(?:[A-Z0-9_]*(?:SECRET|KEY|TOKEN|PASSWORD)[A-Z0-9_]*)\s*:-[^}]+\}",
     re.IGNORECASE,
@@ -33,6 +33,8 @@ _SCAN_FILENAMES = frozenset(
         "compose.yaml",
         "Dockerfile",
         "README.md",
+        "VERIFY.md",
+        "conftest.py",
         ".env",
         ".env.example",
         ".env.local",
@@ -52,6 +54,24 @@ _SKIP_DIRS = frozenset(
         "htmlcov",
     }
 )
+
+_DOC_TIER_FILENAMES = frozenset(
+    {
+        "README.md",
+        "VERIFY.md",
+        "conftest.py",
+        ".env.example",
+        ".env.sample",
+    }
+)
+
+
+def _is_doc_tier_path(rel: str, path: Path) -> bool:
+    if path.name in _DOC_TIER_FILENAMES:
+        return True
+    if rel.endswith("/conftest.py"):
+        return True
+    return path.name.startswith(".env") and path.name.endswith(".example")
 
 
 @dataclass(frozen=True)
@@ -97,18 +117,22 @@ def _scan_file(path: Path, project_dir: Path) -> list[PreflightHit]:
     for line_no, line in enumerate(text.splitlines(), start=1):
         if _COMPOSE_SECRET_DEFAULT.search(line):
             hits.append(
-                PreflightHit(rel, line_no, "CF#1-compose-secret-default", _line_excerpt(line))
+                PreflightHit(
+                    rel, line_no, "CF#1-R-compose-secret-default", _line_excerpt(line)
+                )
             )
         elif _COMPOSE_SECRET_SHAPED_DEFAULT.search(line):
             hits.append(
                 PreflightHit(
-                    rel, line_no, "CF#1-compose-shaped-default", _line_excerpt(line)
+                    rel,
+                    line_no,
+                    "CF#1-R-compose-shaped-default",
+                    _line_excerpt(line),
                 )
             )
         if _DJANGO_INSECURE_LITERAL.search(line):
-            hits.append(
-                PreflightHit(rel, line_no, "CF#1-django-insecure", _line_excerpt(line))
-            )
+            tier = "CF#1-D-django-insecure" if _is_doc_tier_path(rel, path) else "CF#1-R-django-insecure"
+            hits.append(PreflightHit(rel, line_no, tier, _line_excerpt(line)))
         if rel.startswith(".env") or path.name in {".env.example", ".env.sample"}:
             if _ENV_DEBUG_TRUE.search(line):
                 hits.append(
@@ -119,10 +143,13 @@ def _scan_file(path: Path, project_dir: Path) -> list[PreflightHit]:
             value = match.group(1).strip("'\"")
             if value and not value.startswith("${") and value not in {"''", '""'}:
                 if "environ" not in line and "os.getenv" not in line:
+                    tier = (
+                        "CF#1-D-secret-literal"
+                        if _is_doc_tier_path(rel, path)
+                        else "CF#1-R-secret-literal"
+                    )
                     hits.append(
-                        PreflightHit(
-                            rel, line_no, "CF#1-secret-literal", _line_excerpt(line)
-                        )
+                        PreflightHit(rel, line_no, tier, _line_excerpt(line))
                     )
     return hits
 
@@ -168,8 +195,9 @@ def format_audit_preflight_block(project_dir: Path) -> str:
         )
         return "\n".join(lines)
     lines.append(
-        "When a row below matches, classify the cited CF type in section F unless "
-        "disproved by reading the full file at that line."
+        "When a row below matches, classify **CF#1-R** (runtime) or **CF#1-D** "
+        "(documentation) per the pattern column unless disproved by reading the "
+        "full file at that line."
     )
     lines.append("")
     lines.append("| file:line | pattern | excerpt |")

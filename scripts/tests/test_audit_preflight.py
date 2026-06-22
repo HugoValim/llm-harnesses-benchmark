@@ -22,7 +22,7 @@ def test_scan_finds_compose_secret_default(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     hits = scan_project_config_hygiene(project)
-    assert any(hit.pattern_id == "CF#1-compose-secret-default" for hit in hits)
+    assert any(hit.pattern_id == "CF#1-R-compose-secret-default" for hit in hits)
 
 
 def test_scan_finds_env_example_debug_true(tmp_path: Path) -> None:
@@ -51,3 +51,25 @@ def test_format_preflight_block_empty_project(tmp_path: Path) -> None:
     project.mkdir()
     block = format_audit_preflight_block(project)
     assert "No D8 secret/config pattern hits" in block
+
+
+def test_scan_finds_readme_doc_tier_secret_literal(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "README.md").write_text(
+        "Run tests with DJANGO_SECRET_KEY=test-secret-key-for-testing pytest\n",
+        encoding="utf-8",
+    )
+    hits = scan_project_config_hygiene(project)
+    assert any(hit.pattern_id == "CF#1-D-secret-literal" for hit in hits)
+
+
+def test_scan_finds_settings_runtime_tier_secret_literal(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "settings.py").write_text(
+        'SECRET_KEY = "django-insecure-hardcoded"\n',
+        encoding="utf-8",
+    )
+    hits = scan_project_config_hygiene(project)
+    assert any(hit.pattern_id == "CF#1-R-secret-literal" for hit in hits)

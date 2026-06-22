@@ -67,26 +67,30 @@ def test_agent_coding_rules_v11_has_core_sections() -> None:
     assert "caveman mode" not in rules.lower()
 
 
-def test_audit_prompt_v313_auditor_owned_d10_no_probe() -> None:
+def test_audit_prompt_v314_cf1_tiers_and_d9_tightening() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.13")
+    assert prompt.startswith("Prompt-Version: audit-v3.14")
     assert "{audit_preflight_block}" in prompt
-    assert "MUST equal `audit-v3.13`" in prompt
+    assert "MUST equal `audit-v3.14`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.5`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.5`" in prompt
     assert "D9.1=pass|fail" in prompt
     assert "Partial credit (v3.11)" in prompt
     assert "D9.1 view verification (v3.11)" in prompt
-    assert "D9.2 structured logging (v3.12/v3.13)" in prompt
+    assert "D9.2 structured logging (v3.14)" in prompt
+    assert "CF#1-R (runtime tier)" in prompt
+    assert "CF#1-D (documentation tier)" in prompt
     assert "D8+bare-except calibration cap (v3.13, automatic)" in prompt
     assert 'dictConfig `"()"`' in prompt
+    assert '"class"' in prompt
     assert "D9.3 restart policy (v3.12)" in prompt
-    assert "D9.5 SIGTERM handling (v3.12)" in prompt
+    assert "D9.5 SIGTERM handling (v3.14)" in prompt
+    assert "async for" in prompt
     assert "Independent evidence (v3.12)" in prompt
     assert "D6 cross-check (v3.11)" in prompt
     assert "${VAR:-placeholder}" in prompt
-    assert "Harness preflight (v3.11)" in prompt
+    assert "Harness preflight (v3.14)" in prompt
     assert "CF#9 cap (split, v3.10)" in prompt
     assert "integration-heavy" in prompt
     assert "D8 calibration cap (v3.12, automatic)" in prompt
@@ -142,7 +146,7 @@ def test_meta_prompt_v313_includes_precomputed_rollup() -> None:
     assert "{precomputed_rollup}" in prompt
     assert "Harness CLI versions" in prompt
     assert "mixed-harness-version" in prompt
-    assert "audit-v3.13" in prompt
+    assert "audit-v3.14" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.5`" in prompt
     assert "`benchmark-followup-v3.5` when follow-up is present" in prompt
     assert "D9 sub-check" in prompt or "D9.1" in prompt
