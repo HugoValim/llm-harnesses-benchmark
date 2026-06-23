@@ -8,11 +8,14 @@ meta-analyst — not the final analysis.
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
+from math import comb
 from pathlib import Path
 from statistics import mean, median, stdev
 
 from benchmark.audit_report import (
+    DEFAULT_DIMENSION_LABELS,
     NUM_DIMENSIONS,
     TIERS,
     ParsedReport,
@@ -41,6 +44,10 @@ _BLIND_SPOT_MAX_AVG_RATIO = 0.70
 _BLIND_SPOT_MAX_HARNESS_SPREAD = 1.0
 _HARNESS_ATTRIBUTABLE_MIN_SPREAD = 2.0
 _CLEAN_NEAR_MAX_RATIO = 0.75
+_HARNESS_VERDICT_MARGIN_PTS = 1.0
+_BOOTSTRAP_ITERATIONS = 2000
+_BOOTSTRAP_SEED = 42
+_QUALITY_PER_DOLLAR_MIN_COST_USD = 0.10
 
 
 @dataclass(frozen=True)
@@ -113,10 +120,25 @@ class HarnessRankingRow:
 
 @dataclass(frozen=True)
 class TopModelExpectation:
-    harness: str
-    model_slug: str
     total: float
-    note: str
+    leaders: tuple[tuple[str, str, int, float | None, str], ...]
+    """``(harness, model_slug, sample_n, std_dev, note)`` per tied rank-1 cell."""
+
+    @property
+    def is_tie(self) -> bool:
+        return len(self.leaders) > 1
+
+    @property
+    def harness(self) -> str:
+        return self.leaders[0][0]
+
+    @property
+    def model_slug(self) -> str:
+        return self.leaders[0][1]
+
+    @property
+    def note(self) -> str:
+        return self.leaders[0][4]
 
 
 @dataclass(frozen=True)
@@ -206,6 +228,51 @@ class OllamaModelRankingRow:
     std_dev: float | None
     tier: str
     harness_averages: tuple[HarnessAverage, ...]
+
+
+@dataclass(frozen=True)
+class CellMeanRow:
+    model_slug: str
+    harness: str
+    mean_total: float
+    sample_n: int
+    std_dev: float | None
+
+
+@dataclass(frozen=True)
+class PairwiseHarnessComparison:
+    harness_a: str
+    harness_b: str
+    mean_delta: float
+    ci_low: float
+    ci_high: float
+    p_value: float
+    n_models: int
+    positive_deltas: int
+
+
+@dataclass(frozen=True)
+class HarnessInferenceResult:
+    label: str
+    n_models: int
+    harness_means: tuple[tuple[str, float, float, float], ...]
+    leader: str | None
+    runner_up: str | None
+    gap: float | None
+    verdict: str
+    top_pairwise: PairwiseHarnessComparison | None
+    win_counts: tuple[tuple[str, int], ...]
+    largest_spread_dimension: tuple[int, str] | None
+
+
+@dataclass(frozen=True)
+class PractitionerDecisionRow:
+    goal: str
+    target: str
+    mean_total: float
+    gen_minutes: float | None
+    cost_usd: float | None
+    caveat: str
 
 
 def _display_slug(slug: str, display_slug_map: dict[str, str] | None) -> str:
@@ -500,6 +567,791 @@ def _contest_cell_avg_total(
         return avg
     legacy_slug = f"{base_slug}_{harness}"
     return _cell_avg_total(reports, harness, legacy_slug)
+
+
+def calculate_cell_means(reports: list[ParsedReport]) -> tuple[CellMeanRow, ...]:
+    """Mean audit total per ``(harness, model_slug)`` cell on the cross-harness grid."""
+    cohort = _cross_harness_cohort_slugs(reports)
+    contest_harnesses = [
+        h for h in _CONTEST_HARNESS_COLUMN_ORDER if h in _contest_harnesses_in_data(reports)
+    ]
+    rows: list[CellMeanRow] = []
+    for base in sorted(cohort):
+        for harness in contest_harnesses:
+            cell_avg = _contest_cell_avg_total(reports, harness, base)
+            if cell_avg is None:
+                continue
+            subset = [
+                r
+                for r in reports
+                if r.harness == harness
+                and cohort_slug(r.model_slug) == base
+                and r.total is not None
+            ]
+            totals = [float(r.total) for r in subset]
+            rows.append(
+                CellMeanRow(
+                    model_slug=base,
+                    harness=harness,
+                    mean_total=cell_avg,
+                    sample_n=len(totals),
+                    std_dev=stdev(totals) if len(totals) >= 2 else None,
+                )
+            )
+    return tuple(rows)
+
+
+def _cell_mean_matrix(
+    cell_means: tuple[CellMeanRow, ...],
+) -> dict[str, dict[str, float]]:
+    matrix: dict[str, dict[str, float]] = {}
+    for row in cell_means:
+        matrix.setdefault(row.model_slug, {})[row.harness] = row.mean_total
+    return matrix
+
+
+def bootstrap_ci(
+    values: list[float],
+    *,
+    n_iter: int = _BOOTSTRAP_ITERATIONS,
+    seed: int = _BOOTSTRAP_SEED,
+) -> tuple[float, float, float]:
+    """Return ``(mean, ci_low, ci_high)`` at 95% for the sample mean."""
+    if not values:
+        return 0.0, 0.0, 0.0
+    if len(values) == 1:
+        return values[0], values[0], values[0]
+    rng = random.Random(seed)
+    n = len(values)
+    boot_means = sorted(
+        sum(rng.choice(values) for _ in range(n)) / n for _ in range(n_iter)
+    )
+    mean_val = mean(values)
+    lo = boot_means[int(0.025 * n_iter)]
+    hi = boot_means[int(0.975 * n_iter)]
+    return mean_val, lo, hi
+
+
+def paired_sign_test(deltas: list[float]) -> float | None:
+    """Two-sided exact sign test p-value for paired deltas (zeros excluded)."""
+    non_zero = [delta for delta in deltas if delta != 0.0]
+    n = len(non_zero)
+    if n == 0:
+        return 1.0
+    positives = sum(1 for delta in non_zero if delta > 0.0)
+    tail_low = sum(comb(n, i) * (0.5**n) for i in range(positives + 1))
+    tail_high = sum(comb(n, i) * (0.5**n) for i in range(positives, n + 1))
+    return min(1.0, 2 * min(tail_low, tail_high))
+
+
+def _compute_harness_verdict(
+    gap: float | None,
+    pairwise: PairwiseHarnessComparison | None,
+    *,
+    margin_pts: float = _HARNESS_VERDICT_MARGIN_PTS,
+) -> str:
+    if gap is None or gap <= 0:
+        return "tie"
+    if gap < margin_pts:
+        if pairwise is not None and pairwise.ci_low <= 0.0 <= pairwise.ci_high:
+            return "tie"
+        return "marginal"
+    if pairwise is not None:
+        if pairwise.ci_low <= 0.0 <= pairwise.ci_high:
+            return "marginal"
+        if pairwise.p_value > 0.05:
+            return "marginal"
+    return "decisive"
+
+
+def calculate_harness_inference(
+    reports: list[ParsedReport],
+    *,
+    label: str = "primary",
+    margin_pts: float = _HARNESS_VERDICT_MARGIN_PTS,
+) -> HarnessInferenceResult | None:
+    """Paired harness inference on cross-harness cell means (one row per model)."""
+    cell_means = calculate_cell_means(reports)
+    if not cell_means:
+        return None
+
+    matrix = _cell_mean_matrix(cell_means)
+    n_models = len(matrix)
+    harnesses = [
+        h for h in _CONTEST_HARNESS_COLUMN_ORDER if h in _contest_harnesses_in_data(reports)
+    ]
+    if n_models < 2 or len(harnesses) < 2:
+        return HarnessInferenceResult(
+            label=label,
+            n_models=n_models,
+            harness_means=(),
+            leader=None,
+            runner_up=None,
+            gap=None,
+            verdict="insufficient-data",
+            top_pairwise=None,
+            win_counts=(),
+            largest_spread_dimension=_largest_harness_dimension_spread(reports),
+        )
+
+    harness_means: list[tuple[str, float, float, float]] = []
+    for harness in harnesses:
+        vals = [matrix[model][harness] for model in matrix if harness in matrix[model]]
+        if not vals:
+            continue
+        avg, lo, hi = bootstrap_ci(vals)
+        harness_means.append((harness, avg, lo, hi))
+    harness_means.sort(key=lambda item: item[1], reverse=True)
+
+    leader = harness_means[0][0] if harness_means else None
+    runner_up = harness_means[1][0] if len(harness_means) >= 2 else None
+    gap = (
+        harness_means[0][1] - harness_means[1][1]
+        if len(harness_means) >= 2
+        else None
+    )
+
+    top_pairwise: PairwiseHarnessComparison | None = None
+    if leader and runner_up:
+        deltas = [
+            matrix[model][leader] - matrix[model][runner_up]
+            for model in matrix
+            if leader in matrix[model] and runner_up in matrix[model]
+        ]
+        mean_delta, ci_low, ci_high = bootstrap_ci(deltas)
+        p_value = paired_sign_test(deltas) or 1.0
+        top_pairwise = PairwiseHarnessComparison(
+            harness_a=leader,
+            harness_b=runner_up,
+            mean_delta=mean_delta,
+            ci_low=ci_low,
+            ci_high=ci_high,
+            p_value=p_value,
+            n_models=len(deltas),
+            positive_deltas=sum(1 for delta in deltas if delta > 0.0),
+        )
+
+    win_counts: dict[str, int] = {harness: 0 for harness in harnesses}
+    for model_scores in matrix.values():
+        if not model_scores:
+            continue
+        best_harness = max(model_scores.items(), key=lambda item: item[1])[0]
+        win_counts[best_harness] = win_counts.get(best_harness, 0) + 1
+
+    verdict = _compute_harness_verdict(gap, top_pairwise, margin_pts=margin_pts)
+    return HarnessInferenceResult(
+        label=label,
+        n_models=n_models,
+        harness_means=tuple(harness_means),
+        leader=leader,
+        runner_up=runner_up,
+        gap=gap,
+        verdict=verdict,
+        top_pairwise=top_pairwise,
+        win_counts=tuple(sorted(win_counts.items())),
+        largest_spread_dimension=_largest_harness_dimension_spread(reports),
+    )
+
+
+def filter_version_homogeneous_reports(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> list[ParsedReport]:
+    """Keep reports whose harness CLI version matches the mode version per harness."""
+    coverage = collect_harness_cli_versions(reports, source_dirs=source_dirs)
+    mode_version: dict[str, str] = {}
+    for harness, version_map in coverage.items():
+        if not _is_benchmark_harness(harness) or not version_map:
+            continue
+        mode_version[harness] = max(version_map, key=lambda version: len(version_map[version]))
+
+    if not mode_version:
+        return list(reports)
+
+    kept: list[ParsedReport] = []
+    for report in reports:
+        if report.harness not in mode_version:
+            kept.append(report)
+            continue
+        label = _load_cli_version_for_report(report, source_dirs=source_dirs)
+        if label == mode_version[report.harness]:
+            kept.append(report)
+    return kept
+
+
+def _largest_harness_dimension_spread(
+    reports: list[ParsedReport],
+) -> tuple[int, str] | None:
+    """Dimension index + label with largest per-harness avg spread in contest cohort."""
+    dim_labels = _dimension_labels(reports)
+    contest = _benchmark_reports(reports)
+    harnesses = _contest_harnesses_in_data(reports)
+    if not contest or not harnesses:
+        return None
+
+    best_index = 0
+    best_spread = -1.0
+    for index in range(1, NUM_DIMENSIONS + 1):
+        harness_avgs: list[float] = []
+        for harness in harnesses:
+            subset = [
+                float(r.dim_score(index))
+                for r in contest
+                if r.harness == harness and r.dim_score(index) is not None
+            ]
+            avg = _avg(subset)
+            if avg is not None:
+                harness_avgs.append(avg)
+        if len(harness_avgs) < 2:
+            continue
+        spread = max(harness_avgs) - min(harness_avgs)
+        if spread > best_spread:
+            best_spread = spread
+            best_index = index
+    if best_spread < 0:
+        return None
+    label = (
+        dim_labels[best_index - 1]
+        if best_index - 1 < len(dim_labels)
+        else f"D{best_index}"
+    )
+    return best_index, label
+
+
+def _needle_dimension_for_model(
+    reports: list[ParsedReport],
+    model_slug: str,
+) -> str:
+    """Dimension with largest harness spread for one model slug."""
+    harnesses = _contest_harnesses_in_data(reports)
+    best_index = 0
+    best_spread = -1.0
+    for index in range(1, NUM_DIMENSIONS + 1):
+        harness_avgs: list[float] = []
+        for harness in harnesses:
+            subset = [
+                float(r.dim_score(index))
+                for r in reports
+                if r.harness == harness
+                and cohort_slug(r.model_slug) == model_slug
+                and r.dim_score(index) is not None
+            ]
+            avg = _avg(subset)
+            if avg is not None:
+                harness_avgs.append(avg)
+        if len(harness_avgs) < 2:
+            continue
+        spread = max(harness_avgs) - min(harness_avgs)
+        if spread > best_spread:
+            best_spread = spread
+            best_index = index
+    if best_index == 0:
+        return "—"
+    return f"D{best_index}"
+
+
+def _harness_verdict_bullet(inference: HarnessInferenceResult) -> str:
+    if inference.verdict == "insufficient-data":
+        return (
+            "- **Harness verdict (insufficient-data)**: fewer than two paired "
+            "models on the cross-harness grid — harness verdict suppressed."
+        )
+
+    leader = inference.leader or "n/a"
+    leader_mean = next(
+        (item[1] for item in inference.harness_means if item[0] == inference.leader),
+        None,
+    )
+    runner = inference.runner_up or "n/a"
+    runner_mean = next(
+        (item[1] for item in inference.harness_means if item[0] == inference.runner_up),
+        None,
+    )
+    verdict_label = inference.verdict
+    if inference.verdict in {"tie", "marginal"}:
+        opener = (
+            f"No decisive winner among contest harnesses — cell-mean leader `{leader}`"
+        )
+        if (
+            leader_mean is not None
+            and runner_mean is not None
+            and inference.gap is not None
+        ):
+            opener += (
+                f" {_fmt(leader_mean)}/100 (+{_fmt(inference.gap)} vs `{runner}` "
+                f"{_fmt(runner_mean)})"
+            )
+        opener += f"; paired n={inference.n_models} models"
+        if inference.top_pairwise is not None:
+            pw = inference.top_pairwise
+            opener += (
+                f"; {pw.harness_a}−{pw.harness_b} Δ={_fmt(pw.mean_delta)} "
+                f"(95% CI {_fmt(pw.ci_low)}–{_fmt(pw.ci_high)}; sign-test p={pw.p_value:.2f})"
+            )
+        if inference.win_counts:
+            wins = ", ".join(
+                f"{harness} {count}/{inference.n_models}"
+                for harness, count in inference.win_counts
+            )
+            opener += f". Tie-breaker win counts: {wins}"
+        return f"- **Harness verdict ({verdict_label})**: {opener}."
+
+    mean_clause = f"{_fmt(leader_mean)}/100" if leader_mean is not None else "n/a"
+    gap_clause = f"+{_fmt(inference.gap)}" if inference.gap is not None else "n/a"
+    runner_clause = (
+        f" vs `{runner}` {_fmt(runner_mean)}" if runner_mean is not None else ""
+    )
+    pairwise_clause = ""
+    if inference.top_pairwise is not None:
+        pw = inference.top_pairwise
+        pairwise_clause = (
+            f"; {pw.harness_a}−{pw.harness_b} Δ={_fmt(pw.mean_delta)} "
+            f"(95% CI {_fmt(pw.ci_low)}–{_fmt(pw.ci_high)}; sign-test p={pw.p_value:.2f})"
+        )
+    return (
+        f"- **Harness verdict ({verdict_label})**: `{leader}` — {mean_clause} "
+        f"({gap_clause}{runner_clause}; paired n={inference.n_models} models"
+        f"{pairwise_clause})."
+    )
+
+
+def build_inference_summary_markdown(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Deterministic harness inference block for meta-analysis sections 0.1 and 3."""
+    primary = calculate_harness_inference(reports, label="primary")
+    if primary is None:
+        return "## Harness inference summary\n\n*(no cross-harness cell means)*\n"
+
+    lines = [
+        "## Harness inference summary",
+        "",
+        "Copy this block into **section 3** below the harness ranking table. "
+        "The **Harness verdict** bullet in section 1 must match the verdict here.",
+        "",
+        f"**Primary cohort:** cross-harness grid; effective paired n={primary.n_models} models "
+        "(cell means, not replicate rows).",
+        "",
+        "| Harness | Cell-mean avg | 95% CI | Model wins |",
+        "|---|---:|---|---:|",
+    ]
+    win_map = dict(primary.win_counts)
+    for harness, avg, lo, hi in primary.harness_means:
+        lines.append(
+            f"| {harness} | {_fmt(avg)} | {_fmt(lo)}–{_fmt(hi)} | "
+            f"{win_map.get(harness, 0)}/{primary.n_models} |"
+        )
+    lines.append("")
+    lines.append(f"**Verdict:** `{primary.verdict}` — leader `{primary.leader}`.")
+    if primary.top_pairwise is not None:
+        pw = primary.top_pairwise
+        lines.append(
+            f"Pairwise `{pw.harness_a}`−`{pw.harness_b}`: Δ={_fmt(pw.mean_delta)} "
+            f"(95% CI {_fmt(pw.ci_low)}–{_fmt(pw.ci_high)}; sign-test p={pw.p_value:.2f}; "
+            f"n={pw.n_models} models)."
+        )
+    if primary.largest_spread_dimension is not None:
+        idx, label = primary.largest_spread_dimension
+        lines.append(
+            f"Largest harness dimension spread: D{idx} {label} (contest cohort)."
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def build_research_questions_skeleton(
+    reports: list[ParsedReport],
+) -> str:
+    """Section 0.1 research questions filled from primary inference."""
+    inference = calculate_harness_inference(reports)
+    verdict = inference.verdict if inference else "insufficient-data"
+    n_models = inference.n_models if inference else 0
+    lines = [
+        "## Research questions skeleton",
+        "",
+        "Copy into **section 0.1** immediately after methodology.",
+        "",
+        "### 0.1 Research questions & endpoints",
+        "",
+        "| Item | Definition |",
+        "|---|---|",
+        "| **Primary endpoint** | Cell-mean audit total per `(harness, model_slug)` "
+        "on the cross-harness open-weight grid |",
+        "| **Primary estimand** | Harness effect = mean of per-model cell-mean deltas "
+        f"(paired on model slug; n={n_models} models in this run) |",
+        f"| **Decision rule** | Harness verdict `{verdict}` from **Harness inference "
+        "summary** (copy verbatim; do not override with replicate-level averages) |",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def build_limitations_skeleton(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+) -> str:
+    """Section 0.2 limitations template."""
+    auditors = sorted({r.auditor for r in reports if r.auditor})
+    lines = [
+        "## Limitations skeleton",
+        "",
+        "Copy into **section 0.2** immediately after research questions.",
+        "",
+        "### 0.2 Limitations",
+        "",
+        "| Limitation | Detail |",
+        "|---|---|",
+        f"| **Single auditor** | {', '.join(auditors) or 'unknown'} — no inter-rater reliability |",
+        "| **LLM rubric scores** | Audit totals are not runtime verification; treat causal "
+        "claims as observational |",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def build_cross_harness_summary_table(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Section 4 summary: one row per model with cell means per harness."""
+    cohort = _cross_harness_cohort_slugs(reports)
+    if not cohort:
+        return "## Cross-harness summary (section 4)\n\n*(no paired models)*\n"
+
+    contest_harnesses = [
+        h for h in _CONTEST_HARNESS_COLUMN_ORDER if h in _contest_harnesses_in_data(reports)
+    ]
+    lines = [
+        "## Cross-harness summary (section 4)",
+        "",
+        "Authoritative section 4 table (cell means). Move replicate-level detail to appendix.",
+        "",
+        "| Model | "
+        + " | ".join(h.capitalize() for h in contest_harnesses)
+        + " | Best harness | Spread | Needle dim |",
+        "|---|" + "|".join(["---:"] * (len(contest_harnesses) + 3)) + "|",
+    ]
+    rows: list[tuple[float, list[str]]] = []
+    for model in sorted(cohort):
+        harness_scores: dict[str, float] = {}
+        for harness in contest_harnesses:
+            avg = _contest_cell_avg_total(reports, harness, model)
+            if avg is not None:
+                harness_scores[harness] = avg
+        if len(harness_scores) < 2:
+            continue
+        spread = max(harness_scores.values()) - min(harness_scores.values())
+        best_harness = max(harness_scores.items(), key=lambda item: item[1])[0]
+        cells = [_display_slug(model, display_slug_map)]
+        for harness in contest_harnesses:
+            score = harness_scores.get(harness)
+            cells.append(_fmt(score) if score is not None else "n/a")
+        cells.extend(
+            [
+                best_harness,
+                _fmt(spread),
+                _needle_dimension_for_model(reports, model),
+            ]
+        )
+        rows.append((spread, cells))
+    rows.sort(key=lambda item: item[0], reverse=True)
+    for _, cells in rows:
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_harness_effect_summary(
+    reports: list[ParsedReport],
+) -> str:
+    """Section 4b: per-model paired deltas and win counts."""
+    inference = calculate_harness_inference(reports)
+    cell_means = calculate_cell_means(reports)
+    if inference is None or not cell_means:
+        return "## Harness effect summary (section 4b)\n\n*(no paired data)*\n"
+
+    matrix = _cell_mean_matrix(cell_means)
+    leader = inference.leader
+    runner = inference.runner_up
+    delta_header = (
+        f"Δ({leader}−{runner})"
+        if leader and runner
+        else "Δ"
+    )
+    lines = [
+        "## Harness effect summary (section 4b)",
+        "",
+        "Copy into **section 4b**.",
+        "",
+        f"| Model | {delta_header} | Best harness |",
+        "|---|---:|---|",
+    ]
+    for model in sorted(matrix):
+        best_harness = max(matrix[model].items(), key=lambda item: item[1])[0]
+        delta = "n/a"
+        if leader and runner and leader in matrix[model] and runner in matrix[model]:
+            delta = _fmt(matrix[model][leader] - matrix[model][runner])
+        lines.append(f"| {model} | {delta} | {best_harness} |")
+    if inference.win_counts:
+        wins = ", ".join(
+            f"`{harness}` {count}/{inference.n_models}"
+            for harness, count in inference.win_counts
+        )
+        lines.extend(["", f"**Model win counts:** {wins}."])
+    if inference.largest_spread_dimension is not None:
+        idx, label = inference.largest_spread_dimension
+        lines.append(
+            f"**Largest harness dimension spread:** D{idx} {label}."
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _performance_cost_row_data(
+    reports: list[ParsedReport],
+    harness: str,
+    slug: str,
+    *,
+    source_dirs: list[Path] | None,
+) -> tuple[float | None, float | None, float | None]:
+    subset = [
+        r
+        for r in reports
+        if r.harness == harness
+        and (r.model_slug == slug or cohort_slug(r.model_slug) == slug)
+        and r.total is not None
+    ]
+    totals = [float(r.total) for r in subset]
+    if not totals:
+        return None, None, None
+    mean_total = mean(totals)
+    mean_gen = _mean_optional(
+        [_report_gen_minutes(r, source_dirs=source_dirs) for r in subset]
+    )
+    mean_cost = _mean_optional(
+        [_report_cost_usd(r, source_dirs=source_dirs) for r in subset]
+    )
+    return mean_total, mean_gen, mean_cost
+
+
+def build_practitioner_decisions_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Section 1.5 practitioner picks from deterministic rollup rules."""
+    rows: list[PractitionerDecisionRow] = []
+
+    top_cells = _top_contest_cells(reports)
+    if top_cells:
+        if len(top_cells) == 1:
+            cell = top_cells[0]
+            _, mean_gen, mean_cost = _performance_cost_row_data(
+                reports,
+                cell.harness,
+                cell.model_slug,
+                source_dirs=source_dirs,
+            )
+            rows.append(
+                PractitionerDecisionRow(
+                    goal="Max quality (contest)",
+                    target=f"{cell.harness}-{_display_slug(cell.model_slug, display_slug_map)}",
+                    mean_total=cell.mean_total,
+                    gen_minutes=mean_gen,
+                    cost_usd=mean_cost,
+                    caveat=_single_harness_run_note(reports, cell.model_slug)
+                    or "contest-harness cell mean",
+                )
+            )
+        else:
+            tied_targets = " / ".join(
+                f"{item.harness}-{_display_slug(item.model_slug, display_slug_map)}"
+                for item in top_cells
+            )
+            cell = top_cells[0]
+            rows.append(
+                PractitionerDecisionRow(
+                    goal="Max quality (contest, tie)",
+                    target=tied_targets,
+                    mean_total=cell.mean_total,
+                    gen_minutes=None,
+                    cost_usd=None,
+                    caveat="tied rank-1 contest cells — see section 2",
+                )
+            )
+
+    ollama_rows = _ollama_ranking_rows(reports)
+    if ollama_rows:
+        best = ollama_rows[0]
+        cell_avgs: dict[str, float] = best["cell_avgs"]  # type: ignore[assignment]
+        best_harness = max(cell_avgs.items(), key=lambda item: item[1])[0]
+        best_slug = str(best["slug"])
+        mean_total, mean_gen, mean_cost = _performance_cost_row_data(
+            reports, best_harness, best_slug, source_dirs=source_dirs
+        )
+        if mean_total is None:
+            mean_total = float(best["avg_total"])  # type: ignore[arg-type]
+        rows.append(
+            PractitionerDecisionRow(
+                goal="Best OSS grid",
+                target=f"{best_harness}-{_display_slug(best_slug, display_slug_map)}",
+                mean_total=mean_total,
+                gen_minutes=mean_gen,
+                cost_usd=mean_cost,
+                caveat=f"cross-harness OSS leader `{best_slug}`",
+            )
+        )
+
+    perf_cells = calculate_performance_cost_cells(
+        reports, source_dirs=source_dirs, display_slug_map=display_slug_map
+    )
+    tier_a = [cell for cell in perf_cells if cell.tier == "A"]
+    if tier_a:
+        cheapest = min(
+            tier_a,
+            key=lambda cell: _report_cost_usd_for_cell(reports, cell, source_dirs)
+            or float("inf"),
+        )
+        cost = _report_cost_usd_for_cell(reports, cheapest, source_dirs)
+        rows.append(
+            PractitionerDecisionRow(
+                goal="Cheapest Tier-A",
+                target=f"{cheapest.harness}-{_display_slug(cheapest.model_slug, display_slug_map)}",
+                mean_total=cheapest.mean_total,
+                gen_minutes=cheapest.mean_gen_minutes,
+                cost_usd=cost,
+                caveat="lowest mean cost among Tier-A cells",
+            )
+        )
+        fastest = min(
+            (cell for cell in tier_a if _is_benchmark_harness(cell.harness)),
+            key=lambda cell: cell.mean_gen_minutes or float("inf"),
+            default=None,
+        )
+        if fastest is not None:
+            rows.append(
+                PractitionerDecisionRow(
+                    goal="Fastest Tier-A (contest)",
+                    target=f"{fastest.harness}-{_display_slug(fastest.model_slug, display_slug_map)}",
+                    mean_total=fastest.mean_total,
+                    gen_minutes=fastest.mean_gen_minutes,
+                    cost_usd=_report_cost_usd_for_cell(reports, fastest, source_dirs),
+                    caveat="fastest Tier-A contest-harness cell",
+                )
+            )
+
+    lines = [
+        "## Practitioner decisions (section 1.5)",
+        "",
+        "Copy table into **section 1.5**. Add one narrative sentence per row in prose.",
+        "",
+        "| Goal | Pick | Score | Time (min) | Cost (USD) | Caveat |",
+        "|---|---|---:|---:|---:|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    row.goal,
+                    f"`{row.target}`",
+                    _fmt(row.mean_total),
+                    _fmt(row.gen_minutes) if row.gen_minutes is not None else "n/a",
+                    f"{row.cost_usd:.2f}" if row.cost_usd is not None else "n/a",
+                    row.caveat,
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _report_cost_usd_for_cell(
+    reports: list[ParsedReport],
+    cell: PerformanceCostCell,
+    source_dirs: list[Path] | None,
+) -> float | None:
+    subset = [
+        r
+        for r in reports
+        if r.harness == cell.harness
+        and r.model_slug == cell.model_slug
+        and r.total is not None
+    ]
+    return _mean_optional([_report_cost_usd(r, source_dirs=source_dirs) for r in subset])
+
+
+def build_pareto_efficient_cells_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Tier-A cells not dominated on both time and cost."""
+    cells: list[tuple[str, float, float | None, float | None]] = []
+    for cell in calculate_performance_cost_cells(
+        reports, source_dirs=source_dirs, display_slug_map=display_slug_map
+    ):
+        if cell.tier != "A":
+            continue
+        cost = _report_cost_usd_for_cell(reports, cell, source_dirs)
+        label = f"{cell.harness}-{_display_slug(cell.model_slug, display_slug_map)}"
+        cells.append((label, cell.mean_total, cell.mean_gen_minutes, cost))
+
+    if not cells:
+        return "## Pareto-efficient Tier-A cells\n\n*(no Tier-A cells)*\n"
+
+    efficient: list[tuple[str, float, float | None, float | None]] = []
+    for idx, candidate in enumerate(cells):
+        dominated = False
+        for jdx, other in enumerate(cells):
+            if idx == jdx:
+                continue
+            cand_time = candidate[2] if candidate[2] is not None else float("inf")
+            cand_cost = candidate[3] if candidate[3] is not None else float("inf")
+            other_time = other[2] if other[2] is not None else float("inf")
+            other_cost = other[3] if other[3] is not None else float("inf")
+            if (
+                other[1] >= candidate[1]
+                and other_time <= cand_time
+                and other_cost <= cand_cost
+                and (
+                    other[1] > candidate[1]
+                    or other_time < cand_time
+                    or other_cost < cand_cost
+                )
+            ):
+                dominated = True
+                break
+        if not dominated:
+            efficient.append(candidate)
+
+    lines = [
+        "## Pareto-efficient Tier-A cells",
+        "",
+        "Copy into **section 6** below the performance table. Non-dominated on score, "
+        "time, and cost among Tier-A cells.",
+        "",
+        "| Target | Mean total | Gen-time (min) | Cost (USD) |",
+        "|---|---:|---:|---:|",
+    ]
+    efficient.sort(key=lambda item: (-item[1], item[2] or float("inf")))
+    for label, mean_total, gen_min, cost in efficient:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    label,
+                    _fmt(mean_total),
+                    _fmt(gen_min) if gen_min is not None else "n/a",
+                    f"{cost:.2f}" if cost is not None else "n/a",
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def _default_ollama_cloud_registry_slugs() -> frozenset[str]:
@@ -1125,6 +1977,8 @@ def _mean_optional(values: list[float | None]) -> float | None:
 def _quality_per_dollar(mean_total: float, mean_cost: float | None) -> str:
     if mean_cost is None or mean_cost == 0:
         return "n/a"
+    if mean_cost < _QUALITY_PER_DOLLAR_MIN_COST_USD:
+        return "n/a"
     return f"{mean_total / mean_cost:.2f}"
 
 
@@ -1167,6 +2021,29 @@ def calculate_performance_cost_cells(
             )
         )
     return tuple(cells)
+
+
+def rank_contest_tier_a_by_quality_per_minute(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+    top_n: int = 5,
+) -> tuple[PerformanceCostCell, ...]:
+    """Tier-A contest-harness cells ranked by quality per minute (descending)."""
+    tier_a = [
+        cell
+        for cell in calculate_performance_cost_cells(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        )
+        if cell.tier == "A"
+        and cell.quality_per_minute is not None
+        and _is_benchmark_harness(cell.harness)
+    ]
+    tier_a.sort(key=lambda cell: cell.quality_per_minute or 0.0, reverse=True)
+    return tuple(tier_a[:top_n])
 
 
 def calculate_quality_time_tradeoff(
@@ -1225,6 +2102,51 @@ def calculate_quality_time_tradeoff(
     )
 
 
+_METHODOLOGY_RUBRIC_MAX: tuple[int, ...] = (15, 10, 10, 10, 5, 10, 15, 5, 10, 10)
+
+
+def _methodology_rubric_table() -> str:
+    lines = [
+        "| Dim | Dimension | Max pts |",
+        "|---|---|---:|",
+    ]
+    for index, (label, max_pts) in enumerate(
+        zip(DEFAULT_DIMENSION_LABELS, _METHODOLOGY_RUBRIC_MAX),
+        start=1,
+    ):
+        lines.append(f"| D{index} | {label} | {max_pts} |")
+    lines.append("| **Total** | | **100** |")
+    return "\n".join(lines)
+
+
+def _methodology_harness_comparison_table(
+    reports: list[ParsedReport],
+    *,
+    n_replicates: int,
+) -> str:
+    """Paired harness-inference steps for methodology."""
+    contest = _contest_harnesses_label(reports)
+    n_models = len(_cross_harness_cohort_slugs(reports))
+    return "\n".join(
+        [
+            "| Step | Operation |",
+            "|---|---|",
+            f"| 1 — **Grid execution** | Each Ollama Cloud model in the grid "
+            f"runs under every contest harness (`{contest}`) — same brief, same "
+            "backend model, different agent CLI per column |",
+            f"| 2 — **Cell aggregation** | Mean audit total per `(harness, model)` "
+            f"cell across {n_replicates} independent replicates |",
+            "| 3 — **Per-model pairing** | For each model **row**, compute "
+            "Δ(leader−runner) between harness column means — model held constant, "
+            "harness varies |",
+            f"| 4 — **Harness effect** | Average Δ across all {n_models} paired "
+            "model rows; bootstrap 95% CI on the n paired deltas |",
+            "| 5 — **Verdict** | Two-sided exact sign test on paired Δ → "
+            "`decisive` / `marginal` / `tie` / `insufficient-data` (section 3) |",
+        ]
+    )
+
+
 def _methodology_cohort_stats(
     reports: list[ParsedReport],
 ) -> dict[str, int]:
@@ -1275,13 +2197,6 @@ def build_methodology_skeleton(
     n_harnesses = cohort["n_contest_harnesses"]
     n_replicates = cohort["n_replicates_per_cell"]
     n_cohort_audits = cohort["n_cohort_audits"]
-    grid_clause = (
-        f"The cross-harness grid covers {n_models} open-weight models × "
-        f"{n_replicates} independent replicates × {n_harnesses} contest "
-        f"harnesses ({n_cohort_audits} audits in the harness-ranking cohort)."
-        if n_cohort_audits
-        else "No cross-harness model grid is available for harness ranking."
-    )
     lines = [
         "## Methodology skeleton",
         "",
@@ -1290,75 +2205,188 @@ def build_methodology_skeleton(
         "### Benchmark task",
         "",
         "Every agent receives the same fixed implementation brief: build a "
-        "Django + Django Channels single-page chat application that streams "
-        "tokens from a local Ollama server through LangChain, forwards them "
-        "over WebSockets to an HTMX-driven UI styled with Tailwind CSS, and "
-        "ships with Docker, pytest coverage, and static-analysis tooling. The "
-        "brief enumerates required deliverables, forbidden alternatives, and "
-        "security constraints. Agents work autonomously in the project workspace "
-        "without human confirmation.",
+        "**ChatGPT-style single-page chat web app** from an empty workspace — "
+        "autonomously, with no human confirmation.",
+        "",
+        "The user types a message in the browser; the app forwards it over a "
+        "WebSocket to a Django Channels consumer, which calls **LangChain "
+        "`ChatOllama`** against a **local Ollama** server and streams tokens "
+        "back to the UI in real time. HTMX (with the WebSocket extension) patches "
+        "the chat transcript as chunks arrive; Tailwind CSS styles the page.",
+        "",
+        "The brief is deliberately demanding: agents must deliver a runnable "
+        "**ASGI** stack (not API-only), real streaming (no stubbed responses), "
+        "env-driven Ollama configuration, pytest coverage, static-analysis "
+        "tooling, Docker + compose with production hardening, and a documented "
+        "README — while avoiding forbidden shortcuts (no DRF, no auth, no Celery).",
+        "",
+        "| Layer | What agents build |",
+        "|---|---|",
+        "| Backend | Django + Django Channels (`AsyncWebsocketConsumer`) |",
+        "| LLM integration | `langchain-ollama` `ChatOllama` → "
+        "`OLLAMA_HOST` / `OLLAMA_MODEL` from env |",
+        "| Streaming path | Ollama → LangChain `.astream()` → WebSocket → browser |",
+        "| Frontend | Single-page chat UI — HTMX + Tailwind CSS (built static assets) |",
+        "| Quality & ops | Docker/compose, pytest, ruff/mypy/bandit/coverage, "
+        "healthchecks, non-root container |",
         "",
         "### Experimental design",
         "",
-        "Three factors vary across runs:",
+        "The campaign answers **two independent questions**. Every benchmark run "
+        "is one `(harness, model, replicate)` execution: two sequential phases "
+        "(implementation, then cold validation) with **no session continuity** "
+        "between them.",
         "",
-        "1. **Agent harness** — the autonomous coding CLI (Claude Code, Codex, "
-        "or OpenCode). Each contest harness executes the identical brief.",
-        "2. **Language model** — either a proprietary model bound to one harness "
-        "(Anthropic Claude, OpenAI GPT via Codex, or Cursor Composer) or an "
-        "open-weight model served through Ollama Cloud and dispatched to all "
-        "three contest harnesses via the Ollama launch integration.",
-        f"3. **Replicate** — independent regeneration runs per `(harness, model)` "
-        f"cell ({n_replicates} replicates per cell in this campaign when the "
-        "full grid is present).",
+        "| Question | Section | How it is tested |",
+        "|---|---|---|",
+        "| **Which harness is best?** | 3 | Run the **same** Ollama Cloud models "
+        f"under every contest harness (`{contest}`) — {n_replicates} independent "
+        "runs per `(harness, model)` cell — then compare harnesses **across rows** "
+        "(same backend model, different agent CLI) |",
+        "| **Which model is best?** | 2 | For **every** `(harness, model)` "
+        f"combination, run {n_replicates} independent implementations; rank cells "
+        "by the **mean audit score** across those replicates (no cross-harness "
+        "pairing required) |",
         "",
-        "Each cell runs in two sequential phases without session continuity "
-        "between them: phase 1 is greenfield implementation from the brief; "
-        "phase 2 is a cold validation pass that installs dependencies, runs "
-        "tests and static checks, boots the ASGI server, and builds Docker "
-        "images.",
+        "**Harness ranking (section 3).** "
+        f"{n_models} open-weight Ollama models form the cross-harness grid: each "
+        "model is executed under Claude Code, Codex, and OpenCode, "
+        f"{n_replicates} times per harness. Cell mean = average of those "
+        f"{n_replicates} audit scores. Harnesses are compared **row by row** — "
+        "for `glm_5_2`, compare claude vs codex vs opencode on the same model; "
+        "repeat for every grid model; aggregate paired deltas for the harness "
+        "verdict.",
+        "",
+        "**Model ranking (section 2).** Each `(harness, model)` pair — whether "
+        "proprietary (`claude_opus_4_8` under claude) or open-weight (`glm_5_2` "
+        "under codex) — gets its own cell mean from "
+        f"{n_replicates} independent runs. Cells are ranked by that mean. "
+        "Open-source models on the shared grid also get a cross-harness average "
+        "(section 2a).",
+        "",
+        "| Phase | Goal | Continuity |",
+        "|---|---|---|",
+        "| 1 — Implementation | Greenfield build from the fixed brief | — |",
+        "| 2 — Validation | Install deps, run tests/static checks, boot ASGI, "
+        "build Docker images | Cold start (no phase-1 session) |",
         "",
         "### Assessment protocol",
         "",
-        "Quality is measured by a separate LLM auditor that reads each generated "
-        "codebase and assigns a **100-point rubric score** decomposed of ten "
-        "dimensions: deliverable completeness, LLM integration correctness, "
-        "test quality, error handling, multi-turn conversation state, "
-        "streaming and frontend wiring, architecture, secrets and configuration "
-        "hygiene, production hardening, and maintainability. The auditor "
-        "verifies API claims against installed package source, records "
-        "per-dimension evidence, and flags auto-critical failures. This "
-        "meta-analysis aggregates those audit scores; it does not re-grade "
-        "projects.",
+        "A separate LLM auditor reads each generated codebase and assigns a "
+        "**100-point rubric score**. The auditor verifies API claims against "
+        "installed package source, records per-dimension evidence, and flags "
+        "auto-critical failures. This meta-analysis aggregates those audit "
+        "scores; it does not re-grade projects.",
+        "",
+        _methodology_rubric_table(),
         "",
         "### Cohort and comparability",
         "",
-        f"**Contest harness comparison** (harness rankings, cross-harness "
-        f"pairings, harness-attributable patterns) is restricted to "
-        f"{{{contest}}} on the **cross-harness model grid** — open-weight "
-        "models executed under every contest harness. Proprietary "
+        "Harness rankings compare agent CLIs **only on the cross-harness Ollama "
+        "grid** — models that appear under every contest harness. Proprietary "
         "single-harness models and Cursor Agent runs are reported separately "
-        "and excluded from harness ranking.",
+        "and excluded from paired harness inference.",
         "",
-        "**Cross-harness model comparison** pairs the same Ollama Cloud model "
-        "slug across harnesses to isolate harness effects holding the backend "
-        "model constant. **Cell aggregation** averages replicate audit scores "
-        "within each `(harness, model)` cell; spread is reported as standard "
-        "deviation across replicates.",
+        "| Comparison | Scope | What varies | What is held constant |",
+        "|---|---|---|---|",
+        f"| **Contest harness ranking** | {{{contest}}} × Ollama grid | Agent CLI "
+        "(harness column) | Backend Ollama model (grid row) |",
+        "| **Cross-harness model ranking** | Same slug across harnesses | Backend "
+        "model (row) | Harness mix averaged across columns |",
+        "| **Cell aggregation** | One `(harness, model)` intersection | — | Mean "
+        "of replicate scores; spread = σ across replicates |",
         "",
-        f"**This run:** {parsed} scored audit reports ({with_time} with "
-        f"recorded generation time). {grid_clause}",
+        "### Cross-harness Ollama grid",
+        "",
+        "Each **row** is one open-weight Ollama Cloud model; each **column** is "
+        "one contest harness. Every intersection is an independent "
+        f"`(harness, model)` cell ({n_replicates} replicates × 2 phases each). "
+        "Read across a row to compare harnesses on the **same** model; read down "
+        "a column to compare models under one harness.",
+        "",
+        "### How contest harnesses are compared",
+        "",
+        "Harness inference is **paired on model slug**: each Ollama row supplies "
+        "one matched observation per harness, so backend-model capability "
+        "differences cancel when averaging row-wise deltas.",
+        "",
+        _methodology_harness_comparison_table(
+            reports,
+            n_replicates=n_replicates,
+        ),
+        "",
+        "**Excluded from pairing:** proprietary anchors (`claude_opus_*`, "
+        "`codex_gpt_*`, `claude_sonnet_*`, etc.) and `cursor` runs — they do not "
+        "fill every harness column and cannot isolate harness effects.",
+        "",
+        "**This run:**",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| Scored audit reports | {parsed} |",
+        f"| With recorded generation time | {with_time} |",
+        f"| Harness-ranking cohort audits | {n_cohort_audits} |",
+        f"| Open-weight models (cross-harness grid) | {n_models} |",
+        f"| Contest harnesses | {n_harnesses} |",
+        f"| Replicates per cell | {n_replicates} |",
+        "",
+        "Grid layout: "
+        + (
+            f"{n_models} models × {n_replicates} replicates × {n_harnesses} "
+            f"harnesses = {n_cohort_audits} cohort audits."
+            if n_cohort_audits
+            else "No cross-harness model grid is available for harness ranking."
+        ),
         "",
         "### Derived metrics",
         "",
-        "**Generation time** is wall-clock elapsed for phase 1 plus phase 2, "
-        "recorded when the benchmark completes. **Quality–time tradeoff** ranks "
-        "Tier-A cells (mean score ≥ 81/100) by quality per minute (mean total "
-        "÷ mean generation time in minutes); higher values indicate better "
-        "speed-adjusted output (section 6). **Performance tiers** classify "
-        "mean cell totals as A (81–100), B (61–80), C (41–60), or D (0–40).",
+        "| Metric | Definition |",
+        "|---|---|",
+        "| **Generation time** | Wall-clock elapsed for phase 1 + phase 2 |",
+        "| **Estimated cost (USD)** | Counterfactual per-token estimate from "
+        "``docs/PRICING.md`` (OpenRouter list rates where published; "
+        "proxy/estimated rates when not available outside subscription). All runs "
+        "used provider subscription access; costs are not actual invoices. |",
+        "| **Quality–time tradeoff** | Tier-A cells (mean ≥ 81/100) ranked by "
+        "mean total ÷ mean generation time (min); higher = better speed-adjusted "
+        "output (section 6) |",
+        "| **Performance tier** | A: 81–100 · B: 61–80 · C: 41–60 · D: 0–40 "
+        "(applied to mean cell totals) |",
     ]
     return "\n".join(lines) + "\n"
+
+
+def build_quality_time_tradeoff_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+    top_n: int = 5,
+) -> str:
+    """Contest-harness Tier-A quality–time leaderboard for section 1 / section 6."""
+    ranked = rank_contest_tier_a_by_quality_per_minute(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+        top_n=top_n,
+    )
+    if not ranked:
+        return ""
+
+    lines = [
+        "**Best quality–time (contest harnesses, Tier-A only):**",
+        "",
+        "| Rank | Target | Score | Gen-time (min) | Pts/min |",
+        "|---:|---|---:|---:|---:|",
+    ]
+    for rank, cell in enumerate(ranked, start=1):
+        target = f"{cell.harness}-{_display_slug(cell.model_slug, display_slug_map)}"
+        lines.append(
+            f"| {rank} | `{target}` | {_fmt(cell.mean_total)} | "
+            f"{_fmt(cell.mean_gen_minutes)} | {_fmt(cell.quality_per_minute)} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _quality_time_tradeoff_bullet(
@@ -1543,37 +2571,49 @@ def calculate_dimension_signals(
     return tuple(rows)
 
 
-def _format_dimension_signal_harness_avgs(
+
+def _dimension_signal_harness_avg_map(
     harness_averages: tuple[DimensionHarnessAverage, ...],
-) -> str:
-    parts = [
-        f"{item.harness}={_fmt(item.avg_score)}"
-        for item in harness_averages
-        if item.avg_score is not None
-    ]
-    return " / ".join(parts)
+) -> dict[str, float | None]:
+    return {item.harness: item.avg_score for item in harness_averages}
 
 
 def build_dimension_signal_section(reports: list[ParsedReport]) -> str:
-    """Precomputed section-5 dimension lines for the meta-analysis prompt."""
+    """Precomputed section-5 dimension table for the meta-analysis prompt."""
     signals = calculate_dimension_signals(reports)
     if not signals:
         return "## Dimension-level signal (precomputed)\n\n*(no contest reports parsed)*\n"
 
+    harnesses = [
+        h
+        for h in _CONTEST_HARNESS_COLUMN_ORDER
+        if h in _contest_harnesses_in_data(reports)
+    ]
+    header = ["Dim", "Dimension", "Max", "Universal avg"]
+    header.extend(h.capitalize() for h in harnesses)
+    header.append("Classify")
+
     lines = [
         "## Dimension-level signal (precomputed)",
         "",
-        "Copy these lines into section 5 verbatim (averages and Classify labels).",
+        "Copy this table into section 5 verbatim (averages and Classify labels).",
         "",
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(
+            ["---", "---"] + ["---:"] * (2 + len(harnesses)) + ["---"]
+        ) + "|",
     ]
     for row in signals:
-        harness_parts = _format_dimension_signal_harness_avgs(row.harness_averages)
-        max_display = row.max_score if row.max_score is not None else "?"
-        lines.append(
-            f"- **D{row.index} — {row.label}** (max {max_display}): "
-            f"universal-avg {_fmt(row.all_avg)}; per-harness avg {harness_parts}. "
-            f"Classify: **{row.classification}**."
-        )
+        avg_by_harness = _dimension_signal_harness_avg_map(row.harness_averages)
+        cells = [
+            f"D{row.index}",
+            row.label,
+            str(row.max_score) if row.max_score is not None else "?",
+            _fmt(row.all_avg),
+        ]
+        cells.extend(_fmt(avg_by_harness.get(harness)) for harness in harnesses)
+        cells.append(f"**{row.classification}**")
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -1634,6 +2674,12 @@ def build_aggregated_performance_cost_table(
         "Authoritative rows for section 6. One row per ``(harness, model_slug)``",
         "with mean generation time, tokens, cost, and total across replicate",
         "audits. Use **Performance & cost (detail)** for per-replicate citations.",
+        "All generation runs used provider subscription access; **Cost (USD)** is a",
+        "counterfactual estimate from ``docs/PRICING.md`` (OpenRouter list rates",
+        "where published, or proxy/estimated rates when not available outside",
+        "subscription billing) — not actual subscription invoices.",
+        "``Quality per $`` is ``n/a`` when mean cost < "
+        f"${_QUALITY_PER_DOLLAR_MIN_COST_USD:.2f} (misleading ratios).",
         "",
         "| Target (harness-model) | Gen-time (min) | Tokens (M) | Cost (USD) | "
         "Mean total | Quality per $ | Quality per minute |",
@@ -2061,14 +3107,67 @@ def build_harness_versions_table(
     return "\n".join(lines) + "\n"
 
 
+def _top_contest_cells(
+    reports: list[ParsedReport],
+) -> tuple[AggregatedRunRankingRow, ...]:
+    """All contest-harness cells tied at rank 1 by mean total."""
+    ranked = [
+        row
+        for row in calculate_aggregated_runs_ranking(reports)
+        if _is_benchmark_harness(row.harness)
+    ]
+    if not ranked:
+        return ()
+    best_total = ranked[0].mean_total
+    return tuple(row for row in ranked if row.mean_total == best_total)
+
+
 def _top_contest_cell(
     reports: list[ParsedReport],
 ) -> AggregatedRunRankingRow | None:
     """Rank-1 contest ``(harness, model_slug)`` by mean total across replicates."""
-    for row in calculate_aggregated_runs_ranking(reports):
-        if _is_benchmark_harness(row.harness):
-            return row
-    return None
+    cells = _top_contest_cells(reports)
+    return cells[0] if cells else None
+
+
+def _best_model_overall_bullet(
+    reports: list[ParsedReport],
+    *,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    cells = _top_contest_cells(reports)
+    if not cells:
+        return "- **Best model overall**: no contest-harness runs with parseable totals."
+
+    cell = cells[0]
+    std_clause = (
+        f", std dev {_fmt(cell.std_dev)}" if cell.std_dev is not None else ""
+    )
+    note = _single_harness_run_note(reports, cell.model_slug)
+    note_clause = f"; {note}" if note else ""
+
+    if len(cells) == 1:
+        display_slug = _display_slug(cell.model_slug, display_slug_map)
+        return (
+            f"- **Best model overall**: `{display_slug}` — "
+            f"{_fmt(cell.mean_total)}/100 mean under `{cell.harness}` "
+            f"(N={cell.sample_n}{std_clause}{note_clause})."
+        )
+
+    leader_parts = [
+        f"`{_display_slug(item.model_slug, display_slug_map)}` under `{item.harness}`"
+        for item in cells
+    ]
+    leaders = " and ".join(leader_parts)
+    tie_note = _single_harness_run_note(reports, cell.model_slug)
+    if tie_note:
+        tie_note = tie_note.replace("anchor", "anchors")
+    tie_note_clause = f"; {tie_note}" if tie_note else ""
+    return (
+        f"- **Best model overall (tie)**: {leaders} — "
+        f"{_fmt(cell.mean_total)}/100 mean each "
+        f"(N={cell.sample_n}{std_clause}{tie_note_clause})."
+    )
 
 
 def _harness_contest_stats(
@@ -2265,15 +3364,20 @@ def calculate_executive_summary_expectations(
 def _top_model_expectation(
     reports: list[ParsedReport], display_slug_map: dict[str, str] | None
 ) -> TopModelExpectation | None:
-    top_cell = _top_contest_cell(reports)
-    if top_cell is None:
+    cells = _top_contest_cells(reports)
+    if not cells:
         return None
-    return TopModelExpectation(
-        harness=top_cell.harness,
-        model_slug=_display_slug(top_cell.model_slug, display_slug_map),
-        total=top_cell.mean_total,
-        note=_single_harness_run_note(reports, top_cell.model_slug),
+    leaders = tuple(
+        (
+            cell.harness,
+            _display_slug(cell.model_slug, display_slug_map),
+            cell.sample_n,
+            cell.std_dev,
+            _single_harness_run_note(reports, cell.model_slug),
+        )
+        for cell in cells
     )
+    return TopModelExpectation(total=cells[0].mean_total, leaders=leaders)
 
 
 def _best_ollama_expectation(
@@ -2322,17 +3426,22 @@ def executive_summary_expectations(
         best_harness = typed.harness_rankings[0]
         expectations["best_harness"] = best_harness.harness
         expectations["best_harness_avg"] = best_harness.avg_total
-        median_rows = _contest_harness_median_rankings(reports)
-        if median_rows:
-            best_median_harness, best_median_stats = median_rows[0]
-            expectations["best_harness_median_harness"] = best_median_harness
-            expectations["best_harness_median_total"] = float(
-                best_median_stats["median"]  # type: ignore[arg-type]
-            )
+    inference = calculate_harness_inference(reports)
+    if inference is not None:
+        expectations["harness_verdict"] = inference.verdict
+        expectations["harness_verdict_leader"] = inference.leader
+        if inference.gap is not None:
+            expectations["harness_verdict_gap"] = inference.gap
     if typed.top_model is not None:
-        expectations["top_model_slug"] = typed.top_model.model_slug
         expectations["top_model_total"] = typed.top_model.total
-        expectations["top_model_harness"] = typed.top_model.harness
+        if typed.top_model.is_tie:
+            expectations["top_model_tie"] = True
+            expectations["top_model_slugs"] = [
+                slug for _, slug, _, _, _ in typed.top_model.leaders
+            ]
+        else:
+            expectations["top_model_slug"] = typed.top_model.model_slug
+            expectations["top_model_harness"] = typed.top_model.harness
     if typed.best_ollama is not None:
         expectations["best_ollama_slug"] = typed.best_ollama.model_slug
         expectations["best_ollama_avg"] = typed.best_ollama.avg_total
@@ -2345,6 +3454,14 @@ def executive_summary_expectations(
         expectations["quality_time_overall_qpm"] = (
             typed.quality_time.overall_quality_per_minute
         )
+        if typed.quality_time.contest_harness is not None:
+            expectations["quality_time_contest_target"] = (
+                f"{typed.quality_time.contest_harness}-"
+                f"{typed.quality_time.contest_model_slug}"
+            )
+            expectations["quality_time_contest_qpm"] = (
+                typed.quality_time.contest_quality_per_minute
+            )
     expectations["mixed_version_harnesses"] = list(typed.mixed_version_harnesses)
     return expectations
 
@@ -2365,76 +3482,19 @@ def build_executive_summary_skeleton(
         "",
     ]
 
-    harness_rows = _contest_harness_rankings(reports)
-    if harness_rows:
-        best_harness, best_stats = harness_rows[0]
-        avg = float(best_stats["avg"])  # type: ignore[arg-type]
-        n = int(best_stats["n"])  # type: ignore[arg-type]
-        std = best_stats["std_dev"]
-        std_clause = f", std dev {_fmt(float(std))}" if std is not None else ""
-        runners = [
-            f"{name} {_fmt(float(stats['avg']))}"  # type: ignore[arg-type]
-            for name, stats in harness_rows[1:3]
-            if stats["avg"] is not None
-        ]
-        tie_note = ""
-        if len(harness_rows) >= 2:
-            second_avg = float(harness_rows[1][1]["avg"])  # type: ignore[arg-type]
-            second_n = int(harness_rows[1][1]["n"])  # type: ignore[arg-type]
-            if abs(avg - second_avg) <= 3 and (n <= 8 or second_n <= 8):
-                tie_note = " *Statistical tie* (margin ≤3 on N≤8)."
-        runner_clause = (
-            f" Runners-up: {', '.join(runners)}." if runners else ""
-        )
-        lines.append(
-            f"- **Best harness overall**: `{best_harness}` — "
-            f"{_fmt(avg)}/100 avg (N={n}{std_clause})."
-            f"{runner_clause}{tie_note}"
-        )
+    inference = calculate_harness_inference(reports)
+    if inference is not None:
+        lines.append(_harness_verdict_bullet(inference))
     else:
         lines.append(
-            "- **Best harness overall**: insufficient cross-model coverage — "
-            "harness verdict suppressed."
-        )
-
-    median_harness_rows = _contest_harness_median_rankings(reports)
-    if median_harness_rows:
-        best_median_harness, best_median_stats = median_harness_rows[0]
-        med = float(best_median_stats["median"])  # type: ignore[arg-type]
-        n = int(best_median_stats["n"])  # type: ignore[arg-type]
-        median_runners = [
-            f"{name} {_fmt(float(stats['median']))}"  # type: ignore[arg-type]
-            for name, stats in median_harness_rows[1:3]
-            if stats["median"] is not None
-        ]
-        median_runner_clause = (
-            f" Runners-up: {', '.join(median_runners)}." if median_runners else ""
-        )
-        lines.append(
-            f"- **Best harness by median**: `{best_median_harness}` — "
-            f"{_fmt(med)}/100 median (N={n})."
-            f"{median_runner_clause}"
-        )
-    else:
-        lines.append(
-            "- **Best harness by median**: insufficient cross-model coverage — "
+            "- **Harness verdict (insufficient-data)**: no cross-harness cell means — "
             "harness verdict suppressed."
         )
 
     top_cell = _top_contest_cell(reports)
     if top_cell is not None:
-        note = _single_harness_run_note(reports, top_cell.model_slug)
-        note_clause = f"; {note}" if note else ""
-        std_clause = (
-            f", std dev {_fmt(top_cell.std_dev)}"
-            if top_cell.std_dev is not None
-            else ""
-        )
-        display_slug = _display_slug(top_cell.model_slug, display_slug_map)
         lines.append(
-            f"- **Best model overall**: `{display_slug}` — "
-            f"{_fmt(top_cell.mean_total)}/100 mean under `{top_cell.harness}` "
-            f"(N={top_cell.sample_n}{std_clause}{note_clause})."
+            _best_model_overall_bullet(reports, display_slug_map=display_slug_map)
         )
     else:
         lines.append(
@@ -2460,18 +3520,6 @@ def build_executive_summary_skeleton(
             "cross-harness coverage — open-source verdict suppressed."
         )
 
-    cursor_reports = _cursor_agent_reports(reports)
-    if cursor_reports:
-        cursor_totals = [
-            float(r.total) for r in cursor_reports if r.total is not None
-        ]
-        cursor_avg = mean(cursor_totals) if cursor_totals else None
-        lines.append(
-            f"- **Cursor agent runs**: N={len(cursor_reports)}, "
-            f"avg {_fmt(cursor_avg)} — model-only benchmarks; excluded from "
-            "harness contest."
-        )
-
     quality_time = calculate_quality_time_tradeoff(
         reports,
         source_dirs=source_dirs,
@@ -2479,15 +3527,6 @@ def build_executive_summary_skeleton(
     )
     if quality_time is not None:
         lines.append(_quality_time_tradeoff_bullet(quality_time))
-
-    mixed = _mixed_version_contest_harnesses(reports, source_dirs=source_dirs)
-    if mixed:
-        harness_list = ", ".join(f"`{h}`" for h in mixed)
-        lines.append(
-            f"- **Harness CLI versions**: cohort spans multiple CLI builds for "
-            f"{harness_list}; cross-harness rankings for those harnesses are "
-            "caveated (see appendix)."
-        )
 
     blind_spot = _lowest_dimension_candidate(reports)
     if blind_spot is not None:
@@ -2523,11 +3562,17 @@ def build_precomputed_rollup(
         "## Precomputed rollup",
         "",
         "Harness-computed from parsed ``report.md`` files. **Section 0 methodology, "
-        "section 1 verdict bullets, section 2, 2a, 3, 4, 6, appendix dimension "
-        "matrix, and the harness CLI versions table in meta-analysis.md MUST match "
-        "these values.** Use individual reports only for citations and narrative.",
+        "sections 0.1–0.2, section 1 verdict bullets, section 1.5, section 2, 2a, "
+        "3, 4, 4b, 6, and appendix dimension matrix MUST match these values.** "
+        "Use individual reports only for citations and narrative.",
         "",
         build_methodology_skeleton(
+            reports, source_dirs=source_dirs
+        ).rstrip(),
+        "",
+        build_research_questions_skeleton(reports).rstrip(),
+        "",
+        build_limitations_skeleton(
             reports, source_dirs=source_dirs
         ).rstrip(),
         "",
@@ -2536,6 +3581,22 @@ def build_precomputed_rollup(
             source_dirs=source_dirs,
             display_slug_map=display_slug_map,
         ).rstrip(),
+        "",
+        build_practitioner_decisions_table(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
+        "",
+        build_inference_summary_markdown(
+            reports, source_dirs=source_dirs
+        ).rstrip(),
+        "",
+        build_cross_harness_summary_table(
+            reports, display_slug_map=display_slug_map
+        ).rstrip(),
+        "",
+        build_harness_effect_summary(reports).rstrip(),
         "",
         build_model_coverage_table(
             reports, display_slug_map=display_slug_map
@@ -2557,8 +3618,6 @@ def build_precomputed_rollup(
             reports, display_slug_map=display_slug_map
         ).rstrip(),
         "",
-        build_harness_versions_table(reports, source_dirs=source_dirs).rstrip(),
-        "",
         build_statistical_summary(
             reports_dir,
             source_dirs=source_dirs,
@@ -2568,6 +3627,18 @@ def build_precomputed_rollup(
         build_dimension_signal_section(reports).rstrip(),
         "",
         build_aggregated_performance_cost_table(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
+        "",
+        build_pareto_efficient_cells_table(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
+        ).rstrip(),
+        "",
+        build_quality_time_tradeoff_table(
             reports,
             source_dirs=source_dirs,
             display_slug_map=display_slug_map,
@@ -2605,6 +3676,18 @@ def _meta_table_float_equal(expected: float | None, reported: float | None) -> b
     return round(expected, 1) == round(reported, 1)
 
 
+def _slice_meta_section(text: str, header_pattern: str, *, until: str) -> str | None:
+    """Return body text after a legacy or IMRaD Results subsection header."""
+    import re
+
+    match = re.search(
+        rf"(?:{header_pattern})(.*?)(?={until}|\Z)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    return match.group(1) if match else None
+
+
 def validate_meta_analysis_coverage(
     meta_path: Path,
     *,
@@ -2623,15 +3706,13 @@ def validate_meta_analysis_coverage(
         return []
 
     text = meta_path.read_text(encoding="utf-8")
-    section_match = re.search(
-        r"#{2,3}\s*2\.\s*Best model overall(.*?)(?=\n#{2,3}\s+2a\.|\n#{2,3}\s+\d+\.|\Z)",
+    section = _slice_meta_section(
         text,
-        re.DOTALL | re.IGNORECASE,
+        r"#{2,3}\s*2\.\s*Best model overall|###\s*3\.3\s+Model ranking",
+        until=r"\n(?:###\s*3\.4|#{2,3}\s+2a\.)",
     )
-    if not section_match:
+    if section is None:
         return ["section 2 (Best model overall) not found in meta-analysis.md"]
-
-    section = section_match.group(1)
     row_re = re.compile(
         r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*([^\|]+?)\s*\|\s*([\d.]+)\s*\|",
         re.MULTILINE,
@@ -2692,18 +3773,16 @@ def validate_meta_analysis_ollama_ranking(
         return []
 
     text = meta_path.read_text(encoding="utf-8")
-    section_match = re.search(
-        r"#{2,3}\s*2a\.\s*Open-source \(Ollama\) model ranking"
-        r"(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+    section = _slice_meta_section(
         text,
-        re.DOTALL | re.IGNORECASE,
+        r"#{2,3}\s*2a\.\s*Open-source \(Ollama\) model ranking"
+        r"|###\s*3\.4\s+Open-source model ranking",
+        until=r"\n(?:###\s*3\.5|#{2,3}\s+3\.)",
     )
-    if not section_match:
+    if section is None:
         return [
             "section 2a (Open-source Ollama model ranking) not found in meta-analysis.md"
         ]
-
-    section = section_match.group(1)
     row_re = re.compile(
         r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.-]+)\s*\|\s*([^\|]+?)\s*\|",
         re.MULTILINE,
@@ -2768,15 +3847,15 @@ def validate_meta_analysis_executive_summary(
         display_slug_map=display_slug_map,
     )
     text = meta_path.read_text(encoding="utf-8")
-    section_match = re.search(
-        r"#{2,3}\s*1\.\s*Executive summary(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+    section = _slice_meta_section(
         text,
-        re.DOTALL | re.IGNORECASE,
+        r"#{2,3}\s*1\.\s*Executive summary|###\s*3\.1\s+Summary of primary findings",
+        until=r"\n(?:###\s*3\.2|#{2,3}\s+1\.5\s)",
     )
-    if not section_match:
+    if section is None:
         return ["section 1 (Executive summary) not found in meta-analysis.md"]
 
-    section = section_match.group(1).strip()
+    section = section.strip()
     errors: list[str] = []
 
     if not re.search(r"^\s*-\s+\*\*", section, re.MULTILINE):
@@ -2787,42 +3866,51 @@ def validate_meta_analysis_executive_summary(
     if "report.md:" in section:
         errors.append("section 1 contains report.md citations (move to later sections)")
 
+    harness_verdict = expectations.get("harness_verdict")
+    if isinstance(harness_verdict, str):
+        if "Harness verdict" not in section:
+            errors.append("section 1 missing **Harness verdict** bullet")
+        if f"({harness_verdict})" not in section and f"`{harness_verdict}`" not in section:
+            errors.append(
+                f"section 1 missing harness verdict label {harness_verdict!r}"
+            )
+
+    harness_verdict_leader = expectations.get("harness_verdict_leader")
+    if isinstance(harness_verdict_leader, str) and harness_verdict_leader not in section:
+        errors.append(
+            f"section 1 missing harness verdict leader {harness_verdict_leader!r}"
+        )
+
     best_harness = expectations.get("best_harness")
     best_harness_avg = expectations.get("best_harness_avg")
     if isinstance(best_harness, str) and isinstance(best_harness_avg, float):
-        if best_harness not in section:
-            errors.append(
-                f"section 1 missing best harness slug {best_harness!r}"
-            )
         avg_token = _fmt(best_harness_avg)
-        if avg_token not in section:
+        if avg_token not in section and harness_verdict not in {"tie", "marginal"}:
             errors.append(
-                f"section 1 missing best harness avg {avg_token} "
+                f"section 1 missing replicate-level harness avg {avg_token} "
                 f"for {best_harness!r}"
             )
 
-    best_harness_median_harness = expectations.get("best_harness_median_harness")
-    best_harness_median_total = expectations.get("best_harness_median_total")
-    if isinstance(best_harness_median_harness, str) and isinstance(
-        best_harness_median_total, float
-    ):
-        if "Best harness by median" not in section:
-            errors.append("section 1 missing **Best harness by median** bullet")
-        if best_harness_median_harness not in section:
-            errors.append(
-                "section 1 missing best harness by median slug "
-                f"{best_harness_median_harness!r}"
-            )
-        median_token = _fmt(best_harness_median_total)
-        if median_token not in section:
-            errors.append(
-                f"section 1 missing best harness median {median_token} "
-                f"for {best_harness_median_harness!r}"
-            )
-
-    top_slug = expectations.get("top_model_slug")
     top_total = expectations.get("top_model_total")
-    if isinstance(top_slug, str) and isinstance(top_total, float):
+    top_tie = expectations.get("top_model_tie")
+    top_slugs = expectations.get("top_model_slugs")
+    top_slug = expectations.get("top_model_slug")
+    if top_tie and isinstance(top_slugs, list) and isinstance(top_total, float):
+        if "Best model overall (tie)" not in section:
+            errors.append("section 1 missing **Best model overall (tie)** bullet")
+        total_token = _fmt(top_total)
+        if total_token not in section:
+            errors.append(
+                f"section 1 missing best model overall total {total_token}"
+            )
+        for slug in top_slugs:
+            if not isinstance(slug, str):
+                continue
+            if slug not in section:
+                errors.append(
+                    f"section 1 missing tied best model slug {slug!r}"
+                )
+    elif isinstance(top_slug, str) and isinstance(top_total, float):
         if top_slug not in section:
             errors.append(
                 f"section 1 missing best model overall slug {top_slug!r}"
@@ -2863,8 +3951,92 @@ def validate_meta_analysis_executive_summary(
                 f"section 1 missing quality–time pts/min {qpm_token} "
                 f"for {quality_target!r}"
             )
+    contest_target = expectations.get("quality_time_contest_target")
+    if isinstance(contest_target, str) and contest_target not in section:
+        errors.append(
+            f"section 1 missing contest quality–time target {contest_target!r}"
+        )
 
     return errors
+
+
+def validate_meta_analysis_harness_inference(
+    meta_path: Path,
+    *,
+    source_dirs: list[Path] | None = None,
+    reports_dir: Path | None = None,
+) -> list[str]:
+    """Compare section 3 inference block in meta-analysis.md to the rollup."""
+    import re
+
+    reports = _collect_reports(reports_dir, source_dirs=source_dirs)
+    inference = calculate_harness_inference(reports)
+    if inference is None or not meta_path.is_file():
+        return []
+
+    text = meta_path.read_text(encoding="utf-8")
+    section = _slice_meta_section(
+        text,
+        r"#{2,3}\s*3\.\s*Harness ranking|###\s*3\.5\s+Harness ranking",
+        until=r"\n(?:###\s*3\.6|#{2,3}\s+4\.)",
+    )
+    if section is None:
+        return ["section 3 (Harness ranking) not found in meta-analysis.md"]
+    errors: list[str] = []
+    if f"`{inference.verdict}`" not in section:
+        errors.append(
+            f"section 3 missing harness inference verdict {inference.verdict!r}"
+        )
+    if inference.leader and inference.leader not in section:
+        errors.append(
+            f"section 3 missing inference leader harness {inference.leader!r}"
+        )
+    if inference.n_models > 0 and f"n={inference.n_models}" not in section.replace(
+        " ", ""
+    ):
+        paired_token = f"paired n={inference.n_models}"
+        if paired_token not in section and f"effective paired n={inference.n_models}" not in section:
+            errors.append(
+                f"section 3 missing paired n={inference.n_models} models note"
+            )
+    if inference.top_pairwise is not None:
+        delta_token = _fmt(inference.top_pairwise.mean_delta)
+        if delta_token not in section:
+            errors.append(
+                f"section 3 missing pairwise delta {delta_token} "
+                f"for {inference.top_pairwise.harness_a}−{inference.top_pairwise.harness_b}"
+            )
+    return errors
+
+
+def _parse_dimension_signal_classifications(section: str) -> dict[int, str]:
+    """Parse section-5 dimension classifications from bullet or table markup."""
+    import re
+
+    reported: dict[int, str] = {}
+    bullet_re = re.compile(
+        r"^\s*-\s*\*\*D(\d+)\b.*?\bClassify:\s*\*\*([^*]+)\*\*",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    for match in bullet_re.finditer(section):
+        reported[int(match.group(1))] = match.group(2).strip().lower()
+
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("| D"):
+            continue
+        parts = [part.strip() for part in stripped.split("|") if part.strip()]
+        if len(parts) < 3:
+            continue
+        dim_match = re.match(r"D(\d+)\b", parts[0], re.IGNORECASE)
+        if dim_match is None:
+            continue
+        classify_match = re.search(r"\*\*([^*]+)\*\*", parts[-1])
+        if classify_match is None:
+            continue
+        reported[int(dim_match.group(1))] = classify_match.group(1).strip().lower()
+
+    return reported
 
 
 def validate_meta_analysis_dimension_signals(
@@ -2882,23 +4054,14 @@ def validate_meta_analysis_dimension_signals(
         return []
 
     text = meta_path.read_text(encoding="utf-8")
-    section_match = re.search(
-        r"#{2,3}\s*5\.\s*Dimension-level signal(.*?)(?=\n#{2,3}\s+\d+\.|\Z)",
+    section = _slice_meta_section(
         text,
-        re.DOTALL | re.IGNORECASE,
+        r"#{2,3}\s*5\.\s*Dimension-level signal|###\s*3\.9\s+Dimension-level signal",
+        until=r"\n(?:###\s*3\.10|#{2,3}\s+[67]\.)",
     )
-    if not section_match:
+    if section is None:
         return ["section 5 (Dimension-level signal) not found in meta-analysis.md"]
-
-    section = section_match.group(1)
-    line_re = re.compile(
-        r"^\s*-\s*\*\*D(\d+)\b.*?\bClassify:\s*\*\*([^*]+)\*\*",
-        re.MULTILINE | re.IGNORECASE,
-    )
-    reported = {
-        int(match.group(1)): match.group(2).strip().lower()
-        for match in line_re.finditer(section)
-    }
+    reported = _parse_dimension_signal_classifications(section)
 
     errors: list[str] = []
     if len(reported) != len(expected):

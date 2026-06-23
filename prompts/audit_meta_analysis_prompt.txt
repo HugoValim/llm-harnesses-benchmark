@@ -1,4 +1,4 @@
-Prompt-Version: meta-v3.16
+Prompt-Version: meta-v3.18
 
 You are running a META-ANALYSIS over a set of code-audit reports that already exist on disk. You are NOT auditing the underlying generated projects yourself — that work is already done. Your job is to compare the audits and definitively answer two questions:
 
@@ -20,7 +20,7 @@ Both answers must be evidence-driven, statistically caveated, and cost-aware. Ra
 
 ## Precomputed rollup (authoritative for numeric tables)
 
-The harness computed this rollup from every `report.md` under the input directories. **Section 0 methodology, section 1 verdict bullets, section 2, 2a, 3, 4, 6, the appendix dimension matrix, and the Harness CLI versions table MUST match these values exactly.** Do not re-derive run totals, harness averages, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and per-replicate detail tables.
+The harness computed this rollup from every `report.md` under the input directories. **Section 0 methodology, sections 0.1–0.2, section 1 verdict bullets, section 1.5, section 2, 2a, 3, 4, 4b, 6, and the appendix dimension matrix MUST match these values exactly.** Do not re-derive run totals, harness inference, or CLI versions from memory. Read individual `report.md` files only for citations, narrative, critical-failure evidence, and appendix replicate-level detail.
 
 {precomputed_rollup}
 
@@ -44,7 +44,7 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
 
 ## Workflow
 
-1. Read the **Precomputed rollup** above. Copy the **Methodology skeleton** into section 0 and the **Executive summary skeleton** verdict bullets into section 1, then the aggregated runs ranking, harness CLI versions table, and statistical-summary averages — do not invent alternate totals.
+1. Read the **Precomputed rollup** above. Copy the **Methodology skeleton** into section 0, **Research questions skeleton** into 0.1, **Limitations skeleton** into 0.2, and **Executive summary skeleton** verdict bullets into section 1 — do not invent alternate totals or harness verdicts.
 2. For citations and narrative only, glob `*/report.md` under each input directory. Read files selectively when you need report:line evidence; do not re-glob the same path twice.
 3. For each report you read, extract when needed:
    - Per-dimension scores from section B (`D1..D10`, each `score/max`)
@@ -54,14 +54,16 @@ You are NOT testing the auditor model. Treat the audit scores as ground truth fo
    - Generation metrics from section H: `Harness-CLI-Version`, `Command-Shim-Version` (when present), `Generation-Time`, `Input-Tokens`, `Output-Tokens`, `Total-Tokens`, `Estimated-Cost-USD`, `Prompt-Version`, `Primary-Prompt-SHA256`, `Followup-Prompt-SHA256`
    - When section H is missing or malformed, prefer the sibling `generation-metrics.json` in the same audit directory (written by the harness from `docs/PRICING.md` + benchmark `result.json`)
    - Record `n/a` for any missing field; never invent values
-4. Build section 2 from the **Aggregated runs ranking** table in the rollup (one row per `(harness, model_slug)` mean across replicate audits).
-5. Build section 2a from the **Ollama model ranking** table in the rollup.
-6. Build section 3 from the **Harness comparison** table in the rollup.
-7. Build section 4 from the **Cross-harness model comparison** table in the rollup.
-8. Build section 6 from the **Aggregated performance & cost** table in the rollup.
-9. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
-10. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
-11. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
+4. Build section 1.5 from **Practitioner decisions (section 1.5)** in the rollup (copy table; add one sentence per row).
+5. Build section 2 from the **Aggregated runs ranking** table in the rollup (one row per `(harness, model_slug)` mean across replicate audits).
+6. Build section 2a from the **Ollama model ranking** table in the rollup.
+7. Build section 3 from the **Harness comparison** table in the rollup, then copy **Harness inference summary** below the table verbatim.
+8. Build section 4 from **Cross-harness summary (section 4)** (cell means only). Move replicate-level rows from **Cross-harness model comparison** to appendix **Replicate-level detail**.
+9. Build section 4b from **Harness effect summary (section 4b)** in the rollup.
+10. Build section 6 from the **Aggregated performance & cost** table and **Pareto-efficient Tier-A cells** in the rollup.
+11. Aggregate critical failures by CF type number across all targets; classify each as universal vs harness-attributable.
+12. Run the calibration checks (section 8 below) — record verdict; do NOT block on failure.
+13. Write the output file (see "Required output" below). The run is only complete once `Write` succeeds against `{output_path}`. Do not loop further Reads after extraction is done.
 
 ## Required output
 
@@ -71,7 +73,15 @@ Use the Write tool with that exact absolute path. The file MUST contain these se
 
 ### 0. Methodology
 
-Copy the rollup **Methodology skeleton** prose **verbatim** (paragraphs only — omit the skeleton heading and copy instructions). This section explains the benchmark pipeline, audit rubric, contest-harness scope, and how quality–time tradeoff is computed. No citations.
+Copy the rollup **Methodology skeleton** **verbatim** (prose and tables — omit the skeleton heading and copy instructions). This section explains the benchmark pipeline, audit rubric, contest-harness scope, and how quality–time tradeoff is computed. No citations.
+
+### 0.1 Research questions & endpoints
+
+Copy the rollup **Research questions skeleton** **verbatim** (table — omit skeleton heading). Do not override the harness verdict label.
+
+### 0.2 Limitations
+
+Copy the rollup **Limitations skeleton** **verbatim** (table — omit skeleton heading).
 
 ### 1. Executive summary (bullet list)
 
@@ -79,16 +89,15 @@ Use a **markdown bullet list** (`- **Label**: …`), **not** a single paragraph.
 
 **Verdict bullets — copy from rollup **Executive summary skeleton** verbatim** (numbers and slugs):
 
-- **Best harness overall** — contest harness winner with avg, N, std dev; runners-up and tie note when present.
-- **Best model overall** — rank-1 **contest-harness** row from **Aggregated runs ranking** (mean total across replicate audits). Never substitute a cross-harness Ollama average here.
+- **Harness verdict** — paired cell-mean inference verdict (`decisive` / `marginal` / `tie` / `insufficient-data`); must match **Harness inference summary**. Do not crown a harness as decisive when verdict is `marginal` or `tie`.
+- **Best model overall** — rank-1 **contest-harness** row(s) from **Aggregated runs ranking** (mean total across replicate audits). When multiple cells share the top mean, copy the skeleton **(tie)** bullet verbatim. Never substitute a cross-harness Ollama average here.
 - **Best open-source model overall** — rank-1 from **Ollama model ranking** (shared Ollama Cloud grid). Always a separate bullet from best model overall.
-- **Cursor agent runs** — only when the skeleton includes this bullet.
 - **Best quality–time tradeoff** — copy from skeleton when present (Tier-A quality per minute; overall leader and contest-harness leader when they differ).
-- **Harness CLI versions** — only when the skeleton includes this bullet (rollup shows `mixed-version` for a contest harness).
 - **Universal blind spot candidate** — copy from skeleton when present.
 
 **Narrative bullets (you write; no citations in section 1):**
 
+- Exactly one **Practitioner pick** sentence summarizing section 1.5 (max three scenarios).
 - Exactly one harness-attributable pattern (defer evidence to section 5 or 7).
 - Exactly one universal blind spot expansion if needed beyond the skeleton line (dimension + per-harness avgs from **Dimension breakdown**).
 - Exactly one calibration clause: PASS / WARN / FAIL (section 8) plus one reason.
@@ -97,24 +106,23 @@ Use a **markdown bullet list** (`- **Label**: …`), **not** a single paragraph.
 
 - No `report.md:line` citations.
 - No exclusion-methodology prose (single-harness leaders, suppression rules — sections 2–3).
-- No harness CLI bullet when the skeleton omits it (all `unknown`, no `mixed-version`).
 - Do not crown a cross-harness Ollama average as best model overall when a higher contest-harness cell mean exists in **Aggregated runs ranking**.
+- Do not use replicate-level harness averages (N=21 runs) as the harness verdict — use **Harness inference summary** (paired n=models).
 
-**Bad example** (one paragraph — never do this):
-
-> **Best harness overall** … **Best model overall**: `deepseek_v4_pro_ollama_cloud` with avg 74.0 … after suppressing single-harness leaders … (`report.md:10`).
-
-**Good example** (copy skeleton, add three narrative bullets):
+**Good example** (copy skeleton, add narrative bullets):
 
 ```markdown
-- **Best harness overall**: `codex` — 61.1/100 avg (N=8, std dev 17.7). Runners-up: opencode 60.0, claude 59.0. *Statistical tie* (margin ≤3 on N≤8).
+- **Harness verdict (marginal)**: No decisive winner among contest harnesses — cell-mean leader `codex` 77.0/100 (+0.8 vs `claude` 76.2); paired n=7 models; codex−claude Δ=+0.8 (95% CI −1.2–2.8; sign-test p=0.69). Tie-breaker win counts: codex 3/7, opencode 2/7, claude 2/7.
 - **Best model overall**: `codex_gpt_5_5` — 86.0/100 mean under `codex` (N=3; single-harness anchor — not on the shared Ollama grid).
 - **Best open-source model overall**: `deepseek_v4_pro_ollama_cloud` — 74.0/100 cross-harness avg across 3 contest harnesses (std dev 2.6; best on the shared Ollama Cloud grid).
-- **Cursor agent runs**: N=2, avg 81.5 — model-only benchmarks; excluded from harness contest.
-- **Universal blind spot candidate**: D9 Production hardening — all avg 0.4/10; claude 1.2 / codex 0.0 / opencode 0.1.
+- **Practitioner pick**: For OSS quality use `codex-glm_5_2`; for budget Tier-A use `opencode-minimax_m3` (accept slow gen-time).
 - **Harness-attributable pattern**: opencode leads on D8 secrets/config vs claude/codex (see section 5).
 - **Calibration**: **FAIL** — D9 floors out; median D10 saturated at 8.0 (section 8).
 ```
+
+### 1.5 Practitioner decisions
+
+Copy the rollup **Practitioner decisions (section 1.5)** table exactly. Below the table, one sentence per row (no citations required).
 
 ### 2. Best model overall
 
@@ -152,23 +160,20 @@ Rules:
 - Tier distribution as `A/B/C/D` counts (e.g. `3/2/0/0`).
 - Critical-failure count = sum of section-F failures across all runs of that harness.
 - Headline is one sentence summarizing harness behavior, citing one specific `report.md:line` as evidence.
-- Below the table: one-line sample-size caveat (e.g. "N=5 per harness; a single outlier swings avg by ~3 points — treat margins under 3 as ties").
-- If the top two harnesses differ by <=3 points and either has fewer than 5 valid runs, call it a tie.
+- Below the table: copy **Harness inference summary** from the rollup **verbatim** (verdict, CIs, pairwise delta, sensitivity subset). Add one footnote: replicate-level N in the table above is not the paired inference unit — effective paired n = number of cross-harness models in the inference block.
 
 ### 4. Cross-harness model pairings
 
-For every model that appears under >=2 harnesses, one subsection:
+Copy the rollup **Cross-harness summary (section 4)** table exactly (cell means per model).
 
-#### `<model_slug>`
-
-| Harness | Total | Tier | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | D10 | Δ vs model median |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-
-- Rows and totals must match the precomputed **Cross-harness model comparison** table for that model.
-- "Δ vs model median" is the delta of this run's total from the median total of this model across its harnesses.
-- One sentence after the table: which dimension moved the needle most, citing report:line.
+- One sentence after the table citing `report.md:line` for the model with the largest **Spread** column only.
+- Do **not** include per-replicate 9-row tables in section 4 — those belong in appendix **Replicate-level detail**.
 
 If a model only appears under one **contest** harness, list it in the appendix's "Single-harness models (contest)" entry and do NOT include it here. Cursor-only models belong under "Cursor agent models", not here.
+
+### 4b. Harness effect summary
+
+Copy the rollup **Harness effect summary (section 4b)** block exactly. One optional sentence naming the largest-spread dimension if not already stated.
 
 ### 4a. Completion vs. quality gap
 
@@ -189,7 +194,7 @@ Rules:
 
 ### 5. Dimension-level signal
 
-Copy each dimension line from the rollup **Dimension-level signal (precomputed)** section **verbatim** — universal-avg, per-harness avgs, and **Classify** label must match exactly.
+Copy the dimension signal **table** from the rollup **Dimension-level signal (precomputed)** section **verbatim** — universal-avg, per-harness avgs, and **Classify** labels must match exactly.
 
 Classification rules (already applied in the rollup; do not override):
 
@@ -203,6 +208,8 @@ When the rollup includes **D9 sub-check cohort (preflight)**, summarize which D9
 
 ### 6. Performance & cost
 
+All generation runs used provider **subscription** access. **Cost (USD)** is a counterfactual estimate from `docs/PRICING.md` (OpenRouter list rates where published, or proxy/estimated rates when not available outside subscription billing) — not actual subscription invoices. Include this note verbatim above the table.
+
 | Target (harness-model) | Gen-time (min) | Tokens (M) | Cost (USD) | Mean total | Quality per $ | Quality per minute |
 |---|---:|---:|---:|---:|---:|---:|
 
@@ -210,13 +217,14 @@ Rules:
 - Copy rows from the precomputed **Aggregated performance & cost** table exactly — same target label, mean generation time, mean tokens, mean cost, mean total, and derived quality ratios.
 - Do **not** list individual replicate runs here; use **Performance & cost (detail)** only for citations and variance notes.
 - **Gen-time (min)**, **Tokens (M)**, and **Cost (USD)** are already averaged in the rollup (one decimal / two decimal formatting as shown).
-- "Quality per $" and "Quality per minute" are computed from the rollup mean total and mean cost/time; emit `n/a` exactly as the rollup shows.
+- "Quality per $" and "Quality per minute" are computed from the rollup mean total and mean cost/time; emit `n/a` exactly as the rollup shows (including when mean cost < $0.10).
 - Sort order must match the rollup table (mean total descending; ties broken by mean cost ascending).
-- Below the table, in <=4 bullets:
+- Copy **Pareto-efficient Tier-A cells** and **Best quality–time** tables from the rollup below the main table.
+- Below the tables, in <=4 bullets:
   - Cheapest Tier-A run (target + cost).
-  - Fastest Tier-A run (target + gen-time in minutes).
+  - Fastest Tier-A **contest-harness** run (target + gen-time in minutes; exclude cursor).
   - Cost outlier (highest spend vs score earned).
-  - Time outlier (longest gen-time vs score earned).
+  - Time outlier (longest gen-time vs score earned among contest harnesses).
 
 ### 7. Critical failure inventory
 
@@ -233,21 +241,26 @@ Rules:
 
 ### 8. Calibration check (rubric fitness, non-blocking)
 
-Run all five checks and record the verdict per check, then an overall verdict:
+Run all six checks and record the verdict per check, then an overall verdict:
 
 - **Check 1 — Cohort median**: median total across all valid runs. PASS if <= 80; WARN if 80 < median <= 85; FAIL if > 85 (rubric too lenient).
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
 - **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target). For D9, cite rollup **D9 sub-check cohort** pass rates when present to name the dominant missing sub-check (healthcheck vs logging vs restart vs USER vs SIGTERM).
-- **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → WARN.
+- **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → **PASS** when the cohort is a curated top-model grid (A+B-only mix expected); WARN only when weak models were included in the matrix but none scored below Tier B.
 - **Check 5 — D10 floor (code quality)**: median D10 across all valid runs.
   - **PASS** if 3 ≤ median D10 < 8 (cohort shows meaningful toolchain spread).
   - **WARN** if 6 ≤ median D10 < 8 — rubric may still be too lenient on code quality; cite dominant D10 justification patterns from section B.
-  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.14 D10 triggers and enforcing the D8/D9/D8+bare-except calibration caps on D10.
+  - **FAIL** if median D10 ≥ 8 — D10 is saturated; recommend tightening audit-v3.16 D10 triggers and enforcing the D8/D9/D8+bare-except calibration caps on D10.
   - **FAIL** if median D10 < 3 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
   - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4/v3.5); list affected runs in the appendix and do NOT let Check 5 influence the overall verdict.
+- **Check 6 — Anchor ranking (face validity, v3.16)**: compare cell means from **Aggregated runs ranking** for `codex-codex_gpt_5_5(xhigh)` and `claude-claude_opus_4_8` against all contest-harness cells (`opencode`, `codex`, `claude` — exclude `cursor`).
+  - **PASS** if both anchor cells rank in the **top 3** contest-harness cells by mean total **and** `codex-codex_gpt_5_5(xhigh)` mean ≥90 **and** `claude-claude_opus_4_8` mean ≥88.
+  - **WARN** if anchors rank top-3 but either mean is below its absolute target band (`codex_gpt_5_5` <90 or `claude_opus_4_8` <88) — relative rank is acceptable but absolute calibration still drifts; cite per-replicate dimension losses from anchor `report.md` files.
+  - **FAIL** if either anchor ranks below an open-weight cell such as `codex-glm_5_2` — rubric over-tightened on polish dimensions (CF#1-B misclassified as CF#1-R, D10 caps). Recommend audit-v3.16 anchor calibration loosening, **not** further D10/D9 tightening.
+  - Target post-calibration: `codex_gpt_5_5` mean ≥90, `claude_opus_4_8` mean ≥88, cohort median 78–82.
 
 Overall verdict:
-- **PASS** — all five checks pass (treat `insufficient-data` on Check 5 as neutral, not a failure)
+- **PASS** — all six checks pass (treat `insufficient-data` on Check 5 as neutral, not a failure)
 - **WARN** — one or more WARNs, no FAILs
 - **FAIL** — one or more FAILs
 
@@ -262,14 +275,18 @@ Each bullet:
 
 ### 10. Recommendations
 
-4-8 concrete, actionable recommendations for the benchmark owner. Each one is tagged:
-- `[harness]` — change to a specific agent harness (e.g. opencode config, claude-code env, CLI version pin in `config/harnesses.json`)
-- `[prompt]` — change to `prompts/benchmark_prompt.txt` or `prompts/agent_coding_rules.md` (the brief sent to the agent)
-- `[rubric]` — change to `prompts/audit_prompt_template.txt` (auditor deduction triggers)
-- `[retry]` — re-run a specific (model, harness) cell with explained reason; cite `config/retry_targets_*.json` when applicable
-- `[analysis]` — document a pattern for future runs without implying a harness bug (e.g. agent-output quality gaps)
+4–6 concrete, actionable recommendations for the benchmark owner. Each one is tagged with **priority** and category:
 
-Cover calibration FAIL items from section 8 when present: saturated dimensions (D5/D9), D10 leniency, D8 blind spots, single-auditor limitation. Use corrected counts from section 7 — do not understate CF incidence.
+- **P0** — validity (second auditor)
+- **P1** — `[rubric]` calibration / CF splits
+- **P2** — `[prompt]` brief changes
+- **P3** — `[retry]` re-run specific cells
+
+Category tags still apply: `[harness]`, `[prompt]`, `[rubric]`, `[retry]`, `[analysis]`.
+
+Format: `1. **[P0][harness]** …`
+
+Cover calibration FAIL/WARN items from section 8 when present. Use corrected counts from section 7. **Do NOT** recommend further D10 tightening when Check 6 FAILs.
 
 No vague advice ("be more thorough"). Each recommendation must say what to change and why, citing evidence from above sections.
 
@@ -285,7 +302,7 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - Copy rollup **Aggregated dimension score matrix** exactly. Use **Dimension score matrix (detail)** only for per-replicate citations.
 - Per-harness std dev table for each dimension (D1..D10).
 - Cross-auditor disagreement: for every `(harness, model_slug)` cell audited by >=2 auditors, the per-auditor totals + std-dev. Flag any cell where std-dev exceeds 10 as a calibration concern.
-- **Harness CLI versions**: copy the rollup **Harness CLI versions** table exactly. When any harness has `mixed-version`, list each affected `auditor/target` with its version (from rollup bullets or section H / `generation-metrics.json`). Flag those targets as `mixed-harness-version` and exclude them from cross-harness rankings unless explicitly opted in.
+- **Replicate-level detail**: for each cross-harness model, copy rows from rollup **Cross-harness model comparison** (per-replicate tables with Δ vs model median).
 - Tier distribution histogram across the whole cohort.
 
 ## Guardrails
@@ -293,14 +310,14 @@ No vague advice ("be more thorough"). Each recommendation must say what to chang
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in section 6 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.14` and whose underlying benchmark prompt metadata is `benchmark-v3.5` (and `benchmark-followup-v3.5` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.13` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-version` and exclude from rankings unless explicitly opted in.
-- **Harness-version separation**: when the rollup shows multiple distinct CLI versions for the same harness prefix, flag `mixed-harness-version` in the appendix, list affected targets, and exclude those cells from cross-harness harness rankings unless explicitly opted in. Do not probe live PATH for versions — use only rollup / section H / `generation-metrics.json` values (`unknown` when absent).
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.16` (or `audit-v3.15` when explicitly opted in for before/after comparison) and whose underlying benchmark prompt metadata is `benchmark-v3.5` or `benchmark-v3.6` (and `benchmark-followup-v3.5` or `benchmark-followup-v3.6` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.14` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-prompt-version` and exclude from rankings unless explicitly opted in.
+- **Impersonal voice**: do not use first person (`we`, `I`, `our`). Prefer third person or passive constructions.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:
-  - **Best model overall** (section 1) = rank-1 contest-harness cell from **Aggregated runs ranking** / **Executive summary skeleton** (mean across replicate audits). Section 2 lists the same table; cursor rows may appear above contest rows but do not win the section-1 verdict.
+  - **Harness verdict** (section 1) = **Harness inference summary** verdict on cell-mean paired n (models), not replicate-level harness averages. When verdict is `marginal` or `tie`, do not describe the leader as decisively best.
+  - **Best model overall** (section 1) = rank-1 contest-harness cell from **Aggregated runs ranking** / **Executive summary skeleton** (mean across replicate audits). Section 2 lists the same table; cursor rows may appear above contest rows but do not win the section-1 contest verdict.
   - **Best open-source model overall** (section 1 + section 2a) = rank-1 from **Ollama model ranking** (`*_ollama_cloud`, >=2 contest harnesses). Always distinct from best model overall.
-  - Best-harness claim is among opencode/codex/claude only; `cursor` is never eligible. Requires the chosen harness to have >=2 model slugs with valid totals in the cross-harness cohort. If no harness qualifies, state "insufficient cross-model coverage — harness verdict suppressed".
-  - When two harness contenders sit within 3 points of each other on a small sample (N<=8), call it a tie and explain.
+  - Best-harness numeric leader is among opencode/codex/claude only; `cursor` is never eligible. If paired inference verdict is `insufficient-data`, state harness verdict suppressed.
 - **Calibration check is non-blocking**: record the verdict, recommend rubric changes, and continue. Do NOT refuse to publish on FAIL.
 - **Prose tight, tables unlimited**: keep prose between tables to <=2 sentences each. No document-level word cap; the appendix in particular should be comprehensive.
 - **Write the output file with the Write tool to the exact path above**. Do not echo the contents into your final message — only write them to disk. End your turn after the Write succeeds with a single line of acknowledgement.

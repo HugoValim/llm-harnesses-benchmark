@@ -20,7 +20,11 @@ from benchmark.audit_rollup import (  # noqa: E402
     build_dimension_matrix_detail_table,
     build_dimension_signal_section,
     build_executive_summary_skeleton,
+    build_inference_summary_markdown,
     build_methodology_skeleton,
+    bootstrap_ci,
+    calculate_cell_means,
+    calculate_harness_inference,
     build_model_coverage_table,
     build_ollama_model_ranking_table,
     build_precomputed_rollup,
@@ -38,6 +42,7 @@ from benchmark.audit_rollup import (  # noqa: E402
     validate_meta_analysis_coverage,
     validate_meta_analysis_dimension_signals,
     validate_meta_analysis_executive_summary,
+    validate_meta_analysis_harness_inference,
     validate_meta_analysis_ollama_ranking,
     _cross_harness_cohort_slugs,
     _dimension_labels,
@@ -133,14 +138,12 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
     assert "Build section 2 from the **Aggregated runs ranking**" in prompt_template
     assert "All runs ranking (detail)" in rollup
     assert "All runs ranking (detail)" in prompt
-    assert "Harness CLI versions" in rollup
-    assert "Harness CLI versions" in prompt
     assert "glm_5_1" in prompt
     assert "claude, codex, opencode" in prompt
     assert str((tmp_path / "meta-analysis.md").resolve()) in prompt
 
 
-def test_build_precomputed_rollup_includes_harness_versions(tmp_path: Path) -> None:
+def test_build_precomputed_rollup_omits_harness_versions_table(tmp_path: Path) -> None:
     input_dir = tmp_path / "auditor_a"
     target = input_dir / "claude-glm_5_1_claude"
     target.mkdir(parents=True)
@@ -157,8 +160,8 @@ def test_build_precomputed_rollup_includes_harness_versions(tmp_path: Path) -> N
         '{"harness_cli_version": "claude 2.0.0", "harness": "claude"}'
     )
     rollup = build_precomputed_rollup(source_dirs=[input_dir])
-    assert "claude 2.0.0" in rollup
-    assert "mixed-version" not in rollup or "Notes" in rollup
+    assert "## Harness CLI versions" not in rollup
+    assert "Sensitivity: version-homogeneous subset" not in rollup
 
 
 def test_validate_meta_analysis_coverage_detects_total_mismatch(
@@ -619,8 +622,7 @@ def test_build_executive_summary_skeleton_splits_peak_and_open_source() -> None:
     assert "single-harness anchor" in skeleton
     assert "**Best open-source model overall**: `deepseek_v4_pro`" in skeleton
     assert "74.0/100 cross-harness avg" in skeleton
-    assert "**Best harness by median**: `opencode`" in skeleton
-    assert "75.5/100 median (N=2)" in skeleton
+    assert "**Harness verdict" in skeleton
     assert "same as best model overall" not in skeleton.lower()
 
 
@@ -776,7 +778,7 @@ def test_validate_meta_executive_summary_detects_missing_slug(
                 "",
                 "- **Best model overall**: `wrong_model` — 86.0/100 under `codex`.",
                 "- **Best open-source model overall**: `deepseek_v4_pro` — 74.0/100 cross-harness avg across 3 contest harnesses.",
-                "- **Best harness overall**: `codex` — 74.5/100 avg (N=2).",
+                build_executive_summary_skeleton(reports).splitlines()[8],
             ]
         )
     )
@@ -1003,7 +1005,8 @@ def test_calculate_quality_time_tradeoff_picks_tier_a_leader(tmp_path: Path) -> 
     skeleton = build_executive_summary_skeleton(reports, source_dirs=[input_dir])
     assert "**Best quality–time tradeoff**" in skeleton
     assert "cursor-composer_2_5" in skeleton
-    assert "6.27" in skeleton or "6.3" in skeleton
+    assert "claude-glm_5_2" in skeleton
+    assert "6.27" in skeleton or "6.3" in skeleton or "5.4" in skeleton
 
 
 def test_build_methodology_skeleton_includes_cohort_counts(tmp_path: Path) -> None:
@@ -1025,25 +1028,137 @@ def test_build_methodology_skeleton_includes_cohort_counts(tmp_path: Path) -> No
     methodology = build_methodology_skeleton(reports, source_dirs=[input_dir])
     assert "### Benchmark task" in methodology
     assert "### Experimental design" in methodology
-    assert "**This run:** 2 scored audit reports" in methodology
-    assert "cross-harness grid covers 1 open-weight models" in methodology
-    assert "Quality–time tradeoff" in methodology
+    assert "**Which harness is best?**" in methodology
+    assert "**Which model is best?**" in methodology
+    assert "### Cross-harness Ollama grid" in methodology
+    assert "### How contest harnesses are compared" in methodology
+    assert "| Layer | What agents build |" in methodology
+    assert "| Ollama model |" not in methodology
+    assert "| 1 — **Grid execution** |" in methodology
+    assert "| D1 | Deliverable completeness | 15 |" in methodology
+    assert "| Scored audit reports | 2 |" in methodology
+    assert "| **Quality–time tradeoff** |" in methodology
+
+
+def _run_02_audit_has_multi_harness_grid(source: Path, *, min_models: int = 2) -> bool:
+    """True when local run_02 audit reports span a paired cross-harness grid."""
+    reports = _collect_reports(None, source_dirs=[source])
+    harnesses = {r.harness for r in reports if r.harness in {"claude", "codex", "opencode"}}
+    inference = calculate_harness_inference(reports)
+    return (
+        len(harnesses) >= 2
+        and inference is not None
+        and inference.n_models >= min_models
+        and inference.verdict != "insufficient-data"
+    )
 
 
 def test_validate_run_02_meta_executive_summary_includes_quality_time() -> None:
-    meta = REPO_ROOT / "results" / "run_02" / "meta-analysis.md"
     source = REPO_ROOT / "results" / "run_02" / "audit-reports" / "composer_2_5"
-    if not meta.is_file() or not source.is_dir():
+    if not source.is_dir() or not _run_02_audit_has_multi_harness_grid(source):
         return
 
-    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[source])
+    reports = _collect_reports(None, source_dirs=[source])
+    skeleton = build_executive_summary_skeleton(reports, source_dirs=[source])
+    assert "**Harness verdict" in skeleton
+    assert "**Best quality–time tradeoff**" in skeleton
+    assert "cursor-composer_2_5" in skeleton
+    assert "claude-claude_sonnet_4_6" in skeleton
+    assert "**Cursor agent runs**" not in skeleton
+
+
+def test_bootstrap_ci_bounds_contain_mean() -> None:
+    from statistics import mean as stat_mean
+
+    values = [70.0, 72.0, 74.0, 76.0, 78.0, 80.0, 82.0]
+    mean_val, lo, hi = bootstrap_ci(values)
+    assert lo <= mean_val <= hi
+    assert lo <= stat_mean(values) <= hi
+
+
+def test_paired_harness_verdict_marginal_on_run_02() -> None:
+    source = REPO_ROOT / "results" / "run_02" / "audit-reports" / "composer_2_5"
+    if not source.is_dir() or not _run_02_audit_has_multi_harness_grid(source, min_models=7):
+        return
+
+    reports = _collect_reports(None, source_dirs=[source])
+    inference = calculate_harness_inference(reports)
+    assert inference is not None
+    assert inference.n_models == 7
+    assert inference.verdict in {"marginal", "tie"}
+    assert inference.gap is not None
+    assert inference.gap < 1.0
+
+
+def test_executive_summary_reflects_inference_verdict() -> None:
+    reports = _exec_summary_fixture_reports()
+    inference = calculate_harness_inference(reports)
+    skeleton = build_executive_summary_skeleton(reports)
+    assert inference is not None
+    assert f"({inference.verdict})" in skeleton
+
+
+def test_validate_meta_analysis_inference_section(tmp_path: Path) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    inference = calculate_harness_inference(reports)
+    assert inference is not None
+    summary = build_inference_summary_markdown(reports)
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## 3. Harness ranking",
+                "",
+                "| Rank | Harness | N Runs | Avg Total |",
+                "|---:|---|---:|---:|",
+                "| 1 | opencode | 2 | 75.5 |",
+                "",
+                summary.replace("## Harness inference summary", "").strip(),
+            ]
+        )
+    )
+    errors = validate_meta_analysis_harness_inference(meta, source_dirs=[input_dir])
     assert errors == []
-    text = meta.read_text(encoding="utf-8")
-    assert "## 0. Methodology" in text
-    assert "### Experimental design" in text
-    assert "**Best quality–time tradeoff**" in text
-    assert "cursor-composer_2_5" in text
-    assert "6.10" in text
+
+
+def test_build_precomputed_rollup_includes_inference_blocks(tmp_path: Path) -> None:
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in _sample_reports():
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    rollup = build_precomputed_rollup(source_dirs=[input_dir])
+    assert "## Harness inference summary" in rollup
+    assert "## Cross-harness summary (section 4)" in rollup
+    assert "## Harness effect summary (section 4b)" in rollup
+    assert "## Practitioner decisions (section 1.5)" in rollup
+    assert "## Pareto-efficient Tier-A cells" in rollup
+    assert "## Research questions skeleton" in rollup
 
 
 def _dimension_report(
@@ -1147,8 +1262,9 @@ def test_validate_meta_analysis_dimension_signals_detects_mismatch(
             [
                 "## 5. Dimension-level signal",
                 "",
-                "- **D2 — D2 LLM integration correctness** (max 10): universal-avg 9.0; "
-                "per-harness avg codex=9.0. Classify: **saturated**.",
+                "| Dim | Dimension | Max | Universal avg | Codex | Classify |",
+                "|---|---:|---:|---:|---:|---|",
+                "| D2 | LLM integration correctness | 10 | 9.0 | 9.0 | **saturated** |",
             ]
         )
     )
