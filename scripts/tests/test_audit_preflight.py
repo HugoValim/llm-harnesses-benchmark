@@ -53,6 +53,19 @@ def test_format_preflight_block_empty_project(tmp_path: Path) -> None:
     assert "No D8 secret/config pattern hits" in block
 
 
+def test_scan_finds_readme_secret_generation_example(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "README.md").write_text(
+        "export DJANGO_SECRET_KEY=$(python -c 'from django.core.management.utils "
+        "import get_random_secret_key; print(get_random_secret_key())')\n",
+        encoding="utf-8",
+    )
+    hits = scan_project_config_hygiene(project)
+    assert any(hit.pattern_id == "CF#1-D-secret-generation-example" for hit in hits)
+    assert not any(hit.pattern_id == "CF#1-D-secret-literal" for hit in hits)
+
+
 def test_scan_finds_readme_doc_tier_secret_literal(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -62,6 +75,18 @@ def test_scan_finds_readme_doc_tier_secret_literal(tmp_path: Path) -> None:
     )
     hits = scan_project_config_hygiene(project)
     assert any(hit.pattern_id == "CF#1-D-secret-literal" for hit in hits)
+
+
+def test_scan_finds_dockerfile_build_tier_secret_literal(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Dockerfile").write_text(
+        "RUN DJANGO_SECRET_KEY=build-only python -m django collectstatic --noinput\n",
+        encoding="utf-8",
+    )
+    hits = scan_project_config_hygiene(project)
+    assert any(hit.pattern_id == "CF#1-B-build-secret-literal" for hit in hits)
+    assert not any(hit.pattern_id == "CF#1-R-secret-literal" for hit in hits)
 
 
 def test_scan_finds_settings_runtime_tier_secret_literal(tmp_path: Path) -> None:

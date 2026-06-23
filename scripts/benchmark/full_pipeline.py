@@ -32,7 +32,7 @@ from benchmark.util import load_json, print_line
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
-STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.13"
+STALE_AUDIT_PROMPT_MARKER = "Prompt-Version: audit-v3.14"
 
 _AUDIT_DISPATCH_HARNESSES = frozenset({"claude", "codex", "cursor"})
 

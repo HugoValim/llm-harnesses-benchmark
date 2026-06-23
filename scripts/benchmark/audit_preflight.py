@@ -25,6 +25,15 @@ _SECRET_ASSIGNMENT = re.compile(
     r"(?:^|\s)(?:DJANGO_)?SECRET_KEY\s*=\s*(\S+)",
     re.IGNORECASE | re.MULTILINE,
 )
+_SECRET_GENERATION_EXAMPLE = re.compile(
+    r"openssl\s+rand|python\s+-c\s+.*secrets|get_random_secret_key\s*\(|"
+    r"django\.core\.management\.utils.*get_random_secret_key",
+    re.IGNORECASE,
+)
+_DOCKERFILE_BUILD_COMMAND = re.compile(
+    r"collectstatic|migrate|compilemessages|check\s+--deploy",
+    re.IGNORECASE,
+)
 _SCAN_FILENAMES = frozenset(
     {
         "docker-compose.yml",
@@ -84,6 +93,20 @@ class PreflightHit:
     excerpt: str
 
 
+def _is_secret_generation_example(line: str) -> bool:
+    """True when a doc line shows secret generation, not a static literal."""
+    return bool(_SECRET_GENERATION_EXAMPLE.search(line))
+
+
+def _doc_tier_secret_pattern_id(rel: str, path: Path, line: str) -> str:
+    """Classify documentation-tier secret hits for v3.16 CF#1-D split."""
+    if _is_secret_generation_example(line):
+        return "CF#1-D-secret-generation-example"
+    if _DJANGO_INSECURE_LITERAL.search(line):
+        return "CF#1-D-django-insecure"
+    return "CF#1-D-secret-literal"
+
+
 def _iter_scan_files(project_dir: Path) -> list[Path]:
     files: list[Path] = []
     for path in sorted(project_dir.rglob("*")):
@@ -98,6 +121,19 @@ def _iter_scan_files(project_dir: Path) -> list[Path]:
         if path.suffix.lower() in _SCAN_SUFFIXES and len(rel.parts) <= 6:
             files.append(path)
     return files
+
+
+def _is_dockerfile_build_tier_secret(path: Path, line: str) -> bool:
+    """True when a Dockerfile secret literal is build-only (CF#1-B)."""
+    if path.name != "Dockerfile":
+        return False
+    if not _SECRET_ASSIGNMENT.search(line):
+        return False
+    if _DOCKERFILE_BUILD_COMMAND.search(line):
+        return True
+    if re.search(r"^\s*(?:RUN|ENV)\s", line, re.IGNORECASE):
+        return True
+    return False
 
 
 def _line_excerpt(line: str, *, max_len: int = 120) -> str:
@@ -131,8 +167,23 @@ def _scan_file(path: Path, project_dir: Path) -> list[PreflightHit]:
                 )
             )
         if _DJANGO_INSECURE_LITERAL.search(line):
-            tier = "CF#1-D-django-insecure" if _is_doc_tier_path(rel, path) else "CF#1-R-django-insecure"
+            if _is_doc_tier_path(rel, path):
+                tier = _doc_tier_secret_pattern_id(rel, path, line)
+            else:
+                tier = "CF#1-R-django-insecure"
             hits.append(PreflightHit(rel, line_no, tier, _line_excerpt(line)))
+        if _is_doc_tier_path(rel, path) and _is_secret_generation_example(line):
+            if not _SECRET_ASSIGNMENT.search(line) and not _DJANGO_INSECURE_LITERAL.search(
+                line
+            ):
+                hits.append(
+                    PreflightHit(
+                        rel,
+                        line_no,
+                        "CF#1-D-secret-generation-example",
+                        _line_excerpt(line),
+                    )
+                )
         if rel.startswith(".env") or path.name in {".env.example", ".env.sample"}:
             if _ENV_DEBUG_TRUE.search(line):
                 hits.append(
@@ -143,11 +194,12 @@ def _scan_file(path: Path, project_dir: Path) -> list[PreflightHit]:
             value = match.group(1).strip("'\"")
             if value and not value.startswith("${") and value not in {"''", '""'}:
                 if "environ" not in line and "os.getenv" not in line:
-                    tier = (
-                        "CF#1-D-secret-literal"
-                        if _is_doc_tier_path(rel, path)
-                        else "CF#1-R-secret-literal"
-                    )
+                    if _is_dockerfile_build_tier_secret(path, line):
+                        tier = "CF#1-B-build-secret-literal"
+                    elif _is_doc_tier_path(rel, path):
+                        tier = _doc_tier_secret_pattern_id(rel, path, line)
+                    else:
+                        tier = "CF#1-R-secret-literal"
                     hits.append(
                         PreflightHit(rel, line_no, tier, _line_excerpt(line))
                     )
@@ -195,9 +247,10 @@ def format_audit_preflight_block(project_dir: Path) -> str:
         )
         return "\n".join(lines)
     lines.append(
-        "When a row below matches, classify **CF#1-R** (runtime) or **CF#1-D** "
-        "(documentation) per the pattern column unless disproved by reading the "
-        "full file at that line."
+        "When a row below matches, classify **CF#1-R** (runtime), **CF#1-B** (Dockerfile "
+        "build-only), or **CF#1-D** (documentation — `CF#1-D-secret-generation-example` "
+        "is **−1** D8; other `CF#1-D-*` is **−2** D8) per the pattern column unless "
+        "disproved by reading the full file at that line."
     )
     lines.append("")
     lines.append("| file:line | pattern | excerpt |")
