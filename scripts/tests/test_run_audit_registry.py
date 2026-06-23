@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import run_audit  # noqa: E402
 from run_audit import build_audit_prompt, resolve_auditors_and_targets  # noqa: E402
 from benchmark.config import resolve_audit_harness_config  # noqa: E402
+from benchmark.defaults import DEFAULT_AUDIT_JOBS  # noqa: E402
 from benchmark.util import load_json  # noqa: E402
 
 
@@ -45,6 +46,12 @@ def _build_row(slug: str, label: str) -> dict[str, object]:
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2))
+
+
+def test_default_audit_jobs_is_five(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["run_audit.py", "--run-id", "run_01"])
+    args = run_audit.parse_args()
+    assert args.jobs == DEFAULT_AUDIT_JOBS == 5
 
 
 @pytest.mark.parametrize("old_flag", ["--auditor", "--audit-config"])
