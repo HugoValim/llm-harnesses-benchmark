@@ -1,0 +1,12 @@
+{
+  "description": "Face-validity cross-check: second auditor on anchor cells. Run after primary auditor (composer_2_5) completes.",
+  "primary_auditor_slug": "composer_2_5",
+  "second_auditor_slug": "claude_opus_4_8",
+  "second_auditor_harness": "claude",
+  "anchor_cells": [
+    "codex-codex_gpt_5_5",
+    "claude-claude_opus_4_8",
+    "codex-glm_5_2"
+  ],
+  "command_template": "python scripts/run_audit.py --run-id {run_id} --model {second_auditor_slug} --harness {second_auditor_harness} --target {target}"
+}
