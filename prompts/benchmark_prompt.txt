@@ -1,4 +1,4 @@
-Prompt-Version: benchmark-v3.5
+Prompt-Version: benchmark-v3.6
 
 Build a Python web application using Django and Django Channels. This is a controlled benchmark task: implement the requested app inside the current working directory and record evidence for what you verified. First make a short implementation plan for yourself, then implement without asking for confirmation. Do not stop with only a plan.
 
@@ -30,7 +30,10 @@ Required deliverables (all must be present; these map directly to the audit rubr
 Minimal patterns (adapt paths to your project):
 
 ```dockerfile
-# D9.1 + D9.4 (after COPY/install, before CMD)
+# D9.1 + D9.4 (after COPY/install, before CMD) — use build secrets, not RUN DJANGO_SECRET_KEY=...
+# docker build --secret id=django_secret,env=DJANGO_SECRET_KEY .
+RUN --mount=type=secret,id=django_secret \
+    DJANGO_SECRET_KEY=$(cat /run/secrets/django_secret) python manage.py collectstatic --noinput
 RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app
 USER appuser
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
@@ -49,7 +52,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 ```
 
 ```python
-# D9.2 in settings.py — formatter must use dictConfig "()" factory, not a pseudo-JSON format string
+# D9.2 in settings.py — include pythonjsonlogger in requirements; formatter must use dictConfig "()" factory
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -82,7 +85,7 @@ Explicitly disallowed alternatives:
 - Do not implement browser streaming with app-owned raw `new WebSocket(...)` or `WebSocket(...)` JavaScript. Use HTMX `hx-ext="ws"` plus `ws-connect` / `ws-send` wiring in rendered HTML. Small unrelated JavaScript for UI polish is OK, but the streaming path must be the HTMX WebSocket extension.
 - Do not use Tailwind CDN, PostCSS-only setup, django-tailwind, Bootstrap, or hand-written CSS as a replacement for the official Tailwind CLI. Include source CSS, built static CSS, and the exact CLI build command.
 - Do not import or use the direct `ollama` Python package for the app's LLM path. Use only `langchain_ollama.ChatOllama`; tests may fake the project-owned service boundary.
-- Do not write secret-shaped placeholder values such as dummy `SECRET_KEY`, `DJANGO_SECRET_KEY`, tokens, or passwords in source, README, **`VERIFY.md`**, **`conftest.py`**, `.env*`, Dockerfile (**including `RUN`/`ARG` build steps**), or compose. **Any assignment string** matching `DJANGO_SECRET_KEY=` or `SECRET_KEY=` (with or without quotes, in shell exports, pytest fixtures, README code blocks, or Dockerfile `ENV`/`RUN`) is forbidden — including `test-key`, `dummy-build-key`, `changeme`, or `django-insecure-*`. Show variable **names** and commands that **generate** values instead (`openssl rand -hex 32`, `python -c "import secrets; print(secrets.token_urlsafe(50))"`, compose `${DJANGO_SECRET_KEY:?required}` without a default).
+- Do not write secret-shaped placeholder values such as dummy `SECRET_KEY`, `DJANGO_SECRET_KEY`, tokens, or passwords in source, README, **`VERIFY.md`**, **`conftest.py`**, `.env*`, Dockerfile (**including `RUN`/`ARG` build steps**), or compose. **Any assignment string** matching `DJANGO_SECRET_KEY=` or `SECRET_KEY=` (with or without quotes, in shell exports, pytest fixtures, README code blocks, or Dockerfile `ENV`/`RUN`) is forbidden — including `test-key`, `dummy-build-key`, `changeme`, or `django-insecure-*`. For Docker build steps that need a key during `collectstatic`/`migrate`, use `docker build --secret id=django_secret,env=DJANGO_SECRET_KEY` or a multi-stage build that injects the key at runtime — never inline `RUN DJANGO_SECRET_KEY=...` literals. Show variable **names** and commands that **generate** values instead (`openssl rand -hex 32`, `python -c "import secrets; print(secrets.token_urlsafe(50))"`, compose `${DJANGO_SECRET_KEY:?required}` without a default).
 
 Use the tools available in this runtime. If a tool call fails, recover and continue implementing. Do not depend on a specific agent harness tool name.
 
@@ -116,10 +119,10 @@ LLM integration requirements:
 
 Testing and tooling requirements:
 - Tests must mock the LLM client with a named fake class or fixture and assert multiple streamed chunks, not only the final concatenated message.
-- Include a **multi-turn** pytest (or async test) that calls the LLM service twice and asserts the **second** `.astream()` invocation receives message history containing a prior **`AIMessage`** (or equivalent assistant turn) from the first call — cite the assertion on the `messages` list passed to the mock or service.
+- Include a **multi-turn** pytest file named `test_multi_turn_history.py` (or equivalent) that calls the LLM service twice and asserts the **second** `.astream()` invocation receives message history containing a prior **`AIMessage`** (or equivalent assistant turn) from the first call — cite the assertion on the `messages` list passed to the mock or service.
 
 ```python
-# D5 multi-turn test pattern (adapt paths/fixtures)
+# D5 multi-turn test pattern — save as test_multi_turn_history.py (adapt paths/fixtures)
 from langchain_core.messages import AIMessage, HumanMessage
 
 @pytest.mark.asyncio
@@ -145,7 +148,7 @@ async def test_second_stream_includes_prior_assistant_turn(monkeypatch):
 - Include a consumer test with `WebsocketCommunicator`.
 - Include view/template tests that prove the SPA and partials render.
 - Include a template or integration assertion that the HTMX WebSocket extension is loaded and `ws-connect` / `ws-send` are wired to the WebSocket route.
-- Configure coverage, ruff, mypy, bandit, and pip-audit in reproducible project files.
+- Ship `pythonjsonlogger` (or equivalent JSON formatter dependency) in `requirements.txt` / `pyproject.toml` and copy the `LOGGING` block above into production settings.
 - The generated project must also **pass** the configured toolchain: `ruff check`, `ruff format --check`, `mypy`, and `bandit -r .` must all exit cleanly on the code you ship. Configuration alone is not sufficient — the audit will run these tools against your project and grade the results. Aim for: zero ruff errors, zero mypy errors on the chat app modules, no bandit high-severity findings, and no function with cyclomatic complexity ≥ 20.
 - Document the exact verification commands.
 

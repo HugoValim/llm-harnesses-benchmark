@@ -1,4 +1,4 @@
-Prompt-Version: benchmark-followup-v3.5
+Prompt-Version: benchmark-followup-v3.6
 
 This is phase 2 of 2 and a continuation of the existing project in the current working directory. Do not regenerate the app. Do not create a second app. Validate and fix the current codebase in place.
 
@@ -26,7 +26,7 @@ Environment and blocker rules:
 - Check whether the Ollama server is reachable. If it is unavailable, do not mark the app broken solely for that reason. Instead verify that the app reports the dependency failure cleanly and record the blocker in the verification summary.
 - The Ollama backend is not reachable from inside Docker containers in this benchmark environment. An **application** `/health/` view that depends on Ollama may return 503 inside Docker — that is an expected environmental constraint, not a code bug. Treat the Docker run as passing if the container starts and serves HTML on the expected port. Do not loop on Ollama-dependent health **view** failures during manual validation.
 - Docker **`HEALTHCHECK` / compose `healthcheck:`** (D9.1) must still probe a **web liveness** endpoint that returns 200 without calling Ollama (e.g. `/` or `/live/`). Do not omit Docker healthchecks because Ollama is unreachable in containers.
-- Do not print secrets, copy secret file contents into the repo, or write secret-like placeholders into source, `.env`, Dockerfile (**`RUN`/`ARG` build steps**), compose, logs, **README**, **`VERIFY.md`**, or **`conftest.py`** examples. **Any assignment string** matching `DJANGO_SECRET_KEY=` or `SECRET_KEY=` (shell exports, pytest fixtures, README blocks, Dockerfile `ENV`/`RUN`) is forbidden — use value-generation commands or `${VAR:?required}` without defaults instead.
+- Do not print secrets, copy secret file contents into the repo, or write secret-like placeholders into source, `.env`, Dockerfile (**`RUN`/`ARG` build steps**), compose, logs, **README**, **`VERIFY.md`**, or **`conftest.py`** examples. **Any assignment string** matching `DJANGO_SECRET_KEY=` or `SECRET_KEY=` (shell exports, pytest fixtures, README blocks, Dockerfile `ENV`/`RUN`) is forbidden — use `docker build --secret` / multi-stage patterns or value-generation commands instead of inline `RUN DJANGO_SECRET_KEY=...` literals.
 - If a validation step fails because of project code, fix it and rerun the smallest relevant command before moving on. If the same step fails after 3 attempts without a meaningful change to the code or config, stop retrying, record the failure, and move to the next step. Do not loop on a command that is failing for an environmental reason outside the project code.
 
 Before finishing, update the verification summary in README or `VERIFY.md` with each command attempted, its result, and any unresolved environment blocker. Use a concrete command/result/blocker format, not a generic "validated" note. Include D9.1–D9.5 pass/fail rows with file paths.
