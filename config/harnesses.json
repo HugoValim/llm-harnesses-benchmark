@@ -38,6 +38,7 @@
   },
   "cursor": {
     "command": "agent",
+    "cli_version_pin": "2026.06.19",
     "notes": [
       "Cursor Agent CLI in headless mode: agent -p --output-format stream-json --force --trust.",
       "Authenticate with `agent login` (subscription) or set CURSOR_API_KEY for automation.",
