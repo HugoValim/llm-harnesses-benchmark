@@ -132,18 +132,59 @@ def parse_event_stream(raw: str) -> list[dict[str, Any]]:
     return events
 
 
+def _opencode_finishes_use_cumulative_tokens(
+    finishes: list[dict[str, Any]],
+) -> bool:
+    """Return True when ``step_finish`` input counts are non-decreasing (cumulative)."""
+    prev_input = -1
+    for event in finishes:
+        tokens = (event.get("part") or {}).get("tokens") or {}
+        inp = int(tokens.get("input") or 0)
+        if inp < prev_input:
+            return False
+        prev_input = inp
+    return bool(finishes)
+
+
+def _normalize_opencode_token_dict(tokens: dict[str, Any]) -> dict[str, Any]:
+    total_input = int(tokens.get("input") or 0)
+    total_output = int(tokens.get("output") or 0)
+    total_reasoning = int(tokens.get("reasoning") or 0)
+    cache = tokens.get("cache")
+    cache_read = cache_write = 0
+    if isinstance(cache, dict):
+        cache_read = int(cache.get("read") or 0)
+        cache_write = int(cache.get("write") or 0)
+    return {
+        "input": total_input,
+        "output": total_output,
+        "reasoning": total_reasoning,
+        "total": total_input + total_output,
+        "cache": {"read": cache_read, "write": cache_write},
+    }
+
+
 def _sum_opencode_step_tokens(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Sum token counters across every opencode ``step_finish`` in one stream."""
+    """Return session token totals from opencode ``step_finish`` events.
+
+    OpenCode emits cumulative session counters on each ``step_finish``; when
+    input counts are monotonic non-decreasing, the last event is authoritative.
+    Otherwise fall back to summing per-step increments (legacy/test streams).
+    """
+    finishes = [event for event in events if event.get("type") == "step_finish"]
+    if not finishes:
+        return {}
+
+    if _opencode_finishes_use_cumulative_tokens(finishes):
+        last_tokens = (finishes[-1].get("part") or {}).get("tokens") or {}
+        return _normalize_opencode_token_dict(last_tokens)
+
     total_input = 0
     total_output = 0
     total_reasoning = 0
     cache_read = 0
     cache_write = 0
-    saw_finish = False
-    for event in events:
-        if event.get("type") != "step_finish":
-            continue
-        saw_finish = True
+    for event in finishes:
         tokens = (event.get("part") or {}).get("tokens") or {}
         total_input += int(tokens.get("input") or 0)
         total_output += int(tokens.get("output") or 0)
@@ -152,8 +193,6 @@ def _sum_opencode_step_tokens(events: list[dict[str, Any]]) -> dict[str, Any]:
         if isinstance(cache, dict):
             cache_read += int(cache.get("read") or 0)
             cache_write += int(cache.get("write") or 0)
-    if not saw_finish:
-        return {}
     return {
         "input": total_input,
         "output": total_output,

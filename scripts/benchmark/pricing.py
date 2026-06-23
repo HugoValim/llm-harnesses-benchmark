@@ -388,6 +388,66 @@ def _sum_model_usage(model_usage: dict[str, Any]) -> TokenTotals:
     )
 
 
+def _opencode_tokens_from_result_streams(
+    result_row: dict[str, Any],
+) -> TokenTotals | None:
+    """Re-derive OpenCode token totals from on-disk NDJSON streams when present."""
+    from benchmark.phase_result import sum_phase_tokens
+    from benchmark.runner import extract_metrics, parse_event_stream
+
+    stream_paths: list[Path] = []
+    phases = result_row.get("phases")
+    if isinstance(phases, list) and phases:
+        for phase in phases:
+            if not isinstance(phase, dict):
+                continue
+            paths = phase.get("paths")
+            if not isinstance(paths, dict):
+                continue
+            raw = paths.get("stdout")
+            if isinstance(raw, str) and raw:
+                stream_paths.append(Path(raw))
+    else:
+        paths = result_row.get("paths")
+        if isinstance(paths, dict):
+            for key in ("stdout", "followup_stdout"):
+                raw = paths.get(key)
+                if isinstance(raw, str) and raw:
+                    stream_paths.append(Path(raw))
+
+    phase_payloads: list[dict[str, Any]] = []
+    for stream_path in stream_paths:
+        if not stream_path.is_file():
+            continue
+        metrics = extract_metrics(parse_event_stream(stream_path.read_text()))
+        tokens = metrics.get("tokens")
+        if isinstance(tokens, dict) and tokens:
+            phase_payloads.append({"tokens": tokens})
+
+    if not phase_payloads:
+        return None
+
+    combined = sum_phase_tokens(phase_payloads)
+    if not combined:
+        return None
+
+    reported = result_row.get("total_cost_usd")
+    harness_cost = float(reported) if isinstance(reported, (int, float)) else None
+    cache = combined.get("cache")
+    cache_read = cache_write = 0
+    if isinstance(cache, dict):
+        cache_read = int(cache.get("read") or 0)
+        cache_write = int(cache.get("write") or 0)
+    return TokenTotals(
+        input_tokens=int(combined["input"]),
+        output_tokens=int(combined["output"]),
+        total_tokens=int(combined["total"]),
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+        harness_reported_cost_usd=harness_cost,
+    )
+
+
 def extract_token_totals(
     result_row: dict[str, Any] | None,
     *,
@@ -401,6 +461,11 @@ def extract_token_totals(
     harness_cost: float | None = None
     if isinstance(reported, (int, float)):
         harness_cost = float(reported)
+
+    if harness == "opencode":
+        stream_totals = _opencode_tokens_from_result_streams(result_row)
+        if stream_totals is not None:
+            return stream_totals
 
     model_usage = result_row.get("model_usage")
     if isinstance(model_usage, dict) and model_usage:
@@ -563,12 +628,20 @@ def build_generation_metrics(
             **_harness_cli_fields_from_result(result_row),
         }
 
-    if tokens.harness_reported_cost_usd is not None:
-        cost = round(tokens.harness_reported_cost_usd, 6)
+    computed = compute_estimated_cost(row, tokens)
+    harness_reported = tokens.harness_reported_cost_usd
+    if computed is not None and row.billable and row.channel == "ollama_cloud":
+        cost = computed
+        cost_source = "computed"
+    elif harness_reported is not None:
+        cost = round(harness_reported, 6)
         cost_source = "harness_reported"
+    elif computed is not None and row.billable:
+        cost = computed
+        cost_source = "computed"
     else:
-        cost = compute_estimated_cost(row, tokens)
-        cost_source = "computed" if cost is not None else "n/a"
+        cost = None
+        cost_source = "n/a"
 
     return {
         "status": "ok",
@@ -584,7 +657,7 @@ def build_generation_metrics(
         "cache_write_tokens": tokens.cache_write_tokens,
         "estimated_cost_usd": cost,
         "cost_source": cost_source,
-        "harness_reported_cost_usd": tokens.harness_reported_cost_usd,
+        "harness_reported_cost_usd": harness_reported,
         "pricing_doc": str(doc.relative_to(REPO_ROOT)),
         "pricing_last_updated": last_updated,
         "pricing_row_slug": row.slug,

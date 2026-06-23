@@ -157,19 +157,40 @@ def test_build_generation_metrics_includes_harness_cli_version(tmp_path: Path) -
     assert metrics["command_shim_version"] == "ollama 0.5.0"
 
 
-def test_harness_reported_cost_precedence() -> None:
-    metrics = build_generation_metrics(
-        target_slug="claude-claude_sonnet_4_6",
-        model_slug="claude_sonnet_4_6",
-        harness="claude",
-        benchmark_result_path=None,
-    )
-    assert metrics["status"] == "missing_benchmark_result"
-
-    result_path = Path("/tmp/pricing-test-result.json")
+def test_ollama_cloud_uses_pricing_computed_over_harness_reported(
+    tmp_path: Path,
+) -> None:
+    result_path = tmp_path / "result.json"
     payload = {
         "elapsed_seconds": 99.5,
-        "tokens": {"input": 1000, "output": 500, "total": 1500},
+        "model_usage": {
+            "glm-5.2:cloud": {
+                "inputTokens": 1_000_000,
+                "outputTokens": 500_000,
+                "costUSD": 99.0,
+            }
+        },
+        "prompt_sha256": "abc",
+    }
+    result_path.write_text(json.dumps(payload))
+    metrics = build_generation_metrics(
+        target_slug="claude-glm_5_2/run_01",
+        model_slug="glm_5_2",
+        harness="claude",
+        benchmark_result_path=result_path,
+    )
+    assert metrics["cost_source"] == "computed"
+    assert metrics["harness_reported_cost_usd"] == 99.0
+    assert metrics["estimated_cost_usd"] != 99.0
+
+
+def test_harness_reported_cost_retained_for_non_ollama_cloud_channels(
+    tmp_path: Path,
+) -> None:
+    result_path = tmp_path / "result.json"
+    payload = {
+        "elapsed_seconds": 99.5,
+        "tokens": {"input": 1_000_000, "output": 500_000, "total": 1_500_000},
         "total_cost_usd": 0.042,
         "prompt_sha256": "abc",
     }
@@ -182,7 +203,30 @@ def test_harness_reported_cost_precedence() -> None:
     )
     assert metrics["cost_source"] == "harness_reported"
     assert metrics["estimated_cost_usd"] == 0.042
-    result_path.unlink(missing_ok=True)
+
+
+def test_native_channel_prefers_harness_reported_cost(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.json"
+    payload = {
+        "elapsed_seconds": 10.0,
+        "model_usage": {
+            "claude-opus-4-8": {
+                "inputTokens": 1000,
+                "outputTokens": 500,
+                "costUSD": 0.25,
+            }
+        },
+        "prompt_sha256": "abc",
+    }
+    result_path.write_text(json.dumps(payload))
+    metrics = build_generation_metrics(
+        target_slug="claude-claude_opus_4_8/run_01",
+        model_slug="claude_opus_4_8",
+        harness="claude",
+        benchmark_result_path=result_path,
+    )
+    assert metrics["cost_source"] == "harness_reported"
+    assert metrics["estimated_cost_usd"] == 0.25
 
 
 def test_format_generation_metrics_block_includes_cli_versions() -> None:

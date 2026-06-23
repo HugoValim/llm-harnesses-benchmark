@@ -28,7 +28,21 @@ def _step_finish(input_tokens: int, output_tokens: int) -> dict[str, object]:
     }
 
 
-def test_extract_metrics_sums_all_step_finish_tokens() -> None:
+def test_extract_metrics_uses_last_cumulative_step_finish_tokens() -> None:
+    events = [
+        _step_finish(100, 10),
+        {"type": "text", "part": {"text": "hello"}},
+        _step_finish(150, 20),
+    ]
+
+    metrics = extract_metrics(events)
+
+    assert metrics["tokens"]["input"] == 150
+    assert metrics["tokens"]["output"] == 20
+    assert metrics["tokens"]["total"] == 170
+
+
+def test_extract_metrics_sums_incremental_step_finish_tokens() -> None:
     events = [
         _step_finish(100, 10),
         {"type": "text", "part": {"text": "hello"}},
@@ -92,5 +106,5 @@ def test_extract_metrics_matches_run_02_opencode_glm_5_2_streams() -> None:
 
     combined = sum_phase_tokens([{"tokens": tokens} for tokens in phase_totals])
 
-    assert combined["total"] > 5_000_000
-    assert combined["total"] < 6_000_000
+    assert combined["total"] > 90_000
+    assert combined["total"] < 120_000
