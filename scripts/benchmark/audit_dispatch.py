@@ -32,8 +32,11 @@ from benchmark.result_layout import (
     audit_stream_ndjson,
     audit_target_dir,
 )
-from benchmark.run_status import USAGE_LIMIT_REACHED
+from benchmark.audit_finalize import INCOMPLETE_REPORT_STATUS
+from benchmark.run_status import STATUS_FAILED, STATUS_TIMEOUT, USAGE_LIMIT_REACHED
 from benchmark.util import load_json, print_line, save_json
+
+MAX_AUDIT_JOB_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -157,12 +160,45 @@ def _dispatch_audit_job(
         return job_slug, "cached", None
     prompt, metrics = _prepare_audit_prompt(auditor, target, config, job_slug)
     (result_dir / "prompt.txt").write_text(prompt)
-    run_result = _run_auditor(auditor, config, result_dir, prompt)
+    for attempt in range(1, MAX_AUDIT_JOB_ATTEMPTS + 1):
+        run_result = _run_auditor(auditor, config, result_dir, prompt)
+        if run_result.get("status") == USAGE_LIMIT_REACHED:
+            return job_slug, USAGE_LIMIT_REACHED, None
+        result = _finalize_audit_job(
+            job_slug,
+            run_result,
+            report_path,
+            audit_result_path,
+            config,
+            auditor,
+            target,
+            metrics,
+        )
+        _, status, err = result
+        if status == "ok":
+            return result
+        if attempt < MAX_AUDIT_JOB_ATTEMPTS and _audit_job_retryable(status, run_result):
+            print_line(
+                f"[{job_slug}] retrying after {status} "
+                f"(attempt {attempt + 1}/{MAX_AUDIT_JOB_ATTEMPTS})"
+            )
+            continue
+        return result
+    raise RuntimeError(f"unreachable audit dispatch loop for {job_slug}")
+
+
+def _audit_job_retryable(status: str, run_result: dict[str, Any]) -> bool:
+    """True when a failed audit job should be retried once in-process."""
+    if status == "ok":
+        return False
     if run_result.get("status") == USAGE_LIMIT_REACHED:
-        return job_slug, USAGE_LIMIT_REACHED, None
-    return _finalize_audit_job(
-        job_slug, run_result, report_path, audit_result_path, config, auditor, target, metrics
-    )
+        return False
+    if status == INCOMPLETE_REPORT_STATUS:
+        return True
+    harness_status = run_result.get("status") or run_result.get("harness_status")
+    if harness_status in (STATUS_FAILED, STATUS_TIMEOUT):
+        return True
+    return bool(run_result.get("stalled"))
 
 
 def _should_dispatch(
