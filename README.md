@@ -109,7 +109,7 @@ Four harness backends run the same brief: **opencode**, **codex**, **claude**, *
 
 ### Role 1 audit (rubric scoring)
 
-**Prompt version:** `audit-v3.13` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
+**Prompt version:** `audit-v3.19` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
 
 An LLM **auditor** reads one generated `project/` and writes a structured report with
 sections A–I. The auditor verifies API claims against the project's own installed
@@ -125,10 +125,10 @@ packages (venv glob) before calling anything "hallucinated."
 | D4 | Error handling | 10 |
 | D5 | Persistence / multi-turn | 5 |
 | D6 | Streaming & frontend | 10 |
-| D7 | Architecture | 15 |
+| D7 | Architecture | 10 |
 | D8 | Secrets & config hygiene | 5 |
 | D9 | Production hardening | 10 |
-| D10 | Code quality | 10 |
+| D10 | Code quality | 15 |
 
 Deduction triggers are defined per dimension in the audit prompt. Universal blind spots
 (U1–U8) map to specific dimensions.
@@ -172,7 +172,7 @@ Example report:
 
 ### Role 2 meta-analysis (cross-run verdicts)
 
-**Prompt version:** `meta-v3.12`
+**Prompt version:** `meta-v3.23`
 ([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
 The meta-analyst reads every `report.md` under one auditor directory and produces
@@ -185,9 +185,9 @@ The meta-analyst reads every `report.md` under one auditor directory and produce
 - **Critical-failure inventory** — universal vs harness-attributable patterns
 - **Calibration check** — rubric sanity (e.g. D9 production hardening floor)
 
-Section 1 verdict bullets and numeric tables in sections 2, 2a, 3, and 4 are **precomputed** by
+The **Abstract** (single prose paragraph) and numeric tables in Results §3 and Discussion §4 are **precomputed** by
 [`scripts/benchmark/audit_rollup.py`](scripts/benchmark/audit_rollup.py) before LLM
-dispatch. The meta-analyst copies rollup values exactly (including the **Executive summary skeleton**); it reads individual reports
+dispatch. The meta-analyst copies rollup values exactly (including the **Abstract skeleton**); it reads individual reports
 only for citations and narrative in later sections.
 
 **Excluded from harness contest:**

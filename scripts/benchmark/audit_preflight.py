@@ -248,8 +248,10 @@ def format_audit_preflight_block(project_dir: Path) -> str:
         return "\n".join(lines)
     lines.append(
         "When a row below matches, classify **CF#1-R** (runtime), **CF#1-B** (Dockerfile "
-        "build-only), or **CF#1-D** (documentation — `CF#1-D-secret-generation-example` "
-        "is **−1** D8; other `CF#1-D-*` is **−2** D8) per the pattern column unless "
+        "build-only), **CF#1-D-g** (documentation generation — `CF#1-D-secret-generation-example` "
+        "is **−1** D8 each before combined cap), or **CF#1-D** (documentation static — other "
+        "`CF#1-D-*` is **−2** D8 each before combined cap; **−2 combined doc-tier cap** per "
+        "project) per the pattern column unless "
         "disproved by reading the full file at that line."
     )
     lines.append("")

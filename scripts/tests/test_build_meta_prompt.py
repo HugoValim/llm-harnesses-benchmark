@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from benchmark.audit_meta import build_meta_prompt  # noqa: E402
 from benchmark.audit_report import DimensionScore, ParsedReport, _collect_reports  # noqa: E402
 from benchmark.audit_rollup import (  # noqa: E402
+    build_abstract_skeleton,
     build_aggregated_performance_cost_table,
     build_aggregated_runs_ranking_table,
     build_all_runs_ranking_table,
@@ -135,7 +136,7 @@ def test_build_meta_prompt_includes_precomputed_rollup(tmp_path: Path) -> None:
     prompt_template = (
         REPO_ROOT / "prompts" / "audit_meta_analysis_prompt.txt"
     ).read_text(encoding="utf-8")
-    assert "Build section 2 from the **Aggregated runs ranking**" in prompt_template
+    assert "Build Results §3.3 from the **Aggregated runs ranking**" in prompt_template
     assert "All runs ranking (detail)" in rollup
     assert "All runs ranking (detail)" in prompt
     assert "glm_5_1" in prompt
@@ -588,7 +589,7 @@ def test_validate_meta_analysis_ollama_ranking_detects_mismatch(
     )
     errors = validate_meta_analysis_ollama_ranking(meta, source_dirs=[input_dir])
     assert len(errors) == 1
-    assert "section 2a row 1" in errors[0]
+    assert "Results §3.4 row 1" in errors[0]
     assert "avg=74.0" in errors[0]
 
 
@@ -705,10 +706,154 @@ def test_build_precomputed_rollup_includes_executive_skeleton(
 
     rollup = build_precomputed_rollup(source_dirs=[input_dir])
     assert "## Executive summary skeleton" in rollup
-    assert rollup.index("Executive summary skeleton") < rollup.index("Model coverage")
+    assert "Abstract skeleton" in rollup
+    assert rollup.index("Abstract skeleton") < rollup.index("Model coverage")
     assert "codex_gpt_5_5" in rollup.split("Executive summary skeleton")[1].split(
         "Model coverage"
     )[0]
+
+
+def _abstract_paragraph_from_skeleton(reports: list) -> str:
+    for line in build_abstract_skeleton(reports).splitlines():
+        stripped = line.strip()
+        if (
+            stripped
+            and not stripped.startswith("#")
+            and not stripped.startswith("Copy")
+            and not stripped.startswith("Preserve")
+        ):
+            return stripped
+    return ""
+
+
+def test_validate_meta_executive_summary_accepts_single_paragraph(
+    tmp_path: Path,
+) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    abstract_body = _abstract_paragraph_from_skeleton(reports)
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## Abstract",
+                "",
+                abstract_body,
+                "",
+                "## 1. Introduction",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
+    assert errors == []
+
+
+def test_build_abstract_skeleton_includes_tied_best_models() -> None:
+    reports = [
+        ParsedReport(
+            auditor="auditor_a",
+            target="claude-claude_opus_4_8",
+            harness="claude",
+            model_slug="claude_opus_4_8",
+            total=90,
+            tier="A",
+        ),
+        ParsedReport(
+            auditor="auditor_a",
+            target="codex-codex_gpt_5_5",
+            harness="codex",
+            model_slug="codex_gpt_5_5",
+            total=90,
+            tier="A",
+        ),
+    ]
+    display_slug_map = {
+        "claude_opus_4_8": "claude_opus_4_8",
+        "codex_gpt_5_5": "codex_gpt_5_5(xhigh)",
+    }
+    paragraph = _abstract_paragraph_from_skeleton_with_map(reports, display_slug_map)
+
+    assert "tied between" in paragraph
+    assert "claude_opus_4_8" in paragraph
+    assert "codex_gpt_5_5(xhigh)" in paragraph
+    assert "90.0/100" in paragraph
+
+
+def _abstract_paragraph_from_skeleton_with_map(
+    reports: list[ParsedReport],
+    display_slug_map: dict[str, str],
+) -> str:
+    for line in build_abstract_skeleton(
+        reports, display_slug_map=display_slug_map
+    ).splitlines():
+        stripped = line.strip()
+        if (
+            stripped
+            and not stripped.startswith("#")
+            and not stripped.startswith("Copy")
+            and not stripped.startswith("Preserve")
+        ):
+            return stripped
+    return ""
+
+
+def test_build_abstract_skeleton_is_single_paragraph() -> None:
+    reports = _exec_summary_fixture_reports()
+    skeleton = build_abstract_skeleton(reports)
+    paragraph = _abstract_paragraph_from_skeleton(reports)
+    assert paragraph
+    assert "\n\n" not in paragraph
+    assert "**Background.**" not in paragraph
+    assert paragraph in skeleton
+
+
+def test_validate_meta_executive_summary_rejects_imrad_labels(
+    tmp_path: Path,
+) -> None:
+    reports = _exec_summary_fixture_reports()
+    input_dir = tmp_path / "auditor_a"
+    input_dir.mkdir()
+    for report in reports:
+        target = input_dir / report.target
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "report.md").write_text(
+            "\n".join(
+                [
+                    "C. **Total score / 100**",
+                    "",
+                    f"**{int(report.total)} / 100**",
+                ]
+            )
+        )
+
+    meta = tmp_path / "meta-analysis.md"
+    meta.write_text(
+        "\n".join(
+            [
+                "## Abstract",
+                "",
+                "**Background.** Context. **Methods.** Design. **Results.** Findings. **Conclusions.** Takeaway.",
+                "",
+                "## 1. Introduction",
+            ]
+        )
+    )
+    errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
+    assert any("inline labels" in err for err in errors)
 
 
 def test_validate_meta_executive_summary_accepts_matching_bullets(
@@ -778,7 +923,11 @@ def test_validate_meta_executive_summary_detects_missing_slug(
                 "",
                 "- **Best model overall**: `wrong_model` — 86.0/100 under `codex`.",
                 "- **Best open-source model overall**: `deepseek_v4_pro` — 74.0/100 cross-harness avg across 3 contest harnesses.",
-                build_executive_summary_skeleton(reports).splitlines()[8],
+                next(
+                    line
+                    for line in build_executive_summary_skeleton(reports).splitlines()
+                    if line.startswith("- **Harness verdict")
+                ),
             ]
         )
     )
@@ -786,7 +935,7 @@ def test_validate_meta_executive_summary_detects_missing_slug(
     assert any("codex_gpt_5_5" in err for err in errors)
 
 
-def test_validate_meta_executive_summary_detects_paragraph_format(
+def test_validate_meta_executive_summary_rejects_bullet_format(
     tmp_path: Path,
 ) -> None:
     reports = _exec_summary_fixture_reports()
@@ -809,15 +958,14 @@ def test_validate_meta_executive_summary_detects_paragraph_format(
     meta.write_text(
         "\n".join(
             [
-                "## 1. Executive summary",
+                "## Abstract",
                 "",
-                "**Best model overall**: `codex_gpt_5_5` — 86.0/100 (`report.md:8`).",
+                "- **Best model overall**: `codex_gpt_5_5` — 86.0/100 (`report.md:8`).",
             ]
         )
     )
     errors = validate_meta_analysis_executive_summary(meta, source_dirs=[input_dir])
     assert any("bullet list" in err for err in errors)
-    assert any("report.md citations" in err for err in errors)
 
 
 def test_validate_meta_analysis_ollama_ranking_accepts_rounded_values(
@@ -890,7 +1038,7 @@ def test_validate_meta_analysis_coverage_rejects_per_replicate_rows(
         )
     )
     errors = validate_meta_analysis_coverage(meta, source_dirs=[input_dir])
-    assert any("section 2 has 2 run rows but rollup has 1" in err for err in errors)
+    assert any("Results §3.3 has 2 run rows but rollup has 1" in err for err in errors)
 
 
 def test_aggregated_performance_cost_table_averages_replicates(tmp_path: Path) -> None:
@@ -1063,7 +1211,7 @@ def test_validate_run_02_meta_executive_summary_includes_quality_time() -> None:
     assert "**Harness verdict" in skeleton
     assert "**Best quality–time tradeoff**" in skeleton
     assert "cursor-composer_2_5" in skeleton
-    assert "claude-claude_sonnet_4_6" in skeleton
+    assert "claude-claude_opus_4_7" in skeleton
     assert "**Cursor agent runs**" not in skeleton
 
 
@@ -1154,9 +1302,9 @@ def test_build_precomputed_rollup_includes_inference_blocks(tmp_path: Path) -> N
 
     rollup = build_precomputed_rollup(source_dirs=[input_dir])
     assert "## Harness inference summary" in rollup
-    assert "## Cross-harness summary (section 4)" in rollup
-    assert "## Harness effect summary (section 4b)" in rollup
-    assert "## Practitioner decisions (section 1.5)" in rollup
+    assert "## Cross-harness summary (Results §3.6)" in rollup
+    assert "## Harness effect summary (Results §3.7)" in rollup
+    assert "## Practitioner decisions (Discussion §4.1)" in rollup
     assert "## Pareto-efficient Tier-A cells" in rollup
     assert "## Research questions skeleton" in rollup
 

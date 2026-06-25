@@ -9,6 +9,7 @@ meta-analyst — not the final analysis.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass
 from math import comb
 from pathlib import Path
@@ -916,6 +917,19 @@ def _harness_verdict_bullet(inference: HarnessInferenceResult) -> str:
     )
 
 
+def _harness_verdict_prose(inference: HarnessInferenceResult) -> str:
+    """Narrative harness verdict sentence for the structured abstract."""
+    bullet = _harness_verdict_bullet(inference)
+    match = re.match(
+        r"- \*\*Harness verdict \([^)]+\)\*\*: (.+)",
+        bullet,
+    )
+    prose = match.group(1).rstrip(".") if match else bullet.lstrip("- ").strip()
+    if prose.startswith("No decisive"):
+        return prose[0].lower() + prose[1:]
+    return prose
+
+
 def build_inference_summary_markdown(
     reports: list[ParsedReport],
     *,
@@ -929,8 +943,8 @@ def build_inference_summary_markdown(
     lines = [
         "## Harness inference summary",
         "",
-        "Copy this block into **section 3** below the harness ranking table. "
-        "The **Harness verdict** bullet in section 1 must match the verdict here.",
+        "Copy this block into **Results §3.5** below the harness ranking table. "
+        "The harness verdict in **Abstract** must match the verdict here.",
         "",
         f"**Primary cohort:** cross-harness grid; effective paired n={primary.n_models} models "
         "(cell means, not replicate rows).",
@@ -972,9 +986,9 @@ def build_research_questions_skeleton(
     lines = [
         "## Research questions skeleton",
         "",
-        "Copy into **section 0.1** immediately after methodology.",
+        "Copy into **Introduction §1.1** immediately after the opening paragraphs.",
         "",
-        "### 0.1 Research questions & endpoints",
+        "### 1.1 Research questions & endpoints",
         "",
         "| Item | Definition |",
         "|---|---|",
@@ -998,9 +1012,9 @@ def build_limitations_skeleton(
     lines = [
         "## Limitations skeleton",
         "",
-        "Copy into **section 0.2** immediately after research questions.",
+        "Copy into **Discussion §4.3**.",
         "",
-        "### 0.2 Limitations",
+        "### 4.3 Limitations",
         "",
         "| Limitation | Detail |",
         "|---|---|",
@@ -1019,15 +1033,15 @@ def build_cross_harness_summary_table(
     """Section 4 summary: one row per model with cell means per harness."""
     cohort = _cross_harness_cohort_slugs(reports)
     if not cohort:
-        return "## Cross-harness summary (section 4)\n\n*(no paired models)*\n"
+        return "## Cross-harness summary (Results §3.6)\n\n*(no paired models)*\n"
 
     contest_harnesses = [
         h for h in _CONTEST_HARNESS_COLUMN_ORDER if h in _contest_harnesses_in_data(reports)
     ]
     lines = [
-        "## Cross-harness summary (section 4)",
+        "## Cross-harness summary (Results §3.6)",
         "",
-        "Authoritative section 4 table (cell means). Move replicate-level detail to appendix.",
+        "Authoritative §3.6 table (cell means). Move replicate-level detail to appendix.",
         "",
         "| Model | "
         + " | ".join(h.capitalize() for h in contest_harnesses)
@@ -1070,7 +1084,7 @@ def build_harness_effect_summary(
     inference = calculate_harness_inference(reports)
     cell_means = calculate_cell_means(reports)
     if inference is None or not cell_means:
-        return "## Harness effect summary (section 4b)\n\n*(no paired data)*\n"
+        return "## Harness effect summary (Results §3.7)\n\n*(no paired data)*\n"
 
     matrix = _cell_mean_matrix(cell_means)
     leader = inference.leader
@@ -1081,9 +1095,9 @@ def build_harness_effect_summary(
         else "Δ"
     )
     lines = [
-        "## Harness effect summary (section 4b)",
+        "## Harness effect summary (Results §3.7)",
         "",
-        "Copy into **section 4b**.",
+        "Copy into **Results §3.7**.",
         "",
         f"| Model | {delta_header} | Best harness |",
         "|---|---:|---|",
@@ -1178,7 +1192,7 @@ def build_practitioner_decisions_table(
                     mean_total=cell.mean_total,
                     gen_minutes=None,
                     cost_usd=None,
-                    caveat="tied rank-1 contest cells — see section 2",
+                    caveat="tied rank-1 contest cells — see Results §3.3",
                 )
             )
 
@@ -1243,9 +1257,9 @@ def build_practitioner_decisions_table(
             )
 
     lines = [
-        "## Practitioner decisions (section 1.5)",
+        "## Practitioner decisions (Discussion §4.1)",
         "",
-        "Copy table into **section 1.5**. Add one narrative sentence per row in prose.",
+        "Copy table into **Discussion §4.1**. Add one narrative sentence per row in prose.",
         "",
         "| Goal | Pick | Score | Time (min) | Cost (USD) | Caveat |",
         "|---|---|---:|---:|---:|---|",
@@ -1331,7 +1345,7 @@ def build_pareto_efficient_cells_table(
     lines = [
         "## Pareto-efficient Tier-A cells",
         "",
-        "Copy into **section 6** below the performance table. Non-dominated on score, "
+        "Copy into **Results §3.10** below the performance table. Non-dominated on score, "
         "time, and cost among Tier-A cells.",
         "",
         "| Target | Mean total | Gen-time (min) | Cost (USD) |",
@@ -1727,7 +1741,7 @@ def build_model_coverage_table(
         "``harness_count`` is the number of distinct contest harnesses with a "
         "parseable total for that model slug. Cursor-only slugs have harness "
         "count `0` — see **Cursor agent models**. Used for appendix context; "
-        "section 2 uses **Aggregated runs ranking**.",
+        "Results §3.3 uses **Aggregated runs ranking**.",
         "",
         "| Model slug | Harnesses | Harness count | Runs | Avg total |",
         "|---|---|---:|---:|---:|",
@@ -1818,7 +1832,7 @@ def expected_section2_run_rows(
     *,
     display_slug_map: dict[str, str] | None = None,
 ) -> list[tuple[str, str, float]]:
-    """Return aggregated ``(harness, model_slug, mean_total)`` tuples for section 2."""
+    """Return aggregated ``(harness, model_slug, mean_total)`` tuples for Results §3.3."""
     return [
         (
             row.harness,
@@ -1845,7 +1859,7 @@ def build_aggregated_runs_ranking_table(
     lines = [
         "## Aggregated runs ranking",
         "",
-        "Primary ranking table for section 2 verdicts. One row per "
+        "Primary ranking table for Results §3.3 verdicts. One row per "
         "``(harness, model_slug)`` with mean total across replicate audits "
         "(N includes every parseable replicate report for that cell).",
         "",
@@ -2102,7 +2116,7 @@ def calculate_quality_time_tradeoff(
     )
 
 
-_METHODOLOGY_RUBRIC_MAX: tuple[int, ...] = (15, 10, 10, 10, 5, 10, 15, 5, 10, 10)
+_METHODOLOGY_RUBRIC_MAX: tuple[int, ...] = (15, 10, 10, 10, 5, 10, 10, 5, 10, 15)
 
 
 def _methodology_rubric_table() -> str:
@@ -2142,7 +2156,7 @@ def _methodology_harness_comparison_table(
             f"| 4 — **Harness effect** | Average Δ across all {n_models} paired "
             "model rows; bootstrap 95% CI on the n paired deltas |",
             "| 5 — **Verdict** | Two-sided exact sign test on paired Δ → "
-            "`decisive` / `marginal` / `tie` / `insufficient-data` (section 3) |",
+            "`decisive` / `marginal` / `tie` / `insufficient-data` (Results §3.5) |",
         ]
     )
 
@@ -2183,7 +2197,7 @@ def build_methodology_skeleton(
     *,
     source_dirs: list[Path] | None = None,
 ) -> str:
-    """Deterministic methodology intro for meta-analysis section 0."""
+    """Deterministic methodology intro for meta-analysis Methods (§2)."""
     parsed = sum(1 for report in reports if report.total is not None)
     contest = _contest_harnesses_label(reports)
     with_time = sum(
@@ -2200,7 +2214,7 @@ def build_methodology_skeleton(
     lines = [
         "## Methodology skeleton",
         "",
-        "Copy this block into **Methodology** immediately after the document title.",
+        "Copy this block into **Methods (§2)** immediately after the document title.",
         "",
         "### Benchmark task",
         "",
@@ -2239,16 +2253,16 @@ def build_methodology_skeleton(
         "",
         "| Question | Section | How it is tested |",
         "|---|---|---|",
-        "| **Which harness is best?** | 3 | Run the **same** Ollama Cloud models "
+        "| **Which harness is best?** | Results §3.5 | Run the **same** Ollama Cloud models "
         f"under every contest harness (`{contest}`) — {n_replicates} independent "
         "runs per `(harness, model)` cell — then compare harnesses **across rows** "
         "(same backend model, different agent CLI) |",
-        "| **Which model is best?** | 2 | For **every** `(harness, model)` "
+        "| **Which model is best?** | Results §3.3 | For **every** `(harness, model)` "
         f"combination, run {n_replicates} independent implementations; rank cells "
         "by the **mean audit score** across those replicates (no cross-harness "
         "pairing required) |",
         "",
-        "**Harness ranking (section 3).** "
+        "**Harness ranking (Results §3.5).** "
         f"{n_models} open-weight Ollama models form the cross-harness grid: each "
         "model is executed under Claude Code, Codex, and OpenCode, "
         f"{n_replicates} times per harness. Cell mean = average of those "
@@ -2257,12 +2271,12 @@ def build_methodology_skeleton(
         "repeat for every grid model; aggregate paired deltas for the harness "
         "verdict.",
         "",
-        "**Model ranking (section 2).** Each `(harness, model)` pair — whether "
+        "**Model ranking (Results §3.3).** Each `(harness, model)` pair — whether "
         "proprietary (`claude_opus_4_8` under claude) or open-weight (`glm_5_2` "
         "under codex) — gets its own cell mean from "
         f"{n_replicates} independent runs. Cells are ranked by that mean. "
         "Open-source models on the shared grid also get a cross-harness average "
-        "(section 2a).",
+        "(Results §3.4).",
         "",
         "| Phase | Goal | Continuity |",
         "|---|---|---|",
@@ -2349,7 +2363,7 @@ def build_methodology_skeleton(
         "used provider subscription access; costs are not actual invoices. |",
         "| **Quality–time tradeoff** | Tier-A cells (mean ≥ 81/100) ranked by "
         "mean total ÷ mean generation time (min); higher = better speed-adjusted "
-        "output (section 6) |",
+        "output (Results §3.10) |",
         "| **Performance tier** | A: 81–100 · B: 61–80 · C: 41–60 · D: 0–40 "
         "(applied to mean cell totals) |",
     ]
@@ -2363,7 +2377,7 @@ def build_quality_time_tradeoff_table(
     display_slug_map: dict[str, str] | None = None,
     top_n: int = 5,
 ) -> str:
-    """Contest-harness Tier-A quality–time leaderboard for section 1 / section 6."""
+    """Contest-harness Tier-A quality–time leaderboard for Abstract / Results §3.10."""
     ranked = rank_contest_tier_a_by_quality_per_minute(
         reports,
         source_dirs=source_dirs,
@@ -2423,11 +2437,11 @@ def _quality_time_tradeoff_bullet(
             )
         return (
             f"- **Best quality–time tradeoff**: {overall_clause}; "
-            f"{contest_clause} (Tier-A quality per minute; section 6)."
+            f"{contest_clause} (Tier-A quality per minute; Results §3.10)."
         )
     return (
         f"- **Best quality–time tradeoff**: {overall_clause} "
-        f"(Tier-A quality per minute; section 6)."
+        f"(Tier-A quality per minute; Results §3.10)."
     )
 
 
@@ -2472,7 +2486,7 @@ def _classify_dimension_signal(
     full_marks_ratio: float | None,
     harness_spread: float | None,
 ) -> str:
-    """Classify one dimension for meta-analysis section 5."""
+    """Classify one dimension for meta-analysis Results §3.9."""
     if (
         full_marks_ratio is not None
         and full_marks_ratio >= _SATURATION_FULL_MARKS_RATIO
@@ -2505,7 +2519,7 @@ def _classify_dimension_signal(
 def calculate_dimension_signals(
     reports: list[ParsedReport],
 ) -> tuple[DimensionSignalRow, ...]:
-    """Return per-dimension signal rows for contest-cohort meta-analysis section 5.
+    """Return per-dimension signal rows for contest-cohort meta-analysis Results §3.9.
 
     Example:
         signals = calculate_dimension_signals(reports)
@@ -2596,7 +2610,7 @@ def build_dimension_signal_section(reports: list[ParsedReport]) -> str:
     lines = [
         "## Dimension-level signal (precomputed)",
         "",
-        "Copy this table into section 5 verbatim (averages and Classify labels).",
+        "Copy this table into Results §3.9 verbatim (averages and Classify labels).",
         "",
         "| " + " | ".join(header) + " |",
         "|" + "|".join(
@@ -2671,7 +2685,7 @@ def build_aggregated_performance_cost_table(
     lines = [
         "## Aggregated performance & cost",
         "",
-        "Authoritative rows for section 6. One row per ``(harness, model_slug)``",
+        "Authoritative rows for Results §3.10. One row per ``(harness, model_slug)``",
         "with mean generation time, tokens, cost, and total across replicate",
         "audits. Use **Performance & cost (detail)** for per-replicate citations.",
         "All generation runs used provider subscription access; **Cost (USD)** is a",
@@ -2937,7 +2951,7 @@ def build_ollama_model_ranking_table(
     lines = [
         "## Ollama model ranking",
         "",
-        "Authoritative rows for section 2a. Open-source Ollama Cloud model slugs",
+        "Authoritative rows for Results §3.4. Open-source Ollama Cloud model slugs",
         "(``*_ollama_cloud``) ranked by mean total across contest harnesses",
         "(opencode, codex, claude). Per-harness columns are auditor-averaged cell",
         "totals. Models with fewer than two contest-harness runs are excluded.",
@@ -3314,6 +3328,35 @@ def _lowest_dimension_candidate(
     return candidate
 
 
+def _abstract_weak_dimension_clauses(reports: list[ParsedReport]) -> list[str]:
+    """Format universal-blind-spot dimensions for the Abstract Results paragraph."""
+    weak = [
+        row
+        for row in calculate_dimension_signals(reports)
+        if row.classification == "universal blind spot"
+    ]
+    if weak:
+        return [
+            (
+                f"D{row.index} {row.label} "
+                f"({_fmt(row.all_avg)}/"
+                f"{row.max_score if row.max_score is not None else '?'} "
+                "cohort average)"
+            )
+            for row in weak
+        ]
+    blind_spot = _lowest_dimension_candidate(reports)
+    if blind_spot is None:
+        return []
+    max_display = blind_spot.max_score if blind_spot.max_score is not None else "?"
+    return [
+        (
+            f"D{blind_spot.index} {blind_spot.label} "
+            f"({_fmt(blind_spot.all_avg)}/{max_display} cohort average)"
+        )
+    ]
+
+
 def _mixed_version_contest_harnesses(
     reports: list[ParsedReport],
     *,
@@ -3338,7 +3381,7 @@ def calculate_executive_summary_expectations(
     source_dirs: list[Path] | None = None,
     display_slug_map: dict[str, str] | None = None,
 ) -> ExecutiveSummaryExpectations:
-    """Return typed verdict data for meta-analysis section 1.
+    """Return typed verdict data for meta-analysis Abstract.
 
     Example:
         expected = calculate_executive_summary_expectations(reports)
@@ -3472,13 +3515,12 @@ def build_executive_summary_skeleton(
     source_dirs: list[Path] | None = None,
     display_slug_map: dict[str, str] | None = None,
 ) -> str:
-    """Deterministic verdict bullets for meta-analysis section 1."""
+    """Deterministic verdict bullets for meta-analysis Abstract."""
     lines = [
         "## Executive summary skeleton",
         "",
-        "Copy these verdict bullets into section 1 **verbatim** (numbers and slugs).",
-        "Add at most three narrative bullets after them (harness pattern, universal",
-        "blind spot, calibration). No ``report.md:line`` citations in section 1.",
+        "Fact checklist for Abstract prose — every slug, total, and verdict below "
+        "must appear in **Abstract** (not as a bullet list).",
         "",
     ]
 
@@ -3543,6 +3585,198 @@ def build_executive_summary_skeleton(
     return "\n".join(lines) + "\n"
 
 
+def build_abstract_skeleton(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+) -> str:
+    """Single-paragraph scientific abstract for meta-analysis."""
+    parsed = sum(1 for report in reports if report.total is not None)
+    auditors = sorted({report.auditor for report in reports if report.auditor})
+    auditor_label = ", ".join(auditors) if auditors else "unknown"
+    contest = _contest_harnesses_label(reports)
+    cohort = _methodology_cohort_stats(reports)
+    n_models = cohort["n_cohort_models"]
+    n_replicates = cohort["n_replicates_per_cell"]
+
+    background = (
+        "Autonomous coding agents were evaluated on a fixed brief to build a "
+        "Django Channels + Ollama chat SPA with real-time streaming, pytest "
+        "coverage, Docker compose, and production hardening. "
+        f"Auditor `{auditor_label}` scored {parsed} generated projects on a "
+        "100-point rubric covering deliverable completeness, LLM integration, "
+        "streaming and frontend, production hardening, and code quality."
+    )
+
+    methods = (
+        f"Three contest harnesses (`{contest.replace(', ', '`, `')}`) each ran "
+        f"{n_models} open-weight Ollama Cloud models with {n_replicates} "
+        "independent replicates per `(harness, model)` cell. Harness effects "
+        "were estimated from paired cell-mean audit totals on model slug "
+        "(bootstrap 95% confidence intervals, two-sided exact sign test). "
+        "Proprietary single-harness anchors and Cursor Agent runs were "
+        "analysed separately and excluded from paired harness inference."
+    )
+
+    results_sentences: list[str] = []
+    inference = calculate_harness_inference(reports)
+    if inference is not None:
+        verdict = inference.verdict
+        results_sentences.append(
+            f"Among contest harnesses on the shared grid, paired inference "
+            f"yielded a `{verdict}` verdict: {_harness_verdict_prose(inference)}."
+        )
+    else:
+        results_sentences.append(
+            "Harness comparison was suppressed because no cross-harness cell "
+            "means were available."
+        )
+
+    top_cells = _top_contest_cells(reports)
+    if top_cells:
+        cell = top_cells[0]
+        std_clause = (
+            f", σ={_fmt(cell.std_dev)}" if cell.std_dev is not None else ""
+        )
+        note = _single_harness_run_note(reports, cell.model_slug)
+        note_clause = f" ({note})" if note else ""
+        if len(top_cells) == 1:
+            display_slug = _display_slug(cell.model_slug, display_slug_map)
+            results_sentences.append(
+                f"The highest mean audit total was `{display_slug}` under "
+                f"`{cell.harness}` ({_fmt(cell.mean_total)}/100, "
+                f"N={cell.sample_n}{std_clause}){note_clause}."
+            )
+        else:
+            leader_parts = [
+                (
+                    f"`{_display_slug(item.model_slug, display_slug_map)}` "
+                    f"under `{item.harness}`"
+                )
+                for item in top_cells
+            ]
+            leaders = " and ".join(leader_parts)
+            tie_note = note.replace("anchor", "anchors") if note else ""
+            tie_note_clause = f" ({tie_note})" if tie_note else ""
+            results_sentences.append(
+                f"The highest mean audit totals tied between {leaders} "
+                f"({_fmt(cell.mean_total)}/100 mean each, "
+                f"N={cell.sample_n}{std_clause}){tie_note_clause}."
+            )
+
+    ollama_rows = _ollama_ranking_rows(reports)
+    if ollama_rows:
+        best = ollama_rows[0]
+        slug = _display_slug(str(best["slug"]), display_slug_map)
+        avg_total = float(best["avg_total"])  # type: ignore[arg-type]
+        n_harnesses = int(best["n_harnesses"])  # type: ignore[arg-type]
+        std = best["std_dev"]
+        std_clause = f", σ={_fmt(float(std))}" if std is not None else ""
+        results_sentences.append(
+            f"On the open-weight grid, `{slug}` ranked first cross-harness "
+            f"({_fmt(avg_total)}/100 mean across {n_harnesses} harnesses"
+            f"{std_clause})."
+        )
+
+    quality_time = calculate_quality_time_tradeoff(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+    )
+    if quality_time is not None:
+        overall = (
+            f"`{quality_time.overall_harness}-{quality_time.overall_model_slug}` "
+            f"({_fmt(quality_time.overall_mean_total)}/100 in "
+            f"{_fmt(quality_time.overall_gen_minutes)} min, "
+            f"{_fmt(quality_time.overall_quality_per_minute)} pts/min)"
+        )
+        if (
+            quality_time.contest_harness is not None
+            and quality_time.contest_model_slug is not None
+            and quality_time.contest_mean_total is not None
+            and quality_time.contest_gen_minutes is not None
+            and quality_time.contest_quality_per_minute is not None
+            and (
+                quality_time.contest_harness != quality_time.overall_harness
+                or quality_time.contest_model_slug != quality_time.overall_model_slug
+            )
+        ):
+            contest_leader = (
+                f"`{quality_time.contest_harness}-"
+                f"{quality_time.contest_model_slug}` "
+                f"({_fmt(quality_time.contest_mean_total)}/100 in "
+                f"{_fmt(quality_time.contest_gen_minutes)} min)"
+            )
+            results_sentences.append(
+                f"For Tier-A quality per minute, {overall} led overall and "
+                f"{contest_leader} led among contest harnesses."
+            )
+        else:
+            results_sentences.append(
+                f"For Tier-A quality per minute, {overall} led the cohort."
+            )
+
+    weak_dim_clauses = _abstract_weak_dimension_clauses(reports)
+    if weak_dim_clauses:
+        if len(weak_dim_clauses) == 1:
+            weak_text = weak_dim_clauses[0]
+        else:
+            weak_text = (
+                f"{', '.join(weak_dim_clauses[:-1])}, and {weak_dim_clauses[-1]}"
+            )
+        results_sentences.append(
+            f"Universal weak dimensions included {weak_text}."
+        )
+
+    results = " ".join(results_sentences)
+
+    conclusion_sentences: list[str] = []
+    if inference is not None and inference.verdict in {"tie", "marginal"}:
+        conclusion_sentences.append(
+            "No harness is decisively superior on the paired Ollama grid"
+        )
+    elif inference is not None and inference.leader:
+        conclusion_sentences.append(
+            f"`{inference.leader}` is the preferred contest harness on paired "
+            "open-weight models"
+        )
+    if top_cells:
+        conclusion_sentences.append(
+            "proprietary anchors remain the quality ceiling when subscription "
+            "access is available"
+        )
+    if ollama_rows:
+        slug = _display_slug(str(ollama_rows[0]["slug"]), display_slug_map)
+        conclusion_sentences.append(
+            f"`codex-{slug}` or cross-harness `{slug}` cells are the strongest "
+            "open-weight choices for practitioners without proprietary models"
+        )
+    conclusion_sentences.append(
+        "audit totals should be interpreted comparatively within this campaign "
+        "until inter-rater validation and rubric calibration (especially D10 "
+        "code-quality granularity) are improved"
+    )
+    conclusions = ". ".join(
+        s[0].upper() + s[1:] if s and s[0].islower() else s
+        for s in conclusion_sentences
+    ) + "."
+
+    paragraph = " ".join([background, methods, results, conclusions])
+
+    return "\n".join(
+        [
+            "## Abstract skeleton",
+            "",
+            "Copy into **Abstract** as one prose paragraph (no headings or bullet list).",
+            "Preserve every number and slug; connective edits only. No citations.",
+            "",
+            paragraph,
+            "",
+        ]
+    )
+
+
 def build_precomputed_rollup(
     reports_dir: Path | None = None,
     *,
@@ -3561,9 +3795,9 @@ def build_precomputed_rollup(
     parts = [
         "## Precomputed rollup",
         "",
-        "Harness-computed from parsed ``report.md`` files. **Section 0 methodology, "
-        "sections 0.1–0.2, section 1 verdict bullets, section 1.5, section 2, 2a, "
-        "3, 4, 4b, 6, and appendix dimension matrix MUST match these values.** "
+        "Harness-computed from parsed ``report.md`` files. **Methods (§2), Abstract "
+        "verdict bullets, Discussion §4.1/§4.3, Results §3.3–§3.7 and §3.10, "
+        "and Appendix A dimension matrix MUST match these values.** "
         "Use individual reports only for citations and narrative.",
         "",
         build_methodology_skeleton(
@@ -3574,6 +3808,12 @@ def build_precomputed_rollup(
         "",
         build_limitations_skeleton(
             reports, source_dirs=source_dirs
+        ).rstrip(),
+        "",
+        build_abstract_skeleton(
+            reports,
+            source_dirs=source_dirs,
+            display_slug_map=display_slug_map,
         ).rstrip(),
         "",
         build_executive_summary_skeleton(
@@ -3709,10 +3949,10 @@ def validate_meta_analysis_coverage(
     section = _slice_meta_section(
         text,
         r"#{2,3}\s*2\.\s*Best model overall|###\s*3\.3\s+Model ranking",
-        until=r"\n(?:###\s*3\.4|#{2,3}\s+2a\.)",
+        until=r"\n(?:###\s*3\.4|#{2,3}\s+2a\.|####\s*3\.4\s)",
     )
     if section is None:
-        return ["section 2 (Best model overall) not found in meta-analysis.md"]
+        return ["Results §3.3 (Model ranking) not found in meta-analysis.md"]
     row_re = re.compile(
         r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*([^\|]+?)\s*\|\s*([\d.]+)\s*\|",
         re.MULTILINE,
@@ -3727,7 +3967,7 @@ def validate_meta_analysis_coverage(
     errors: list[str] = []
     if len(reported) != len(expected):
         errors.append(
-            f"section 2 has {len(reported)} run rows but rollup has {len(expected)}"
+            f"Results §3.3 has {len(reported)} run rows but rollup has {len(expected)}"
         )
 
     for index, (exp_row, got_row) in enumerate(
@@ -3776,12 +4016,12 @@ def validate_meta_analysis_ollama_ranking(
     section = _slice_meta_section(
         text,
         r"#{2,3}\s*2a\.\s*Open-source \(Ollama\) model ranking"
-        r"|###\s*3\.4\s+Open-source model ranking",
-        until=r"\n(?:###\s*3\.5|#{2,3}\s+3\.)",
+        r"|###\s*3\.4\s+Open-source \(Ollama\) model ranking",
+        until=r"\n(?:###\s*3\.5|#{2,3}\s+3\.|####\s*3\.5\s)",
     )
     if section is None:
         return [
-            "section 2a (Open-source Ollama model ranking) not found in meta-analysis.md"
+            "Results §3.4 (Open-source Ollama model ranking) not found in meta-analysis.md"
         ]
     row_re = re.compile(
         r"^\|\s*\d+\s*\|\s*([^\|]+?)\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.-]+)\s*\|\s*([^\|]+?)\s*\|",
@@ -3800,7 +4040,7 @@ def validate_meta_analysis_ollama_ranking(
     errors: list[str] = []
     if len(reported) != len(expected):
         errors.append(
-            f"section 2a has {len(reported)} Ollama rows but rollup has {len(expected)}"
+            f"Results §3.4 has {len(reported)} Ollama rows but rollup has {len(expected)}"
         )
 
     for index, (exp_row, got_row) in enumerate(zip(expected, reported), start=1):
@@ -3814,7 +4054,7 @@ def validate_meta_analysis_ollama_ranking(
             or exp_tier != got_tier
         ):
             errors.append(
-                f"section 2a row {index}: expected "
+                f"Results §3.4 row {index}: expected "
                 f"{exp_slug} n={exp_n} avg={exp_avg} std={exp_std} tier={exp_tier} "
                 f"but meta-analysis has "
                 f"{got_slug} n={got_n} avg={got_avg} std={got_std} tier={got_tier}"
@@ -3822,7 +4062,7 @@ def validate_meta_analysis_ollama_ranking(
 
     if len(reported) > len(expected):
         for extra in reported[len(expected) :]:
-            errors.append(f"section 2a unexpected extra row: {extra[0]}")
+            errors.append(f"Results §3.4 unexpected extra row: {extra[0]}")
 
     return errors
 
@@ -3834,9 +4074,7 @@ def validate_meta_analysis_executive_summary(
     reports_dir: Path | None = None,
     display_slug_map: dict[str, str] | None = None,
 ) -> list[str]:
-    """Compare section-1 verdict bullets in meta-analysis.md to the skeleton."""
-    import re
-
+    """Compare Abstract prose (or legacy executive summary) to the rollup."""
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
     if not reports or not meta_path.is_file():
         return []
@@ -3847,38 +4085,59 @@ def validate_meta_analysis_executive_summary(
         display_slug_map=display_slug_map,
     )
     text = meta_path.read_text(encoding="utf-8")
+    is_abstract = bool(
+        re.search(r"^#{1,3}\s*Abstract\b", text, re.MULTILINE | re.IGNORECASE)
+    )
     section = _slice_meta_section(
         text,
-        r"#{2,3}\s*1\.\s*Executive summary|###\s*3\.1\s+Summary of primary findings",
-        until=r"\n(?:###\s*3\.2|#{2,3}\s+1\.5\s)",
+        r"#{1,3}\s*Abstract\b|#{2,3}\s*1\.\s*Executive summary|###\s*3\.1\s+Summary of primary findings",
+        until=r"\n(?:##\s*1\.\s*Introduction|###\s*3\.2|#{2,3}\s+1\.5\s|####\s*4\.1\s)",
     )
     if section is None:
-        return ["section 1 (Executive summary) not found in meta-analysis.md"]
+        return ["Abstract (or legacy Executive summary) not found in meta-analysis.md"]
 
     section = section.strip()
     errors: list[str] = []
 
-    if not re.search(r"^\s*-\s+\*\*", section, re.MULTILINE):
+    if is_abstract:
+        if re.search(
+            r"\*\*(Background|Methods|Results|Conclusions)\.\*\*",
+            section,
+            re.IGNORECASE,
+        ):
+            errors.append(
+                "Abstract must be a single paragraph without IMRaD inline labels"
+            )
+        prose_lines = [
+            line.strip()
+            for line in section.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        if len(prose_lines) != 1:
+            errors.append("Abstract must be a single prose paragraph")
+
+    if is_abstract and re.search(r"^\s*-\s+\*\*", section, re.MULTILINE):
         errors.append(
-            "section 1 is not a bullet list (expected markdown `- **Label**: …` bullets)"
+            "Abstract must be prose, not a markdown bullet list"
         )
 
     if "report.md:" in section:
-        errors.append("section 1 contains report.md citations (move to later sections)")
+        errors.append("Abstract contains report.md citations (move to later sections)")
 
     harness_verdict = expectations.get("harness_verdict")
     if isinstance(harness_verdict, str):
-        if "Harness verdict" not in section:
-            errors.append("section 1 missing **Harness verdict** bullet")
-        if f"({harness_verdict})" not in section and f"`{harness_verdict}`" not in section:
+        if (
+            f"({harness_verdict})" not in section
+            and f"`{harness_verdict}`" not in section
+        ):
             errors.append(
-                f"section 1 missing harness verdict label {harness_verdict!r}"
+                f"Abstract missing harness verdict label {harness_verdict!r}"
             )
 
     harness_verdict_leader = expectations.get("harness_verdict_leader")
     if isinstance(harness_verdict_leader, str) and harness_verdict_leader not in section:
         errors.append(
-            f"section 1 missing harness verdict leader {harness_verdict_leader!r}"
+            f"Abstract missing harness verdict leader {harness_verdict_leader!r}"
         )
 
     best_harness = expectations.get("best_harness")
@@ -3887,7 +4146,7 @@ def validate_meta_analysis_executive_summary(
         avg_token = _fmt(best_harness_avg)
         if avg_token not in section and harness_verdict not in {"tie", "marginal"}:
             errors.append(
-                f"section 1 missing replicate-level harness avg {avg_token} "
+                f"Abstract missing replicate-level harness avg {avg_token} "
                 f"for {best_harness!r}"
             )
 
@@ -3896,29 +4155,29 @@ def validate_meta_analysis_executive_summary(
     top_slugs = expectations.get("top_model_slugs")
     top_slug = expectations.get("top_model_slug")
     if top_tie and isinstance(top_slugs, list) and isinstance(top_total, float):
-        if "Best model overall (tie)" not in section:
-            errors.append("section 1 missing **Best model overall (tie)** bullet")
+        if "Best model overall (tie)" not in section and "tied" not in section.lower():
+            errors.append("Abstract missing tied best-model wording")
         total_token = _fmt(top_total)
         if total_token not in section:
             errors.append(
-                f"section 1 missing best model overall total {total_token}"
+                f"Abstract missing best model overall total {total_token}"
             )
         for slug in top_slugs:
             if not isinstance(slug, str):
                 continue
             if slug not in section:
                 errors.append(
-                    f"section 1 missing tied best model slug {slug!r}"
+                    f"Abstract missing tied best model slug {slug!r}"
                 )
     elif isinstance(top_slug, str) and isinstance(top_total, float):
         if top_slug not in section:
             errors.append(
-                f"section 1 missing best model overall slug {top_slug!r}"
+                f"Abstract missing best model overall slug {top_slug!r}"
             )
         total_token = _fmt(top_total)
         if total_token not in section:
             errors.append(
-                f"section 1 missing best model overall total {total_token} "
+                f"Abstract missing best model overall total {total_token} "
                 f"for {top_slug!r}"
             )
 
@@ -3927,34 +4186,34 @@ def validate_meta_analysis_executive_summary(
     if isinstance(ollama_slug, str) and isinstance(ollama_avg, float):
         if ollama_slug not in section:
             errors.append(
-                f"section 1 missing best open-source model slug {ollama_slug!r}"
+                f"Abstract missing best open-source model slug {ollama_slug!r}"
             )
         avg_token = _fmt(ollama_avg)
         if avg_token not in section:
             errors.append(
-                f"section 1 missing best open-source avg {avg_token} "
+                f"Abstract missing best open-source avg {avg_token} "
                 f"for {ollama_slug!r}"
             )
 
     quality_target = expectations.get("quality_time_overall_target")
     quality_qpm = expectations.get("quality_time_overall_qpm")
     if isinstance(quality_target, str) and isinstance(quality_qpm, float):
-        if "Best quality–time tradeoff" not in section:
-            errors.append("section 1 missing **Best quality–time tradeoff** bullet")
+        if "Best quality–time tradeoff" not in section and quality_target not in section:
+            errors.append("Abstract missing quality–time tradeoff wording")
         if quality_target not in section:
             errors.append(
-                f"section 1 missing quality–time target {quality_target!r}"
+                f"Abstract missing quality–time target {quality_target!r}"
             )
         qpm_token = _fmt(quality_qpm)
         if qpm_token not in section:
             errors.append(
-                f"section 1 missing quality–time pts/min {qpm_token} "
+                f"Abstract missing quality–time pts/min {qpm_token} "
                 f"for {quality_target!r}"
             )
     contest_target = expectations.get("quality_time_contest_target")
     if isinstance(contest_target, str) and contest_target not in section:
         errors.append(
-            f"section 1 missing contest quality–time target {contest_target!r}"
+            f"Abstract missing contest quality–time target {contest_target!r}"
         )
 
     return errors
@@ -3966,7 +4225,7 @@ def validate_meta_analysis_harness_inference(
     source_dirs: list[Path] | None = None,
     reports_dir: Path | None = None,
 ) -> list[str]:
-    """Compare section 3 inference block in meta-analysis.md to the rollup."""
+    """Compare Results §3.5 inference block in meta-analysis.md to the rollup."""
     import re
 
     reports = _collect_reports(reports_dir, source_dirs=source_dirs)
@@ -3978,18 +4237,18 @@ def validate_meta_analysis_harness_inference(
     section = _slice_meta_section(
         text,
         r"#{2,3}\s*3\.\s*Harness ranking|###\s*3\.5\s+Harness ranking",
-        until=r"\n(?:###\s*3\.6|#{2,3}\s+4\.)",
+        until=r"\n(?:###\s*3\.6|#{2,3}\s+4\.|####\s*3\.6\s)",
     )
     if section is None:
-        return ["section 3 (Harness ranking) not found in meta-analysis.md"]
+        return ["Results §3.5 (Harness ranking) not found in meta-analysis.md"]
     errors: list[str] = []
     if f"`{inference.verdict}`" not in section:
         errors.append(
-            f"section 3 missing harness inference verdict {inference.verdict!r}"
+            f"Results §3.5 missing harness inference verdict {inference.verdict!r}"
         )
     if inference.leader and inference.leader not in section:
         errors.append(
-            f"section 3 missing inference leader harness {inference.leader!r}"
+            f"Results §3.5 missing inference leader harness {inference.leader!r}"
         )
     if inference.n_models > 0 and f"n={inference.n_models}" not in section.replace(
         " ", ""
@@ -3997,13 +4256,13 @@ def validate_meta_analysis_harness_inference(
         paired_token = f"paired n={inference.n_models}"
         if paired_token not in section and f"effective paired n={inference.n_models}" not in section:
             errors.append(
-                f"section 3 missing paired n={inference.n_models} models note"
+                f"Results §3.5 missing paired n={inference.n_models} models note"
             )
     if inference.top_pairwise is not None:
         delta_token = _fmt(inference.top_pairwise.mean_delta)
         if delta_token not in section:
             errors.append(
-                f"section 3 missing pairwise delta {delta_token} "
+                f"Results §3.5 missing pairwise delta {delta_token} "
                 f"for {inference.top_pairwise.harness_a}−{inference.top_pairwise.harness_b}"
             )
     return errors
@@ -4057,23 +4316,23 @@ def validate_meta_analysis_dimension_signals(
     section = _slice_meta_section(
         text,
         r"#{2,3}\s*5\.\s*Dimension-level signal|###\s*3\.9\s+Dimension-level signal",
-        until=r"\n(?:###\s*3\.10|#{2,3}\s+[67]\.)",
+        until=r"\n(?:###\s*3\.10|#{2,3}\s+[67]\.|####\s*3\.10\s)",
     )
     if section is None:
-        return ["section 5 (Dimension-level signal) not found in meta-analysis.md"]
+        return ["Results §3.9 (Dimension-level signal) not found in meta-analysis.md"]
     reported = _parse_dimension_signal_classifications(section)
 
     errors: list[str] = []
     if len(reported) != len(expected):
         errors.append(
-            f"section 5 has {len(reported)} dimension lines but rollup has {len(expected)}"
+            f"Results §3.9 has {len(reported)} dimension lines but rollup has {len(expected)}"
         )
 
     for row in expected:
         got = reported.get(row.index)
         exp = row.classification.lower()
         if got is None:
-            errors.append(f"D{row.index}: missing classification line in section 5")
+            errors.append(f"D{row.index}: missing classification line in Results §3.9")
             continue
         if got != exp:
             errors.append(
