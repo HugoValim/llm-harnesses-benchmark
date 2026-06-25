@@ -16,7 +16,9 @@ from benchmark.agent_runtime_env import (  # noqa: E402
     config_has_legacy_ollama_launch_profile,
     config_has_ollama_launch_overrides,
     codex_env_for_phase,
+    cursor_env_for_phase,
     prepare_isolated_codex_home,
+    prepare_isolated_cursor_home,
     prepare_subscription_codex_home,
     runtime_isolation_for_env,
     strip_legacy_ollama_launch_profile,
@@ -24,7 +26,7 @@ from benchmark.agent_runtime_env import (  # noqa: E402
 )
 from benchmark.harnesses import check_harness_cli_requirements  # noqa: E402
 
-_ISOLATION_DIRS = (".codex-home", ".xdg-data", ".agent-home")
+_ISOLATION_DIRS = (".codex-home", ".xdg-data", ".agent-home", ".cursor-home")
 
 
 class TestBenchmarkEnvForHarness(unittest.TestCase):
@@ -213,6 +215,43 @@ class TestCodexIsolatedHome(unittest.TestCase):
                 )
                 self.assertIn("CODEX_HOME", env)
                 self.assertTrue((result_dir / ".codex-home" / "auth.json").is_file())
+
+
+class TestCursorIsolatedHome(unittest.TestCase):
+    def test_prepare_isolated_cursor_home_copies_config_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "home" / ".cursor"
+            source.mkdir(parents=True)
+            (source / "cli-config.json").write_text('{"model":"composer-2.5"}\n')
+            (source / "permissions.json").write_text("{}\n")
+            (source / "chats").mkdir()
+
+            dest_home = tmp_path / "run_01" / ".cursor-home"
+            prepare_isolated_cursor_home(source_cursor_dir=source, dest_home=dest_home)
+
+            dest_cursor = dest_home / ".cursor"
+            self.assertTrue((dest_cursor / "cli-config.json").is_file())
+            self.assertTrue((dest_cursor / "permissions.json").is_file())
+            self.assertFalse((dest_cursor / "chats").exists())
+
+    def test_cursor_env_for_phase_sets_home_under_result_dir(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_home = tmp_path / "home"
+            source = fake_home / ".cursor"
+            source.mkdir(parents=True)
+            (source / "cli-config.json").write_text("{}\n")
+
+            result_dir = tmp_path / "run_01"
+            result_dir.mkdir()
+            base_env = {"PATH": "/usr/bin"}
+
+            with patch("pathlib.Path.home", return_value=fake_home):
+                env = cursor_env_for_phase(base_env, result_dir=result_dir)
+
+            self.assertEqual(env["HOME"], str(result_dir / ".cursor-home"))
+            self.assertTrue((result_dir / ".cursor-home" / ".cursor" / "cli-config.json").is_file())
 
 
 class TestOpenCodeHarnessOllamaPreflight(unittest.TestCase):

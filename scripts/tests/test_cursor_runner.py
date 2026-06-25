@@ -131,6 +131,93 @@ class TestCursorRunVariantLifecycle(unittest.TestCase):
         self.assertEqual(payload["num_turns"], 3)
         self.assertIn("followup_stream_ndjson", payload["paths"])
 
+    def test_audit_run_uses_isolated_cursor_home(self) -> None:
+        variant = {"slug": "cursor_demo", "main_model": "composer-2.5"}
+        fake_results = [CursorStreamResult("", "", False, False, None, assistant_turns=1)]
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        captured_env: dict[str, str] = {}
+
+        def capture_popen(*args, **kwargs):
+            captured_env.update(kwargs.get("env") or {})
+            return mock_proc
+
+        with TemporaryDirectory() as tmp:
+            with patch("benchmark.workspace.init_project_git"), patch(
+                "benchmark.workspace.validate_benchmark_workspace"
+            ), patch("benchmark.workspace.write_project_context"), patch(
+                "benchmark.cursor_runner.resolve_harness_cli_versions",
+                return_value={},
+            ), patch(
+                "benchmark.cursor_runner.subprocess.Popen",
+                side_effect=capture_popen,
+            ), patch(
+                "benchmark.cursor_runner.stream_process",
+                side_effect=fake_results,
+            ), patch(
+                "benchmark.cursor_runner.Path.home",
+                return_value=Path(tmp) / "real-home",
+            ):
+                real_home = Path(tmp) / "real-home"
+                cursor_dir = real_home / ".cursor"
+                cursor_dir.mkdir(parents=True)
+                (cursor_dir / "cli-config.json").write_text("{}\n")
+                result_dir = Path(tmp) / "audit" / "run_01"
+                run_variant(
+                    variant=variant,
+                    prompt="audit project",
+                    results_dir=Path(tmp) / "audit",
+                    force=True,
+                    for_benchmark_build=False,
+                    explicit_result_dir=result_dir,
+                    rate_limit_policy=RateLimitWaitPolicy(cap_seconds=0),
+                )
+
+                self.assertIn("HOME", captured_env)
+                self.assertEqual(captured_env["HOME"], str(result_dir / ".cursor-home"))
+                self.assertTrue(
+                    (result_dir / ".cursor-home" / ".cursor" / "cli-config.json").is_file()
+                )
+
+    def test_benchmark_build_keeps_real_home(self) -> None:
+        variant = {"slug": "cursor_demo", "main_model": "composer-2.5"}
+        fake_results = [CursorStreamResult("", "", False, False, None, assistant_turns=1)]
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        captured_env: dict[str, str] = {}
+
+        def capture_popen(*args, **kwargs):
+            captured_env.update(kwargs.get("env") or {})
+            return mock_proc
+
+        with TemporaryDirectory() as tmp:
+            real_home = Path(tmp) / "real-home"
+            with patch.dict("os.environ", {"HOME": str(real_home)}, clear=False), patch(
+                "benchmark.workspace.init_project_git"
+            ), patch("benchmark.workspace.validate_benchmark_workspace"), patch(
+                "benchmark.workspace.write_project_context"
+            ), patch(
+                "benchmark.cursor_runner.resolve_harness_cli_versions",
+                return_value={},
+            ), patch(
+                "benchmark.cursor_runner.subprocess.Popen",
+                side_effect=capture_popen,
+            ), patch(
+                "benchmark.cursor_runner.stream_process",
+                side_effect=fake_results,
+            ):
+                run_variant(
+                    variant=variant,
+                    prompt="build app",
+                    results_dir=Path(tmp) / "results",
+                    force=True,
+                    for_benchmark_build=True,
+                    rate_limit_policy=RateLimitWaitPolicy(cap_seconds=0),
+                )
+
+                self.assertEqual(captured_env.get("HOME"), str(real_home))
+                self.assertFalse((Path(tmp) / "results" / ".cursor-home").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

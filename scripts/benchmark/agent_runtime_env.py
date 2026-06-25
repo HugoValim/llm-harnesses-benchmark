@@ -158,6 +158,46 @@ def codex_env_for_phase(
     return dict(base_env)
 
 
+_CURSOR_ISOLATION_FILES = (
+    "cli-config.json",
+    "agent-cli-state.json",
+    "permissions.json",
+    "ide_state.json",
+)
+
+
+def prepare_isolated_cursor_home(*, source_cursor_dir: Path, dest_home: Path) -> None:
+    """Materialize a benchmark-scoped Cursor home for parallel agent runs.
+
+    Copies only small config/state files from ``~/.cursor`` so concurrent
+    ``agent`` processes do not race on ``cli-config.json`` renames.
+    """
+    dest_cursor = dest_home / ".cursor"
+    dest_cursor.mkdir(parents=True, exist_ok=True)
+    if not source_cursor_dir.is_dir():
+        return
+    for filename in _CURSOR_ISOLATION_FILES:
+        src = source_cursor_dir / filename
+        if src.is_file():
+            (dest_cursor / filename).write_text(src.read_text(encoding="utf-8"))
+
+
+def cursor_env_for_phase(
+    base_env: dict[str, str],
+    *,
+    result_dir: Path,
+) -> dict[str, str]:
+    """Return env with per-run HOME so Cursor CLI state is not shared."""
+    env = dict(base_env)
+    dest_home = result_dir / ".cursor-home"
+    prepare_isolated_cursor_home(
+        source_cursor_dir=Path.home() / ".cursor",
+        dest_home=dest_home,
+    )
+    env["HOME"] = str(dest_home)
+    return env
+
+
 def benchmark_env_for_harness(
     harness: str,
     base_env: dict[str, str],
