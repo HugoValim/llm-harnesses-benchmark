@@ -23,6 +23,18 @@ def test_parse_section_c_multiline_total() -> None:
     assert report.total == 95
 
 
+def test_parse_section_c_bare_bold_total() -> None:
+    text = """
+## C. Total score / 100
+
+**92**
+
+## D. Practical tier
+"""
+    report = parse_report_scores(text, target="claude-baz")
+    assert report.total == 92
+
+
 def test_parse_section_c_inline_total() -> None:
     text = "C. **Total score / 100** — **91 / 100**"
     report = parse_report_scores(text, target="cursor-bar")

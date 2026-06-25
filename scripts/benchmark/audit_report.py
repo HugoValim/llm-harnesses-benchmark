@@ -165,6 +165,11 @@ _SECTION_C_HEADING = re.compile(
     r"(?:^|\n)(?:##\s+)?C\.\s+\*{0,2}Total[^\n]*",
     re.IGNORECASE,
 )
+# Bare total on the line after section C, e.g. "## C. Total score / 100\n\n**92**"
+_SECTION_C_BARE_TOTAL = re.compile(
+    r"^\s*\*{0,2}\s*(\d{1,3})\s*\*{0,2}\s*$",
+    re.MULTILINE,
+)
 
 
 def parse_report_scores(
@@ -238,6 +243,10 @@ def _extract_total(report_text: str) -> int | None:
         tail = report_text[heading.end() : heading.end() + 400]
         for match in _SCORE_OUT_OF_100.finditer(tail):
             return int(match.group(1))
+        for match in _SECTION_C_BARE_TOTAL.finditer(tail):
+            score = int(match.group(1))
+            if 0 <= score <= 100:
+                return score
 
     return None
 
