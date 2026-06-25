@@ -30,10 +30,10 @@ def audit_dispatch_needed(
     """True when the auditor LLM should run (or re-run) for this target."""
     if force:
         return True
-    if not audit_report_is_complete(report_path):
-        return True
-    if not audit_result_path.is_file():
+    if audit_report_is_complete(report_path):
         return False
+    if not audit_result_path.is_file():
+        return True
     try:
         payload = json.loads(audit_result_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):

@@ -49,6 +49,18 @@ def test_audit_dispatch_needed_skips_complete_report(tmp_path: Path) -> None:
     )
 
 
+def test_audit_dispatch_needed_skips_complete_report_despite_incomplete_status(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.md"
+    report.write_text("## C. Total score / 100\n\n**92**\n")
+    result = tmp_path / "result.json"
+    result.write_text(json.dumps({"status": "incomplete_report"}))
+    assert not audit_dispatch_needed(
+        report_path=report, audit_result_path=result, force=False
+    )
+
+
 def test_find_audit_coverage_gaps_lists_missing_targets(tmp_path: Path) -> None:
     benchmark_dir = tmp_path / "results"
     audit_dir = tmp_path / "audit-reports"
