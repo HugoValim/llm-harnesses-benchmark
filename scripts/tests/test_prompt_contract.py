@@ -68,12 +68,12 @@ def test_agent_coding_rules_v11_has_core_sections() -> None:
     assert "caveman mode" not in rules.lower()
 
 
-def test_audit_prompt_v319_weight_rebalance_and_calibration() -> None:
+def test_audit_prompt_v320_d10_desaturation_and_calibration() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.19")
+    assert prompt.startswith("Prompt-Version: audit-v3.20")
     assert "{audit_preflight_block}" in prompt
-    assert "MUST equal `audit-v3.19`" in prompt
+    assert "MUST equal `audit-v3.20`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.5` or `benchmark-v3.6`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.5` or `benchmark-followup-v3.6`" in prompt
     assert "D9.1=pass|fail" in prompt
@@ -90,18 +90,18 @@ def test_audit_prompt_v319_weight_rebalance_and_calibration() -> None:
     assert "Doc-tier combined cap (v3.19" in prompt
     assert "CF#1-D-secret-generation-example" in prompt
     assert "D8+bare-except calibration cap (v3.15/v3.19, automatic)" in prompt
-    assert "Core-quality D10 floor (v3.16/v3.19, automatic)" in prompt
-    assert "max(computed_d10, 12)" in prompt
-    assert "Polish-only D10 floor (v3.18/v3.19" in prompt
+    assert "Core-quality D10 floor (removed v3.20)" in prompt
+    assert "Polish-only D10 floor (removed v3.20)" in prompt
+    assert "v3.20 D10 de-saturation" in prompt
+    assert "remove both floors" in prompt
     assert "min(computed_d10, 9)" in prompt
-    assert "D10 scoring order (v3.18/v3.19" in prompt
+    assert "D10 scoring order (v3.18/v3.20" in prompt
     assert "15/15" in prompt
     assert "Bare-handler tiers (v3.17)" in prompt
     assert "zero** bare" in prompt
-    assert "Combined narrow-handler scoring (v3.18/v3.19)" in prompt
+    assert "Combined narrow-handler scoring (v3.18/v3.20)" in prompt
     assert "v3.19 weight rebalance" in prompt
     assert "do not** recommend or apply further D10 bare-handler tightening" in prompt
-    assert "Forbidden:** applying this floor when D8=0" in prompt
     assert "Partial credit ladder (v3.16)" in prompt
     assert "non-empty prior assistant content" in prompt
     assert "Anchor ranking check (calibration #6)" in prompt
@@ -119,7 +119,7 @@ def test_audit_prompt_v319_weight_rebalance_and_calibration() -> None:
     assert "CF#9 cap (split, v3.10)" in prompt
     assert "integration-heavy" in prompt
     assert "D8 calibration cap (v3.15/v3.19, automatic)" in prompt
-    assert "D9 calibration cap (v3.12/v3.19, automatic)" in prompt
+    assert "D9 calibration cap (v3.12/v3.20, automatic)" in prompt
     assert "Settings modularity (v3.16)" in prompt
     assert "Settings env guards (v3.17)" in prompt
     assert "Consumer length (v3.17)" in prompt
@@ -153,6 +153,8 @@ def test_audit_prompt_v319_weight_rebalance_and_calibration() -> None:
     assert "Bare-handler ceiling (v3.11)" not in prompt
     assert "Single stream-path handler (v3.16)" not in prompt
     assert "Polish-only D10 floor (v3.17, automatic)" not in prompt
+    assert "Polish-only D10 floor (v3.18/v3.19" not in prompt
+    assert "Core-quality D10 floor (v3.16/v3.19" not in prompt
 
 
 def test_anchor_v319_recovery_from_codex_gpt_5_5_run_02_pattern() -> None:
@@ -215,10 +217,10 @@ def test_benchmark_prompt_forbids_env_example_debug_true() -> None:
     assert "typing.Protocol" in prompt
 
 
-def test_meta_prompt_v323_uses_single_paragraph_abstract() -> None:
+def test_meta_prompt_v324_uses_single_paragraph_abstract() -> None:
     prompt = (PROMPTS / "audit_meta_analysis_prompt.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: meta-v3.23")
+    assert prompt.startswith("Prompt-Version: meta-v3.24")
     assert "single prose paragraph" in prompt
     assert "Abstract skeleton" in prompt
     assert "IMRaD scientific-paper structure" in prompt
@@ -244,7 +246,11 @@ def test_meta_prompt_v323_uses_single_paragraph_abstract() -> None:
     assert "Contest harnesses only" in prompt
     assert "{precomputed_rollup}" in prompt
     assert "Impersonal voice" in prompt
-    assert "audit-v3.19" in prompt
+    assert "audit-v3.20" in prompt
+    assert "3.11a D8 doc-tier prevalence vs score variance" in prompt
+    assert "Doc-tier prevalence" in prompt
+    assert "D8 score variance" in prompt
+    assert "Ledger row count" in prompt
     assert "WARN" in prompt
     assert "absolute target band" in prompt
     assert "benchmark prompt metadata is `benchmark-v3.5`" in prompt or "benchmark-v3.6" in prompt

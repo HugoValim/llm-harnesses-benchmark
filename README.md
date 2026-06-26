@@ -109,7 +109,7 @@ Four harness backends run the same brief: **opencode**, **codex**, **claude**, *
 
 ### Role 1 audit (rubric scoring)
 
-**Prompt version:** `audit-v3.19` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
+**Prompt version:** `audit-v3.20` ([`prompts/audit_prompt_template.txt`](prompts/audit_prompt_template.txt))
 
 An LLM **auditor** reads one generated `project/` and writes a structured report with
 sections A–I. The auditor verifies API claims against the project's own installed
@@ -172,7 +172,7 @@ Example report:
 
 ### Role 2 meta-analysis (cross-run verdicts)
 
-**Prompt version:** `meta-v3.23`
+**Prompt version:** `meta-v3.24`
 ([`prompts/audit_meta_analysis_prompt.txt`](prompts/audit_meta_analysis_prompt.txt))
 
 The meta-analyst reads every `report.md` under one auditor directory and produces
