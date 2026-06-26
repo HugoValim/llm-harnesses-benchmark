@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from benchmark.util import ollama_launch_integration
@@ -166,6 +167,26 @@ _CURSOR_ISOLATION_FILES = (
 )
 
 
+def cursor_config_dir(home: Path, *, xdg_config_home: Path | None = None) -> Path:
+    base = xdg_config_home if xdg_config_home is not None else home / ".config"
+    return base / "cursor"
+
+
+def stage_cursor_auth(
+    isolated_home: Path,
+    source_home: Path,
+    *,
+    source_xdg_config_home: Path | None = None,
+) -> None:
+    """Copy subscription ``auth.json`` into isolated ``HOME/.config/cursor``."""
+    auth_src = cursor_config_dir(source_home, xdg_config_home=source_xdg_config_home) / "auth.json"
+    if not auth_src.is_file():
+        return
+    dest_dir = cursor_config_dir(isolated_home)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(auth_src, dest_dir / "auth.json")
+
+
 def prepare_isolated_cursor_home(*, source_cursor_dir: Path, dest_home: Path) -> None:
     """Materialize a benchmark-scoped Cursor home for parallel agent runs.
 
@@ -190,9 +211,16 @@ def cursor_env_for_phase(
     """Return env with per-run HOME so Cursor CLI state is not shared."""
     env = dict(base_env)
     dest_home = result_dir / ".cursor-home"
+    source_home = Path.home()
+    source_xdg = Path(base_env["XDG_CONFIG_HOME"]) if base_env.get("XDG_CONFIG_HOME") else None
     prepare_isolated_cursor_home(
-        source_cursor_dir=Path.home() / ".cursor",
+        source_cursor_dir=source_home / ".cursor",
         dest_home=dest_home,
+    )
+    stage_cursor_auth(
+        dest_home,
+        source_home,
+        source_xdg_config_home=source_xdg,
     )
     env["HOME"] = str(dest_home)
     return env

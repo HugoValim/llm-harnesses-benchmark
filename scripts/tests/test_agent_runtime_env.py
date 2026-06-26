@@ -21,6 +21,7 @@ from benchmark.agent_runtime_env import (  # noqa: E402
     prepare_isolated_cursor_home,
     prepare_subscription_codex_home,
     runtime_isolation_for_env,
+    stage_cursor_auth,
     strip_legacy_ollama_launch_profile,
     strip_ollama_launch_overrides,
 )
@@ -252,6 +253,53 @@ class TestCursorIsolatedHome(unittest.TestCase):
 
             self.assertEqual(env["HOME"], str(result_dir / ".cursor-home"))
             self.assertTrue((result_dir / ".cursor-home" / ".cursor" / "cli-config.json").is_file())
+
+    def test_stage_cursor_auth_stages_auth_json_when_present(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source_home = tmp_path / "source"
+            isolated_home = tmp_path / "isolated"
+            auth_src = source_home / ".config" / "cursor"
+            auth_src.mkdir(parents=True)
+            (auth_src / "auth.json").write_text('{"token":"abc"}\n')
+
+            stage_cursor_auth(isolated_home, source_home)
+
+            auth_dest = isolated_home / ".config" / "cursor" / "auth.json"
+            self.assertTrue(auth_dest.is_file())
+            self.assertEqual(auth_dest.read_text(), '{"token":"abc"}\n')
+
+    def test_stage_cursor_auth_skips_auth_json_when_absent(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source_home = tmp_path / "source"
+            source_home.mkdir()
+            isolated_home = tmp_path / "isolated"
+
+            stage_cursor_auth(isolated_home, source_home)
+
+            self.assertFalse((isolated_home / ".config" / "cursor" / "auth.json").exists())
+
+    def test_cursor_env_for_phase_stages_auth_json(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_home = tmp_path / "home"
+            (fake_home / ".cursor").mkdir(parents=True)
+            (fake_home / ".cursor" / "cli-config.json").write_text("{}\n")
+            auth_src = fake_home / ".config" / "cursor"
+            auth_src.mkdir(parents=True)
+            (auth_src / "auth.json").write_text('{"token":"abc"}\n')
+
+            result_dir = tmp_path / "run_01"
+            result_dir.mkdir()
+            base_env = {"PATH": "/usr/bin"}
+
+            with patch("pathlib.Path.home", return_value=fake_home):
+                cursor_env_for_phase(base_env, result_dir=result_dir)
+
+            auth_dest = result_dir / ".cursor-home" / ".config" / "cursor" / "auth.json"
+            self.assertTrue(auth_dest.is_file())
+            self.assertEqual(auth_dest.read_text(), '{"token":"abc"}\n')
 
 
 class TestOpenCodeHarnessOllamaPreflight(unittest.TestCase):
