@@ -68,12 +68,12 @@ def test_agent_coding_rules_v11_has_core_sections() -> None:
     assert "caveman mode" not in rules.lower()
 
 
-def test_audit_prompt_v320_d10_desaturation_and_calibration() -> None:
+def test_audit_prompt_v321_d10_desaturation_and_calibration() -> None:
     prompt = (PROMPTS / "audit_prompt_template.txt").read_text()
 
-    assert prompt.startswith("Prompt-Version: audit-v3.20")
+    assert prompt.startswith("Prompt-Version: audit-v3.21")
     assert "{audit_preflight_block}" in prompt
-    assert "MUST equal `audit-v3.20`" in prompt
+    assert "MUST equal `audit-v3.21`" in prompt
     assert "primary benchmark prompt must be `benchmark-v3.5` or `benchmark-v3.6`" in prompt
     assert "follow-up prompt must be `benchmark-followup-v3.5` or `benchmark-followup-v3.6`" in prompt
     assert "D9.1=pass|fail" in prompt
@@ -93,13 +93,19 @@ def test_audit_prompt_v320_d10_desaturation_and_calibration() -> None:
     assert "Core-quality D10 floor (removed v3.20)" in prompt
     assert "Polish-only D10 floor (removed v3.20)" in prompt
     assert "v3.20 D10 de-saturation" in prompt
+    assert "v3.21 D10 de-saturation" in prompt
     assert "remove both floors" in prompt
     assert "min(computed_d10, 9)" in prompt
-    assert "D10 scoring order (v3.18/v3.20" in prompt
+    assert "D10 scoring order (v3.18/v3.21" in prompt
     assert "15/15" in prompt
-    assert "Bare-handler tiers (v3.17)" in prompt
-    assert "zero** bare" in prompt
-    assert "Combined narrow-handler scoring (v3.18/v3.20)" in prompt
+    assert "Bare-handler grep (v3.21, mandatory)" in prompt
+    assert "0 hits" in prompt
+    assert "Bare-handler tiers (v3.17/v3.21)" in prompt
+    assert "disconnect-tier (excluded from D10)" in prompt
+    assert "Combined narrow-handler scoring (v3.21)" in prompt
+    assert "Handler 3 and beyond" in prompt
+    assert "Never** cap D10 at 12" in prompt
+    assert "Three or more** narrow handlers → cap D10 at **12**" not in prompt
     assert "v3.19 weight rebalance" in prompt
     assert "do not** recommend or apply further D10 bare-handler tightening" in prompt
     assert "Partial credit ladder (v3.16)" in prompt
@@ -119,10 +125,11 @@ def test_audit_prompt_v320_d10_desaturation_and_calibration() -> None:
     assert "CF#9 cap (split, v3.10)" in prompt
     assert "integration-heavy" in prompt
     assert "D8 calibration cap (v3.15/v3.19, automatic)" in prompt
-    assert "D9 calibration cap (v3.12/v3.20, automatic)" in prompt
+    assert "D9 calibration cap (v3.12/v3.21, automatic)" in prompt
     assert "Settings modularity (v3.16)" in prompt
     assert "Settings env guards (v3.17)" in prompt
-    assert "Consumer length (v3.17)" in prompt
+    assert "Consumer length (v3.17, v3.21)" in prompt
+    assert "51–120" in prompt
     assert "LLM Protocol (v3.17, v3.19 scale)" in prompt
     assert "View + LLM (v3.17, v3.19 scale)" in prompt
     assert "Saturation bar (v3.11)" in prompt
@@ -155,6 +162,25 @@ def test_audit_prompt_v320_d10_desaturation_and_calibration() -> None:
     assert "Polish-only D10 floor (v3.17, automatic)" not in prompt
     assert "Polish-only D10 floor (v3.18/v3.19" not in prompt
     assert "Core-quality D10 floor (v3.16/v3.19" not in prompt
+
+
+def _v321_narrow_handler_d10(handler_count: int) -> int:
+    """v3.21 escalating narrow-handler arithmetic from a 15-point D10 start."""
+    if handler_count <= 0:
+        return 15
+    deduction = 0
+    for index in range(1, handler_count + 1):
+        deduction += 1 if index <= 2 else 2
+    return max(0, 15 - deduction)
+
+
+def test_v321_d10_escalating_handlers() -> None:
+    assert _v321_narrow_handler_d10(0) == 15
+    assert _v321_narrow_handler_d10(1) == 14
+    assert _v321_narrow_handler_d10(2) == 13
+    assert _v321_narrow_handler_d10(3) == 11
+    assert _v321_narrow_handler_d10(4) == 9
+    assert _v321_narrow_handler_d10(5) == 7
 
 
 def test_anchor_v319_recovery_from_codex_gpt_5_5_run_02_pattern() -> None:
@@ -246,7 +272,7 @@ def test_meta_prompt_v324_uses_single_paragraph_abstract() -> None:
     assert "Contest harnesses only" in prompt
     assert "{precomputed_rollup}" in prompt
     assert "Impersonal voice" in prompt
-    assert "audit-v3.20" in prompt
+    assert "audit-v3.21" in prompt
     assert "3.11a D8 doc-tier prevalence vs score variance" in prompt
     assert "Doc-tier prevalence" in prompt
     assert "D8 score variance" in prompt

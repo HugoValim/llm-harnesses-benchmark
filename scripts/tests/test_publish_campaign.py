@@ -244,7 +244,7 @@ class TestBuildManifestFromRepo(unittest.TestCase):
             run_id="run_01",
         )
         self.assertEqual(manifest.prompt_versions["benchmark"], "benchmark-v3.6")
-        self.assertEqual(manifest.prompt_versions["audit"], "audit-v3.20")
+        self.assertEqual(manifest.prompt_versions["audit"], "audit-v3.21")
         self.assertEqual(len(manifest.targets), 28)
         self.assertIn("codex", manifest.harnesses)
 

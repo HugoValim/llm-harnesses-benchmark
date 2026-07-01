@@ -12,7 +12,7 @@ See [`CONTEXT.md`](../CONTEXT.md) for vocabulary (`harness`, `target`, `auditor`
 |-------|---------|-------------|
 | Generation | `benchmark-v3.5` | [`prompts/benchmark_prompt.txt`](../prompts/benchmark_prompt.txt) |
 | Generation follow-up | `benchmark-followup-v3.5` | [`prompts/benchmark_followup_prompt.txt`](../prompts/benchmark_followup_prompt.txt) |
-| Role 1 audit | `audit-v3.20` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
+| Role 1 audit | `audit-v3.21` | [`prompts/audit_prompt_template.txt`](../prompts/audit_prompt_template.txt) |
 | Role 2 meta-analysis | `meta-v3.24` | [`prompts/audit_meta_analysis_prompt.txt`](../prompts/audit_meta_analysis_prompt.txt) |
 
 Prompt versions for older campaigns are recorded in each

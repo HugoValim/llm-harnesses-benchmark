@@ -1239,19 +1239,45 @@ def build_practitioner_decisions_table(
                 caveat="lowest mean cost among Tier-A cells",
             )
         )
-        fastest = min(
+        fastest_all = min(
+            tier_a,
+            key=lambda cell: cell.mean_gen_minutes or float("inf"),
+            default=None,
+        )
+        if fastest_all is not None:
+            rows.append(
+                PractitionerDecisionRow(
+                    goal="Fastest Tier-A",
+                    target=(
+                        f"{fastest_all.harness}-"
+                        f"{_display_slug(fastest_all.model_slug, display_slug_map)}"
+                    ),
+                    mean_total=fastest_all.mean_total,
+                    gen_minutes=fastest_all.mean_gen_minutes,
+                    cost_usd=_report_cost_usd_for_cell(
+                        reports, fastest_all, source_dirs
+                    ),
+                    caveat="fastest Tier-A cell across all harnesses",
+                )
+            )
+        fastest_contest = min(
             (cell for cell in tier_a if _is_benchmark_harness(cell.harness)),
             key=lambda cell: cell.mean_gen_minutes or float("inf"),
             default=None,
         )
-        if fastest is not None:
+        if fastest_contest is not None:
             rows.append(
                 PractitionerDecisionRow(
                     goal="Fastest Tier-A (contest)",
-                    target=f"{fastest.harness}-{_display_slug(fastest.model_slug, display_slug_map)}",
-                    mean_total=fastest.mean_total,
-                    gen_minutes=fastest.mean_gen_minutes,
-                    cost_usd=_report_cost_usd_for_cell(reports, fastest, source_dirs),
+                    target=(
+                        f"{fastest_contest.harness}-"
+                        f"{_display_slug(fastest_contest.model_slug, display_slug_map)}"
+                    ),
+                    mean_total=fastest_contest.mean_total,
+                    gen_minutes=fastest_contest.mean_gen_minutes,
+                    cost_usd=_report_cost_usd_for_cell(
+                        reports, fastest_contest, source_dirs
+                    ),
                     caveat="fastest Tier-A contest-harness cell",
                 )
             )
@@ -2037,14 +2063,15 @@ def calculate_performance_cost_cells(
     return tuple(cells)
 
 
-def rank_contest_tier_a_by_quality_per_minute(
+def rank_tier_a_by_quality_per_minute(
     reports: list[ParsedReport],
     *,
     source_dirs: list[Path] | None = None,
     display_slug_map: dict[str, str] | None = None,
+    contest_only: bool = False,
     top_n: int = 5,
 ) -> tuple[PerformanceCostCell, ...]:
-    """Tier-A contest-harness cells ranked by quality per minute (descending)."""
+    """Tier-A cells ranked by quality per minute (descending)."""
     tier_a = [
         cell
         for cell in calculate_performance_cost_cells(
@@ -2054,10 +2081,27 @@ def rank_contest_tier_a_by_quality_per_minute(
         )
         if cell.tier == "A"
         and cell.quality_per_minute is not None
-        and _is_benchmark_harness(cell.harness)
+        and (not contest_only or _is_benchmark_harness(cell.harness))
     ]
     tier_a.sort(key=lambda cell: cell.quality_per_minute or 0.0, reverse=True)
     return tuple(tier_a[:top_n])
+
+
+def rank_contest_tier_a_by_quality_per_minute(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+    top_n: int = 5,
+) -> tuple[PerformanceCostCell, ...]:
+    """Tier-A contest-harness cells ranked by quality per minute (descending)."""
+    return rank_tier_a_by_quality_per_minute(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+        contest_only=True,
+        top_n=top_n,
+    )
 
 
 def calculate_quality_time_tradeoff(
@@ -2370,25 +2414,14 @@ def build_methodology_skeleton(
     return "\n".join(lines) + "\n"
 
 
-def build_quality_time_tradeoff_table(
-    reports: list[ParsedReport],
+def _format_quality_time_leaderboard_table(
+    heading: str,
+    ranked: tuple[PerformanceCostCell, ...],
     *,
-    source_dirs: list[Path] | None = None,
     display_slug_map: dict[str, str] | None = None,
-    top_n: int = 5,
 ) -> str:
-    """Contest-harness Tier-A quality–time leaderboard for Abstract / Results §3.10."""
-    ranked = rank_contest_tier_a_by_quality_per_minute(
-        reports,
-        source_dirs=source_dirs,
-        display_slug_map=display_slug_map,
-        top_n=top_n,
-    )
-    if not ranked:
-        return ""
-
     lines = [
-        "**Best quality–time (contest harnesses, Tier-A only):**",
+        heading,
         "",
         "| Rank | Target | Score | Gen-time (min) | Pts/min |",
         "|---:|---|---:|---:|---:|",
@@ -2401,6 +2434,48 @@ def build_quality_time_tradeoff_table(
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def build_quality_time_tradeoff_table(
+    reports: list[ParsedReport],
+    *,
+    source_dirs: list[Path] | None = None,
+    display_slug_map: dict[str, str] | None = None,
+    top_n: int = 5,
+) -> str:
+    """Tier-A quality–time leaderboards for Abstract / Results §3.10."""
+    sections: list[str] = []
+    all_ranked = rank_tier_a_by_quality_per_minute(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+        contest_only=False,
+        top_n=top_n,
+    )
+    if all_ranked:
+        sections.append(
+            _format_quality_time_leaderboard_table(
+                "**Best quality–time (all harnesses, Tier-A only):**",
+                all_ranked,
+                display_slug_map=display_slug_map,
+            )
+        )
+    contest_ranked = rank_tier_a_by_quality_per_minute(
+        reports,
+        source_dirs=source_dirs,
+        display_slug_map=display_slug_map,
+        contest_only=True,
+        top_n=top_n,
+    )
+    if contest_ranked:
+        sections.append(
+            _format_quality_time_leaderboard_table(
+                "**Best quality–time (contest harnesses, Tier-A only):**",
+                contest_ranked,
+                display_slug_map=display_slug_map,
+            )
+        )
+    return "\n".join(sections)
 
 
 def _quality_time_tradeoff_bullet(

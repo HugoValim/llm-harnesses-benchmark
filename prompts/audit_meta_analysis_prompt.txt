@@ -206,9 +206,10 @@ Rules:
 - **Gen-time (min)**, **Tokens (M)**, and **Cost (USD)** are already averaged in the rollup (one decimal / two decimal formatting as shown).
 - "Quality per $" and "Quality per minute" are computed from the rollup mean total and mean cost/time; emit `n/a` exactly as the rollup shows (including when mean cost < $0.10).
 - Sort order must match the rollup table (mean total descending; ties broken by mean cost ascending).
-- Copy **Pareto-efficient Tier-A cells** and **Best quality–time** tables from the rollup below the main table.
-- Below the tables, in <=4 bullets:
+- Copy **Pareto-efficient Tier-A cells** and both **Best quality–time** tables from the rollup below the main table (all harnesses first, then contest harnesses only).
+- Below the tables, in <=5 bullets:
   - Cheapest Tier-A run (target + cost).
+  - Fastest Tier-A run overall (target + gen-time in minutes; include cursor when present).
   - Fastest Tier-A **contest-harness** run (target + gen-time in minutes; exclude cursor).
   - Cost outlier (highest spend vs score earned).
   - Time outlier (longest gen-time vs score earned among contest harnesses).
@@ -228,7 +229,7 @@ Rules:
   - **harness-attributable** — only one contest harness has targets hitting it (name it)
   - **mixed** — two of three contest harnesses have hits
 
-#### 3.11a D8 doc-tier prevalence vs score variance (v3.20, mandatory)
+#### 3.11a D8 doc-tier prevalence vs score variance (v3.21, mandatory)
 
 The combined −2 doc-tier cap per project masks stacked doc hits in section B D8 scores. Report **two blocks** below §3.11 — do **not** conflate CF ledger prevalence with D8 score spread.
 
@@ -262,16 +263,16 @@ Run all six checks and record the verdict per check, then an overall verdict:
 - **Check 2 — Dimension saturation**: any dimension where >=80% of targets scored full marks → FAIL for that dimension (not a discriminator). List each failing dimension.
 - **Check 3 — Dimension floor**: any dimension where >=80% of targets scored 0 → WARN (verify whether universal blind spot or scoring bug — e.g. D8=0/3 for every target). For D9, cite rollup **D9 sub-check cohort** pass rates when present to name the dominant missing sub-check (healthcheck vs logging vs restart vs USER vs SIGTERM).
 - **Check 4 — Tier distribution**: if 100% of valid runs are Tier A → FAIL (rubric not a discriminator); if no run is below Tier B → **PASS** when the cohort is a curated top-model grid (A+B-only mix expected); WARN only when weak models were included in the matrix but none scored below Tier B.
-- **Check 5 — D10 floor (code quality)**: median D10 across all valid runs (D10 max **15** under audit-v3.20).
+- **Check 5 — D10 floor (code quality)**: median D10 across all valid runs (D10 max **15** under audit-v3.21).
   - **PASS** if 5 ≤ median D10 < 12 (cohort shows meaningful toolchain spread).
   - **WARN** if 9 ≤ median D10 < 12 — rubric may still be too lenient on code quality; cite dominant D10 justification patterns from section B.
-  - **FAIL** if median D10 ≥ 12 — D10 is saturated at the bare-handler plateau; recommend **audit-v3.20** D10 de-saturation (zero-handler **15/15**, remove polish/core-quality floors, bare-handler arithmetic only) — **not** further bare-handler tightening or D8/D9 calibration caps on D10.
+  - **FAIL** if median D10 ≥ 12 — D10 is saturated at the bare-handler plateau; recommend **audit-v3.21** D10 de-saturation (escalating **−2** per handler from the 3rd onward, zero-handler **15/15**, disconnect-only handlers excluded from D10 count, mandatory grep evidence) — **not** further bare-handler tightening or removing D8/D9 calibration caps on D10.
   - **FAIL** if median D10 < 5 — either the brief is too permissive or the rubric is over-deducting. Recommend a Prompt-Version bump and call out whether the failure mode is universal (every harness) or harness-attributable (cite per-harness D10 means).
   - `insufficient-data` if fewer than half the cohort runs have a non-`n/a` D10 (e.g. because they pre-date audit-v3.2/v3.3/v3.4/v3.5); list affected runs in the appendix and do NOT let Check 5 influence the overall verdict.
-- **Check 6 — Anchor ranking (face validity, v3.16)**: compare cell means from **Aggregated runs ranking** for `codex-codex_gpt_5_5(xhigh)` and `claude-claude_opus_4_8` against all contest-harness cells (`opencode`, `codex`, `claude` — exclude `cursor`).
+- **Check 6 — Anchor ranking (face validity, v3.16/v3.21)**: compare cell means from **Aggregated runs ranking** for `codex-codex_gpt_5_5(xhigh)` and `claude-claude_opus_4_8` against all contest-harness cells (`opencode`, `codex`, `claude` — exclude `cursor`).
   - **PASS** if both anchor cells rank in the **top 3** contest-harness cells by mean total **and** `codex-codex_gpt_5_5(xhigh)` mean ≥90 **and** `claude-claude_opus_4_8` mean ≥88.
-  - **WARN** if anchors rank top-3 but either mean is below its absolute target band (`codex_gpt_5_5` <90 or `claude_opus_4_8` <88) — relative rank is acceptable but absolute calibration still drifts; cite per-replicate dimension losses from anchor `report.md` files.
-  - **FAIL** if either anchor ranks below an open-weight cell such as `codex-glm_5_2` — rubric over-tightened on polish dimensions (CF#1-B misclassified as CF#1-R, D10 caps). Recommend audit-v3.20 D10 de-saturation (zero-handler 15/15, no polish/core-quality floors), **not** further D10/D9 tightening.
+  - **WARN** if anchors rank top-3 but either mean is below its absolute target band (`codex_gpt_5_5` <90 or `claude_opus_4_8` <88) — relative rank is acceptable but absolute calibration still drifts; cite per-replicate dimension losses from anchor `report.md` files. When WARN persists under audit-v3.21, prefer **D7 consumer-length** softenings (51–120 delegated consumer **−1**) over D9/D10 tightening.
+  - **FAIL** if either anchor ranks below an open-weight cell such as `codex-glm_5_2` — rubric over-tightened on polish dimensions (CF#1-B misclassified as CF#1-R, D10 caps). Recommend audit-v3.21 D10 de-saturation (escalating handler arithmetic, zero-handler 15/15, no polish floors), **not** further D10/D9 tightening.
   - Target post-calibration: `codex_gpt_5_5` mean ≥90, `claude_opus_4_8` mean ≥88, cohort median 78–82.
 
 Overall verdict:
@@ -339,7 +340,7 @@ Three to five sentences synthesizing the Abstract verdicts for a practitioner au
 - **Be evidence-driven**: every textual claim cites a file path and ideally a line range. No vibes.
 - **No re-grading**: do not change scores or invent dimensions. Use what is in the reports as-is.
 - **No invented metrics**: if `Generation-Time`, tokens, or cost are `n/a` in section H of a report, treat them as `n/a` in Results §3.10 and list them in the appendix.
-- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.20` (or `audit-v3.19` when explicitly opted in for before/after comparison) and whose underlying benchmark prompt metadata is `benchmark-v3.5` or `benchmark-v3.6` (and `benchmark-followup-v3.5` or `benchmark-followup-v3.6` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.18` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-prompt-version` and exclude from rankings unless explicitly opted in.
+- **Prompt-version separation**: compare only reports whose audit `Prompt-Version` is `audit-v3.21` (or `audit-v3.20` when explicitly opted in for before/after comparison) and whose underlying benchmark prompt metadata is `benchmark-v3.5` or `benchmark-v3.6` (and `benchmark-followup-v3.5` or `benchmark-followup-v3.6` when follow-up is present). Reports tagged `audit-v3.0` through `audit-v3.19` or benchmark `v3.4` and earlier are excluded from cross-cell comparison until re-run/re-audited. List them in the appendix as `mixed-prompt-version` and exclude from rankings unless explicitly opted in.
 - **Impersonal voice**: do not use first person (`we`, `I`, `our`). Prefer third person or passive constructions.
 - **Tier definitions are fixed** (from `audit_prompt_template.txt`): A=81-100, B=61-80, C=41-60, D=0-40.
 - **Suppression rules**:

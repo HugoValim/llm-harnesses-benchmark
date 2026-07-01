@@ -1157,6 +1157,39 @@ def test_calculate_quality_time_tradeoff_picks_tier_a_leader(tmp_path: Path) -> 
     assert "6.27" in skeleton or "6.3" in skeleton or "5.4" in skeleton
 
 
+def test_build_quality_time_tradeoff_table_includes_cursor_and_contest(
+    tmp_path: Path,
+) -> None:
+    from benchmark.audit_rollup import build_quality_time_tradeoff_table
+
+    input_dir = tmp_path / "auditor_a"
+    fixtures = (
+        ("cursor-composer_2_5", "cursor", "composer_2_5", 94, 900.0),
+        ("claude-glm_5_2", "claude", "glm_5_2", 93, 1200.0),
+        ("codex-gemma4", "codex", "gemma4", 70, 600.0),
+    )
+    for target, harness, slug, total, seconds in fixtures:
+        path = input_dir / f"{target}/run_01"
+        path.mkdir(parents=True)
+        (path / "report.md").write_text(
+            f"C. **Total score / 100**\n\n**{total} / 100**"
+        )
+        (path / "generation-metrics.json").write_text(
+            f'{{"generation_time_seconds": {seconds}}}'
+        )
+
+    reports = _collect_reports(None, source_dirs=[input_dir])
+    table = build_quality_time_tradeoff_table(reports, source_dirs=[input_dir])
+    assert "**Best quality–time (all harnesses, Tier-A only):**" in table
+    assert "**Best quality–time (contest harnesses, Tier-A only):**" in table
+    all_section, contest_section = table.split(
+        "**Best quality–time (contest harnesses, Tier-A only):**"
+    )
+    assert "cursor-composer_2_5" in all_section
+    assert "cursor-composer_2_5" not in contest_section
+    assert "claude-glm_5_2" in contest_section
+
+
 def test_build_methodology_skeleton_includes_cohort_counts(tmp_path: Path) -> None:
     input_dir = tmp_path / "auditor_a"
     for harness, slug, total in (
