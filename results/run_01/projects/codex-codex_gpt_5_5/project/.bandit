@@ -1,3 +1,0 @@
-[bandit]
-exclude = ./.git,./.mypy_cache,./.pytest_cache,./.ruff_cache,./.venv,./node_modules,./tests,./chat/migrations
-skips = B101

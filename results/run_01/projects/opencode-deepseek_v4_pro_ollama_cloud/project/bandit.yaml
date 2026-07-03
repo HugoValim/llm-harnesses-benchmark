@@ -1,4 +1,0 @@
-[bandit]
-targets = .
-exclude_dirs = .venv,.git,htmlcov,migrations
-skips = B101

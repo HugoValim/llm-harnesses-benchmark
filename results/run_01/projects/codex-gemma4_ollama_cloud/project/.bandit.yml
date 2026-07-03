@@ -1,3 +1,0 @@
-# Bandit configuration
-stop_at_first = false
-exclude_dirs = ["tests", "venv", ".venv"]
