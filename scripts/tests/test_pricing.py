@@ -33,18 +33,18 @@ def test_load_pricing_table_covers_all_registry_slugs() -> None:
     models = load_json(MODELS_CONFIG)["models"]
     assert_registry_coverage(models)
     table = load_pricing_table(PRICING_MD)
-    assert ("claude_sonnet_4_6", "native") in table
+    assert ("claude_sonnet_5", "native") in table
     assert ("composer_2_5", "cursor_list") in table
 
 
 def test_compute_cost_opencode_tokens() -> None:
-    row = pricing_row_for_target("claude_sonnet_4_6", "opencode")
+    row = pricing_row_for_target("claude_sonnet_5", "opencode")
     tokens = extract_token_totals(
         {"tokens": {"input": 1_000_000, "output": 500_000, "total": 1_500_000}},
         harness="opencode",
     )
     cost = compute_estimated_cost(row, tokens)
-    assert cost == pytest.approx(3.0 + 7.5)
+    assert cost == pytest.approx(2.0 + 5.0)
 
 
 def test_compute_cost_claude_model_usage() -> None:
@@ -148,8 +148,8 @@ def test_build_generation_metrics_includes_harness_cli_version(tmp_path: Path) -
         )
     )
     metrics = build_generation_metrics(
-        target_slug="claude-claude_sonnet_4_6",
-        model_slug="claude_sonnet_4_6",
+        target_slug="claude-claude_sonnet_5",
+        model_slug="claude_sonnet_5",
         harness="claude",
         benchmark_result_path=result_path,
     )
@@ -196,8 +196,8 @@ def test_harness_reported_cost_retained_for_non_ollama_cloud_channels(
     }
     result_path.write_text(json.dumps(payload))
     metrics = build_generation_metrics(
-        target_slug="opencode-claude_sonnet_4_6",
-        model_slug="claude_sonnet_4_6",
+        target_slug="opencode-claude_sonnet_5",
+        model_slug="claude_sonnet_5",
         harness="opencode",
         benchmark_result_path=result_path,
     )

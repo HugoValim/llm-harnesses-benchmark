@@ -38,7 +38,7 @@ db.sqlite3
 
 # Published benchmark targets (allowlist)
 !/results/run_*/projects/claude-claude_opus_4_7/
-!/results/run_*/projects/claude-claude_sonnet_4_6/
+!/results/run_*/projects/claude-claude_sonnet_5/
 !/results/run_*/projects/claude-deepseek_v4_pro_ollama_cloud/
 !/results/run_*/projects/claude-gemma4_ollama_cloud/
 !/results/run_*/projects/claude-glm_5_1_ollama_cloud/

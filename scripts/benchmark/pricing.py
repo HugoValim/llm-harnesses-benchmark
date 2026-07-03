@@ -22,7 +22,7 @@ _TABLE_HEADER = (
 
 # OpenRouter id → registry slug for fetch script drift checks.
 OPENROUTER_ID_TO_SLUG: dict[str, str] = {
-    "openrouter/anthropic/claude-sonnet-4.6": "claude_sonnet_4_6",
+    "openrouter/anthropic/claude-sonnet-5": "claude_sonnet_5",
     "openrouter/anthropic/claude-opus-4.7": "claude_opus_4_7",
     "openrouter/anthropic/claude-opus-4.8": "claude_opus_4_8",
     "openrouter/anthropic/claude-fable-5": "claude_fable_5",

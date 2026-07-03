@@ -28,7 +28,7 @@ class TestExpectedBenchmarkLeaves(unittest.TestCase):
         for prefix in (
             "codex-codex_gpt_5_5",
             "claude-claude_opus_4_8",
-            "claude-claude_sonnet_4_6",
+            "claude-claude_sonnet_5",
             "opencode-kimi_k2_7",
         ):
             for run in ("run_01", "run_02", "run_03"):

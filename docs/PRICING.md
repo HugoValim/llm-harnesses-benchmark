@@ -1,4 +1,4 @@
-Last-Updated: 2026-06-20
+Last-Updated: 2026-07-03
 
 Sources:
 - https://openrouter.ai/ (model pages, snapshot 2026-05-25)
@@ -31,6 +31,7 @@ This file is the **source of truth** for `Estimated-Cost-USD` in audit reports. 
   - `cursor` harness → `cursor_list`
   - `ollama_cloud` provider (any harness) → `ollama_cloud`
 - **Ollama Cloud proxy**: `*:cloud` models bill by GPU-time on subscription plans, not published $/token. Rows below use **proxy API rates** (OpenRouter / provider list) for cross-model comparison only.
+- **Claude Sonnet 5 intro** until **2026-08-31** — table uses **2.00 / 10.00**; after that date update `claude_sonnet_5` to **3.00 / 15.00** (standard Sonnet rates).
 - **DeepSeek V4 Pro promo** ends **2026-05-31 15:59 UTC** — table uses promo rates; after that date update `deepseek_v4_pro_ollama_cloud` to **1.74 / 3.48** (cache miss).
 - **GPT-5.x long context**: OpenAI applies surcharges when input exceeds 272K tokens; default table uses standard (<272K) rates.
 - **Cursor Composer**: Pro ($20/mo) includes a Composer usage pool — marginal wallet cost may be **$0** until included usage is consumed. Audit math uses **list API** $/M (team on-demand basis) for comparability.
@@ -41,8 +42,8 @@ This file is the **source of truth** for `Estimated-Cost-USD` in audit reports. 
 
 | Slug | Provider | Model ID | Channel | Input $/1M | Output $/1M | Cache read $/1M | Cache write $/1M | Billable | Source | Snapshot |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
-| claude_sonnet_4_6 | anthropic | claude-sonnet-4-6 | native | 3.00 | 15.00 | | | yes | openrouter.ai/anthropic/claude-sonnet-4.6 | 2026-05-25 |
-| claude_sonnet_4_6 | anthropic | openrouter/anthropic/claude-sonnet-4.6 | openrouter | 3.00 | 15.00 | | | yes | openrouter.ai/anthropic/claude-sonnet-4.6 | 2026-05-25 |
+| claude_sonnet_5 | anthropic | claude-sonnet-5 | native | 2.00 | 10.00 | | | yes | anthropic.com/news/claude-sonnet-5 | 2026-07-03 |
+| claude_sonnet_5 | anthropic | openrouter/anthropic/claude-sonnet-5 | openrouter | 2.00 | 10.00 | | | yes | openrouter.ai/anthropic/claude-sonnet-5 | 2026-07-03 |
 | claude_opus_4_7 | anthropic | claude-opus-4-7 | native | 5.00 | 25.00 | | | yes | openrouter.ai/anthropic/claude-opus-4.7 | 2026-05-25 |
 | claude_opus_4_7 | anthropic | openrouter/anthropic/claude-opus-4.7 | openrouter | 5.00 | 25.00 | | | yes | openrouter.ai/anthropic/claude-opus-4.7 | 2026-05-25 |
 | claude_opus_4_8 | anthropic | claude-opus-4-8 | native | 5.00 | 25.00 | | | yes | anthropic.com/claude/opus | 2026-06-20 |
