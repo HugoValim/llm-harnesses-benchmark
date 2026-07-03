@@ -58,6 +58,7 @@ from benchmark.workspace import (
     summarize_project,
     snapshot_root_generated_markers,
 )
+from benchmark.active_processes import track_process
 from benchmark.util import (
     RESULT_SCHEMA_VERSION,
     USAGE_LIMIT_REACHED,
@@ -371,7 +372,9 @@ def stream_process_output(
 
     closed_streams: set[Any] = set()
 
-    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
+    with track_process(process), stdout_path.open("w") as stdout_file, stderr_path.open(
+        "w"
+    ) as stderr_file:
         while True:
             now = time.monotonic()
             elapsed = now - started

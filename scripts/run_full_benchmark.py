@@ -33,6 +33,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from benchmark.active_processes import install_interrupt_handlers  # noqa: E402
 from benchmark.defaults import DEFAULT_AUDITOR_SLUG, DEFAULT_JOBS  # noqa: E402
 from benchmark.full_pipeline import (  # noqa: E402
     REPO_ROOT,
@@ -120,6 +121,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    install_interrupt_handlers()
     args = parse_args(argv)
     forward = list(args.forward_args)
     if forward and forward[0] == "--":

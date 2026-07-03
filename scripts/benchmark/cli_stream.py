@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+from benchmark.active_processes import track_process
 from benchmark.util import (
     count_files,
     format_duration,
@@ -132,7 +133,9 @@ def run_cli_stream_loop(
         )
 
     output_mode = "a" if append_output else "w"
-    with stdout_path.open(output_mode) as stdout_file, stderr_path.open(output_mode) as stderr_file:
+    with track_process(process), stdout_path.open(output_mode) as stdout_file, stderr_path.open(
+        output_mode
+    ) as stderr_file:
         while True:
             now = time.monotonic()
             elapsed = now - started

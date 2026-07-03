@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.backends import LocalModelBackend, OllamaBackend, create_backend  # noqa: E402
+from benchmark.active_processes import install_interrupt_handlers  # noqa: E402
 from benchmark.campaign_dispatch import (  # noqa: E402
     VariantCampaignConfig,
     run_model_campaign,
@@ -518,6 +519,7 @@ def _run_variant_harness(args: argparse.Namespace, harness_name: str) -> int:
 
 
 def main() -> int:
+    install_interrupt_handlers()
     args = parse_args()
     harness = args.harness
 

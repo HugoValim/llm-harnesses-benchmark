@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from typing import TypeVar
+
+from benchmark.active_processes import terminate_all
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -28,6 +31,19 @@ def job_pool_workers(total_jobs: int, workers: int) -> int:
 
 def _keys_blocked(keys: frozenset[str], in_flight_keys: set[str]) -> bool:
     return bool(keys & in_flight_keys)
+
+
+@contextmanager
+def _interruptible_executor(max_workers: int) -> Iterator[ThreadPoolExecutor]:
+    """Shut down worker threads and kill tracked subprocesses on Ctrl+C."""
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield pool
+    except KeyboardInterrupt:
+        terminate_all(reason="Ctrl+C")
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _pop_runnable_job(
@@ -77,7 +93,11 @@ def run_job_pool(
         return []
     worker_count = job_pool_workers(len(jobs), workers)
     if worker_count == 1:
-        return [run_job(job) for job in jobs]
+        try:
+            return [run_job(job) for job in jobs]
+        except KeyboardInterrupt:
+            terminate_all(reason="Ctrl+C")
+            raise
 
     pending: deque[T] = deque(jobs)
     deferred: deque[T] = deque()
@@ -85,7 +105,7 @@ def run_job_pool(
     in_flight_keys: set[str] = set()
     results: list[R] = []
 
-    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+    with _interruptible_executor(worker_count) as pool:
         while pending or deferred or in_flight:
             while len(in_flight) < worker_count:
                 job = _pop_runnable_job(
@@ -179,18 +199,22 @@ def run_target_pipelined_job_pool(
 
     worker_count = job_pool_workers(len(jobs), workers)
     if worker_count == 1:
-        for key in target_order:
-            for job in grouped[key][next_idx[key] :]:
-                result = run_job(job)
-                results.append(result)
-                if on_complete is not None and not on_complete(job, result):
-                    break
-        return results
+        try:
+            for key in target_order:
+                for job in grouped[key][next_idx[key] :]:
+                    result = run_job(job)
+                    results.append(result)
+                    if on_complete is not None and not on_complete(job, result):
+                        break
+            return results
+        except KeyboardInterrupt:
+            terminate_all(reason="Ctrl+C")
+            raise
 
     future_to_context: dict[Future[R], tuple[TargetKey, T, frozenset[str]]] = {}
     in_flight: set[Future[R]] = set()
 
-    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+    with _interruptible_executor(worker_count) as pool:
         while has_pending() or in_flight:
             while has_pending() and len(in_flight) < worker_count:
                 scheduled = False

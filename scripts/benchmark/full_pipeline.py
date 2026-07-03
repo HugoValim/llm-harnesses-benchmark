@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from benchmark.active_processes import run_tracked_subprocess
 from benchmark.audit_meta import audit_model_harness
 from benchmark.audit_layout import iter_auditor_report_paths
 from benchmark.campaign_dispatch import kill_stale_opencode_processes
@@ -235,8 +236,10 @@ def execute_build_job(
     if dry_run:
         print_line(" ".join(cmd))
         return job.label(), 0
-    runner = run_cmd or subprocess.run
-    completed = runner(cmd, cwd=REPO_ROOT, check=False, text=True)
+    if run_cmd is not None:
+        completed = run_cmd(cmd, cwd=REPO_ROOT, check=False, text=True)
+        return job.label(), int(completed.returncode)
+    completed = run_tracked_subprocess(cmd, cwd=REPO_ROOT, check=False)
     return job.label(), int(completed.returncode)
 
 
@@ -532,7 +535,7 @@ def run_build_batch(
     if dry_run:
         print_line(" ".join(cmd))
         return 0
-    completed = subprocess.run(cmd, cwd=REPO_ROOT, check=False)
+    completed = run_tracked_subprocess(cmd, cwd=REPO_ROOT, check=False)
     return int(completed.returncode)
 
 
