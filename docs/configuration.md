@@ -43,14 +43,14 @@ Example — one Ollama Cloud model on all three contest harnesses:
 
 ```json
 {
-  "slug": "kimi_k2_6",
+  "slug": "kimi_k2_7",
   "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
   "num_runs": 3
 }
 ```
 
-That dispatches nine benchmark leaves: `claude-kimi_k2_6/run_01` …
-`opencode-kimi_k2_6/run_03`.
+That dispatches nine benchmark leaves: `claude-kimi_k2_7/run_01` …
+`opencode-kimi_k2_7/run_03`.
 
 ## Harness registry
 
@@ -72,7 +72,7 @@ Use `--harness` to select the runner and repeat `--model` to select slugs:
 ```bash
 python3 scripts/run_benchmark.py --harness opencode --model claude_sonnet_4_6
 python3 scripts/run_benchmark.py --harness codex --model codex_gpt_5_5
-python3 scripts/run_benchmark.py --harness claude --model claude_opus_4_7
+python3 scripts/run_benchmark.py --harness claude --model claude_opus_4_8
 python3 scripts/run_benchmark.py --harness cursor --model composer_2_5
 ```
 

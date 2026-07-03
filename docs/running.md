@@ -49,7 +49,7 @@ Run one audit pass:
 python3 scripts/run_audit.py \
   --run-id run_02 \
   --harness claude \
-  --model claude_opus_4_7 \
+  --model claude_opus_4_8 \
   --target opencode-claude_sonnet_4_6
 ```
 
@@ -75,7 +75,7 @@ python3 scripts/run_benchmark.py --run-id run_02 --harness codex --model codex_g
 python3 scripts/run_benchmark.py --run-id run_02 --harness codex --models-config config/models.json
 
 # Force rerun
-python3 scripts/run_benchmark.py --run-id run_02 --harness opencode --model kimi_k2_6_ollama_cloud --force
+python3 scripts/run_benchmark.py --run-id run_02 --harness opencode --model kimi_k2_7 --force
 ```
 
 Useful flags:
@@ -129,7 +129,7 @@ python3 scripts/run_audit.py --run-id run_02 --target opencode-claude_sonnet_4_6
 python3 scripts/run_audit.py \
   --run-id run_02 \
   --harness claude \
-  --model claude_opus_4_7 \
+  --model claude_opus_4_8 \
   --target opencode-claude_sonnet_4_6
 ```
 
@@ -140,7 +140,7 @@ Flags: `--run-id`, `--target` (repeatable), `--benchmark-results-dir`, `--result
 ```bash
 python3 scripts/run_meta_analysis.py --run-id run_02 --meta-input-dir codex_gpt_5_5
 
-python3 scripts/run_meta_analysis.py --run-id run_02 --harness claude --model claude_opus_4_7
+python3 scripts/run_meta_analysis.py --run-id run_02 --harness claude --model claude_opus_4_8
 ```
 
 Flags: `--run-id`, `--meta-input-dir`, `--meta-output-dir`, `--force`, `--strict-meta-validation`

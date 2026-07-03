@@ -30,7 +30,7 @@ def test_audit_model_harness_lookup() -> None:
         == "claude"
     )
     assert (
-        audit_model_harness(config, "kimi_k2_6", models_config=models_config)
+        audit_model_harness(config, "kimi_k2_7", models_config=models_config)
         == "claude"
     )
     assert audit_model_harness(config, "codex_gpt_5_5", models_config=models_config) == "codex"

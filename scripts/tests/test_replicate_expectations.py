@@ -27,9 +27,9 @@ class TestExpectedBenchmarkLeaves(unittest.TestCase):
         slugs = {leaf.slug for leaf in leaves}
         for prefix in (
             "codex-codex_gpt_5_5",
-            "claude-claude_opus_4_7",
             "claude-claude_opus_4_8",
-            "opencode-kimi_k2_6",
+            "claude-claude_sonnet_4_6",
+            "opencode-kimi_k2_7",
         ):
             for run in ("run_01", "run_02", "run_03"):
                 self.assertIn(f"{prefix}/{run}", slugs)

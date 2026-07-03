@@ -33,7 +33,7 @@ When more than one auditor directory is listed, the same `(harness, model_slug)`
 
 When a target has multiple benchmark replicates, audit reports live under `<auditor>/<harness>-<model>/run_XX/report.md`. The precomputed rollup **Aggregated runs ranking** table averages replicate totals per `(harness, model_slug)` cell (N = number of parseable replicate audits). Abstract primary verdict bullets MUST use those mean totals and std dev values. **All runs ranking (detail)** lists every individual replicate audit — use it for citations and variance notes, not for primary ranking math.
 
-Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5(xhigh)` and `claude_opus_4_7`) are **excluded from harness comparison averages** (Results §3.5) because they were not run under every contest harness. They remain in Results §3.3 and the appendix.
+Single-harness-only models (including benchmark leader anchors such as `codex_gpt_5_5(xhigh)` and `claude_opus_4_8`) are **excluded from harness comparison averages** (Results §3.5) because they were not run under every contest harness. They remain in Results §3.3 and the appendix.
 
 ## What you are testing
 

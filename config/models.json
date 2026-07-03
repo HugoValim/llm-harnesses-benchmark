@@ -1,15 +1,6 @@
 {
   "models": [
     {
-      "slug": "claude_opus_4_7",
-      "label": "Claude Opus 4.7",
-      "provider": "anthropic",
-      "id": "claude-opus-4-7",
-      "harness": ["claude"],
-      "num_runs": 3,
-      "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
-    },
-    {
       "slug": "claude_opus_4_8",
       "label": "Claude Opus 4.8",
       "provider": "anthropic",
@@ -17,6 +8,15 @@
       "harness": ["claude"],
       "num_runs": 3,
       "selection_reason": "Tier-A Claude baseline for build, audit, and meta-analysis runs."
+    },
+    {
+      "slug": "claude_fable_5",
+      "label": "Claude Fable 5",
+      "provider": "anthropic",
+      "id": "claude-fable-5",
+      "harness": ["claude"],
+      "num_runs": 3,
+      "selection_reason": "Tier-A Claude Fable baseline for long-horizon agentic build, audit, and meta-analysis runs."
     },
     {
       "slug": "claude_sonnet_4_6",
@@ -56,15 +56,6 @@
       "selection_reason": "Kimi K2.7 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
     },
     {
-      "slug": "kimi_k2_6",
-      "label": "Kimi K2.6 (Ollama Cloud)",
-      "provider": "ollama_cloud",
-      "id": "kimi-k2.6:cloud",
-      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
-      "num_runs": 3,
-      "selection_reason": "Kimi K2.6 served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
-    },
-    {
       "slug": "deepseek_v4_pro",
       "label": "DeepSeek V4 Pro (Ollama Cloud)",
       "provider": "ollama_cloud",
@@ -73,15 +64,6 @@
       "known_issues": "OpenCode may fail phase 2 when reasoning_content is stripped; Claude/Codex follow-up still runs.",
       "num_runs": 3,
       "selection_reason": "DeepSeek V4 Pro served by Ollama Cloud for benchmark, audit, and meta-analysis dispatch."
-    },
-    {
-      "slug": "glm_5_1",
-      "label": "GLM 5.1 (Ollama Cloud)",
-      "provider": "ollama_cloud",
-      "id": "glm-5.1:cloud",
-      "harness": ["ollama_claude", "ollama_codex", "ollama_opencode"],
-      "num_runs": 3,
-      "selection_reason": "GLM 5.1 served by Ollama Cloud for long-horizon agentic engineering comparison."
     },
     {
       "slug": "glm_5_2",

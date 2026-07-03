@@ -96,7 +96,7 @@ def test_build_matrix_includes_cursor_models() -> None:
 def test_build_matrix_includes_ollama_opencode_models() -> None:
     steps = build_matrix(MODELS_CONFIG)
     opencode_slugs = {s.model_slug for s in steps if s.harness == "opencode"}
-    assert "kimi_k2_6" in opencode_slugs
+    assert "kimi_k2_7" in opencode_slugs
     assert "deepseek_v4_pro" in opencode_slugs
 
 
@@ -205,7 +205,7 @@ def test_list_steps_cli() -> None:
     )
     lines = [ln for ln in completed.stdout.strip().splitlines() if ln]
     assert len(lines) == len(_expected_matrix_steps())
-    assert "claude_opus_4_7" in completed.stdout
+    assert "claude_opus_4_8" in completed.stdout
     assert "codex_gpt_5_5" in completed.stdout
     assert "composer_2_5" in completed.stdout
 
