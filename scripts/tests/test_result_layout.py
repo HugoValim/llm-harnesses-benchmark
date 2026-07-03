@@ -121,6 +121,11 @@ class TestRunLayout(unittest.TestCase):
             validate_run_id("run")
         validate_run_id("run_01")
 
+    def test_validate_run_id_accepts_date_format(self) -> None:
+        validate_run_id("03_07_2026")
+        layout = resolve_run_layout("03_07_2026", Path("/tmp/results"))
+        self.assertEqual(layout.run_root, Path("/tmp/results/03_07_2026"))
+
     def test_layout_from_repo(self) -> None:
         layout = layout_from_repo("run_03", REPO_ROOT)
         self.assertEqual(layout.run_id, "run_03")

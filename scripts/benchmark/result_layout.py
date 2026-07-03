@@ -32,8 +32,16 @@ BENCHMARK_CONTEST_HARNESSES: frozenset[str] = frozenset(
 )
 CURSOR_AGENT_PREFIX: str = "cursor"
 
-RUN_ID_PATTERN = re.compile(r"^run_\d+$")
+RUN_ID_LEGACY_PATTERN = re.compile(r"^run_\d+$")
+RUN_ID_DATE_PATTERN = re.compile(r"^\d{2}_\d{2}_\d{4}$")
 REPLICATE_DIR_PATTERN = re.compile(r"^run_\d{2}$")
+
+
+def is_valid_run_id(run_id: str) -> bool:
+    """Return True when ``run_id`` is a supported campaign directory name."""
+    return bool(
+        RUN_ID_LEGACY_PATTERN.match(run_id) or RUN_ID_DATE_PATTERN.match(run_id)
+    )
 
 
 @dataclass(frozen=True)
@@ -87,9 +95,10 @@ class RunLayout:
 
 def validate_run_id(run_id: str) -> None:
     """Reject malformed run identifiers."""
-    if not RUN_ID_PATTERN.match(run_id):
+    if not is_valid_run_id(run_id):
         raise ValueError(
-            f"run_id must match run_<digits> (e.g. run_02), got {run_id!r}"
+            "run_id must match run_<digits> (e.g. run_02) or "
+            f"DD_MM_YYYY (e.g. 03_07_2026), got {run_id!r}"
         )
 
 
@@ -116,7 +125,7 @@ def resolve_default_run_id(results_base: Path) -> str | None:
     for entry in results_base.iterdir():
         if not entry.is_dir():
             continue
-        if not RUN_ID_PATTERN.match(entry.name):
+        if not RUN_ID_LEGACY_PATTERN.match(entry.name):
             continue
         candidates.append((int(entry.name.split("_", 1)[1]), entry.name))
     if not candidates:
@@ -137,7 +146,7 @@ def add_run_id_arg(
         default=None,
         required=required,
         help=(
-            "Run directory name under results/ (e.g. run_02). "
+            "Run directory name under results/ (e.g. run_02 or 03_07_2026). "
             "Resolves projects/, audit-reports/, and meta-analysis.md."
             + (f" {suffix}" if suffix else "")
         ),
