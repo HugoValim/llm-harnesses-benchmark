@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.util import (  # noqa: E402
+    enrich_cli_version_with_pin,
     probe_cli_version,
     resolve_harness_cli_versions,
 )
@@ -73,21 +74,40 @@ def test_resolve_harness_cli_versions_ollama_shim() -> None:
     assert fields["command_shim_probe_argv"] == ["ollama", "--version"]
 
 
-def test_resolve_harness_cli_versions_records_pin_mismatch() -> None:
-    with patch(
-        "benchmark.util.probe_cli_version",
-        return_value="codex-cli 0.135.0",
-    ):
-        fields = resolve_harness_cli_versions(harness="codex")
+def test_enrich_cli_version_with_pin_records_mismatch(tmp_path: Path) -> None:
+    harnesses = tmp_path / "harnesses.json"
+    harnesses.write_text(
+        '{"codex": {"command": "codex", "cli_version_pin": "0.141.0"}}',
+        encoding="utf-8",
+    )
+    fields = enrich_cli_version_with_pin(
+        {"harness_cli_version": "codex-cli 0.135.0"},
+        "codex",
+        harnesses_config=harnesses,
+    )
     assert fields["harness_cli_version_pinned"] == "0.141.0"
     assert fields["harness_cli_version_mismatch"] is True
 
 
-def test_resolve_harness_cli_versions_records_pin_match() -> None:
-    with patch(
-        "benchmark.util.probe_cli_version",
-        return_value="codex-cli 0.141.0",
-    ):
-        fields = resolve_harness_cli_versions(harness="codex")
+def test_enrich_cli_version_with_pin_records_match(tmp_path: Path) -> None:
+    harnesses = tmp_path / "harnesses.json"
+    harnesses.write_text(
+        '{"codex": {"command": "codex", "cli_version_pin": "0.141.0"}}',
+        encoding="utf-8",
+    )
+    fields = enrich_cli_version_with_pin(
+        {"harness_cli_version": "codex-cli 0.141.0"},
+        "codex",
+        harnesses_config=harnesses,
+    )
     assert fields["harness_cli_version_pinned"] == "0.141.0"
     assert fields["harness_cli_version_mismatch"] is False
+
+
+def test_enrich_cli_version_with_pin_absent_when_unconfigured() -> None:
+    fields = enrich_cli_version_with_pin(
+        {"harness_cli_version": "codex-cli 0.141.0"},
+        "codex",
+    )
+    assert fields["harness_cli_version_pinned"] is None
+    assert fields["harness_cli_version_mismatch"] is None
