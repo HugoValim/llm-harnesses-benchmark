@@ -27,6 +27,7 @@ from benchmark.result_validation import (
 from benchmark.result_layout import replicate_result_dir
 from benchmark.runner import _kill_stale_opencode_processes, run_model
 from benchmark.run_status import payload_hit_usage_limit, payload_was_stalled
+from benchmark.subscription_providers import build_campaign_concurrency_keys
 from benchmark.util import print_line
 
 STALL_RETRY_COOLDOWN_SECONDS = 60
@@ -126,22 +127,6 @@ class VariantReplicateJob:
     variant: dict[str, Any]
     replicate_index: int
     num_runs: int
-
-
-class ModelSlotLocks:
-    """One lock per model slug; prevents overlapping replicates of the same model."""
-
-    def __init__(self) -> None:
-        self._locks: dict[str, threading.Lock] = {}
-        self._guard = threading.Lock()
-
-    def lock_for(self, slug: str) -> threading.Lock:
-        with self._guard:
-            lock = self._locks.get(slug)
-            if lock is None:
-                lock = threading.Lock()
-                self._locks[slug] = lock
-            return lock
 
 
 class RunModelFn(Protocol):
@@ -278,7 +263,6 @@ def run_model_job_batch(
     dispatch_model: DispatchModelFn,
     dispatch_replicate: DispatchReplicateFn,
     replicate_index: int | None = None,
-    model_slot_locks: ModelSlotLocks | None = None,
     skip_stale_opencode_kill: bool = False,
 ) -> None:
     """Run model jobs with local GPU serialization and usage-limit aborts.
@@ -300,7 +284,6 @@ def run_model_job_batch(
             local_gpu_lock,
             dispatch_replicate,
             replicate_index=replicate_index,
-            model_slot_locks=model_slot_locks,
         )
         return
     _run_sequential_model_jobs(
@@ -325,7 +308,6 @@ def run_model_campaign(
     total_models = len(bench.selected_models)
     workers = benchmark_job_workers(total_models, jobs)
     local_gpu_lock = _local_gpu_lock_for(bench.selected_models)
-    model_slot_locks = ModelSlotLocks() if workers > 1 and total_models > 1 else None
     _print_model_campaign_start(bench, total_models, workers)
     run_model_job_batch(
         job_items=list(enumerate(bench.selected_models, start=1)),
@@ -333,7 +315,6 @@ def run_model_campaign(
         harness=bench.harness,
         abort_flag=abort_flag,
         local_gpu_lock=local_gpu_lock,
-        model_slot_locks=model_slot_locks,
         replicate_index=bench.replicate_index,
         dispatch_model=lambda model, index, skip_stale_kill=False: (
             _run_model_replicate(
@@ -392,9 +373,7 @@ def run_variant_campaign(config: VariantCampaignConfig) -> CampaignDispatchResul
     if jobs == 1 or len(config.variants) <= 1:
         _run_sequential_variant_jobs(config, abort_flag)
     else:
-        _run_parallel_variant_jobs(
-            config, jobs, abort_flag, model_slot_locks=ModelSlotLocks()
-        )
+        _run_parallel_variant_jobs(config, jobs, abort_flag)
     return CampaignDispatchResult(usage_limit_aborted=abort_flag.is_set())
 
 
@@ -563,8 +542,6 @@ def _run_parallel_variant_jobs(
     config: VariantCampaignConfig,
     jobs: int,
     abort_flag: threading.Event,
-    *,
-    model_slot_locks: ModelSlotLocks | None = None,
 ) -> None:
     replicate_jobs = expand_variants_to_replicate_jobs(
         config.variants, replicate_index=config.replicate_index
@@ -577,10 +554,15 @@ def _run_parallel_variant_jobs(
             job.replicate_index,
             job.num_runs,
             abort_flag,
-            model_slot_locks=model_slot_locks,
         )
 
-    _run_job_pool(replicate_jobs, jobs, run_job)
+    _run_job_pool(
+        replicate_jobs,
+        jobs,
+        run_job,
+        harness=config.harness_name,
+        model_row_for_job=lambda job: job.variant,
+    )
 
 
 def _run_variant_replicate_job(
@@ -589,8 +571,6 @@ def _run_variant_replicate_job(
     replicate_index: int,
     num_runs: int,
     abort_flag: threading.Event,
-    *,
-    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
     slug = str(variant["slug"])
     suffix = replicate_log_suffix(replicate_index, num_runs)
@@ -600,13 +580,9 @@ def _run_variant_replicate_job(
         print_line(f"[{slug}] skipped - usage limit active")
         return slug, None, None
     try:
-        slot_lock = (
-            model_slot_locks.lock_for(slug) if model_slot_locks is not None else None
+        payload = _run_variant_replicate(
+            config, variant, replicate_index, num_runs
         )
-        with _optional_lock(slot_lock):
-            payload = _run_variant_replicate(
-                config, variant, replicate_index, num_runs
-            )
         if phase_hit_usage_limit(payload):
             abort_flag.set()
         return slug, payload, None
@@ -774,9 +750,19 @@ def _run_job_pool(
     jobs: list[Any],
     workers: int,
     run_job: Callable[[Any], tuple[str, dict[str, Any] | None, str | None]],
+    *,
+    harness: str,
+    model_row_for_job: Callable[[Any], dict[str, Any]],
 ) -> None:
     """Keep up to ``workers`` replicate/model jobs running until the queue is empty."""
-    for result in run_job_pool(jobs, workers, run_job):
+
+    def concurrency_keys(job: Any) -> frozenset[str]:
+        return build_campaign_concurrency_keys(
+            harness=harness,
+            model_row=model_row_for_job(job),
+        )
+
+    for result in run_job_pool(jobs, workers, run_job, concurrency_keys=concurrency_keys):
         _print_model_job_result(*result)
 
 
@@ -789,7 +775,6 @@ def _run_parallel_model_jobs(
     dispatch_replicate: DispatchReplicateFn,
     *,
     replicate_index: int | None = None,
-    model_slot_locks: ModelSlotLocks | None = None,
 ) -> None:
     if harness == "opencode":
         kill_stale_opencode_processes()
@@ -820,10 +805,15 @@ def _run_parallel_model_jobs(
             abort_flag,
             local_gpu_lock,
             dispatch_one,
-            model_slot_locks=model_slot_locks,
         )
 
-    _run_job_pool(replicate_jobs, workers, run_job)
+    _run_job_pool(
+        replicate_jobs,
+        workers,
+        run_job,
+        harness=harness,
+        model_row_for_job=lambda job: job.model,
+    )
 
 
 def _run_sequential_model_jobs(
@@ -848,8 +838,6 @@ def _run_model_job_item(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
-    *,
-    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
     index, model = item
     slug = str(model["slug"])
@@ -864,7 +852,6 @@ def _run_model_job_item(
             abort_flag,
             local_gpu_lock,
             dispatch_model,
-            model_slot_locks=model_slot_locks,
         )
     except Exception:
         return slug, None, traceback.format_exc()
@@ -877,17 +864,11 @@ def _dispatch_model_job(
     abort_flag: threading.Event,
     local_gpu_lock: threading.Lock | None,
     dispatch_model: DispatchModelFn,
-    *,
-    model_slot_locks: ModelSlotLocks | None = None,
 ) -> tuple[str, dict[str, Any] | None, str | None]:
     slug = str(model["slug"])
     gpu_lock = local_gpu_lock if model.get("provider") == "ollama" else None
-    slot_lock = (
-        model_slot_locks.lock_for(slug) if model_slot_locks is not None else None
-    )
-    with _optional_lock(slot_lock):
-        with _optional_lock(gpu_lock):
-            payload = dispatch_model(model, index, skip_stale_kill=skip_stale_kill)
+    with _optional_lock(gpu_lock):
+        payload = dispatch_model(model, index, skip_stale_kill=skip_stale_kill)
     if phase_hit_usage_limit(payload):
         abort_flag.set()
     return slug, payload, None

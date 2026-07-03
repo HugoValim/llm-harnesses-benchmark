@@ -13,7 +13,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from benchmark.campaign_dispatch import (  # noqa: E402
-    ModelSlotLocks,
     VariantCampaignConfig,
     benchmark_job_workers,
     expand_model_jobs_to_replicate_jobs,
@@ -150,7 +149,6 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=None,
-            model_slot_locks=ModelSlotLocks(),
             dispatch_model=dispatch_model,
             dispatch_replicate=dispatch_replicate,
         )
@@ -187,10 +185,10 @@ class TestRunModelJobBatch(unittest.TestCase):
             return {"status": "completed"}
 
         items = [
-            (1, {"slug": "a", "provider": "openai", "num_runs": 1}),
-            (2, {"slug": "b", "provider": "openai", "num_runs": 1}),
-            (3, {"slug": "c", "provider": "openai", "num_runs": 1}),
-            (4, {"slug": "d", "provider": "openai", "num_runs": 1}),
+            (1, {"slug": "a", "provider": "ollama_cloud", "num_runs": 1}),
+            (2, {"slug": "b", "provider": "ollama_cloud", "num_runs": 1}),
+            (3, {"slug": "c", "provider": "ollama_cloud", "num_runs": 1}),
+            (4, {"slug": "d", "provider": "ollama_cloud", "num_runs": 1}),
         ]
         run_model_job_batch(
             job_items=items,
@@ -352,7 +350,6 @@ class TestRunModelJobBatch(unittest.TestCase):
         active_by_slug: dict[str, int] = {}
         overlap = threading.Event()
         active_lock = threading.Lock()
-        slot_locks = ModelSlotLocks()
 
         def dispatch_model(
             model: dict, index: int, *, skip_stale_kill: bool = False
@@ -384,16 +381,106 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=None,
-            model_slot_locks=slot_locks,
             dispatch_model=dispatch_model,
             dispatch_replicate=dispatch_replicate,
         )
         self.assertFalse(overlap.is_set(), "same model ran overlapping replicates")
 
+    def test_parallel_never_runs_same_subscription_provider_overlap(self) -> None:
+        active_by_provider: dict[str, int] = {}
+        overlap = threading.Event()
+        active_lock = threading.Lock()
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            provider = model["provider"]
+            with active_lock:
+                active_by_provider[provider] = active_by_provider.get(provider, 0) + 1
+                if active_by_provider[provider] > 1:
+                    overlap.set()
+            time.sleep(0.05)
+            with active_lock:
+                active_by_provider[provider] -= 1
+            return {"status": "completed"}
+
+        items = [
+            (1, {"slug": "opus", "provider": "anthropic", "num_runs": 1}),
+            (2, {"slug": "fable", "provider": "anthropic", "num_runs": 1}),
+            (3, {"slug": "gpt", "provider": "openai", "num_runs": 1}),
+        ]
+        run_model_job_batch(
+            job_items=items,
+            workers=3,
+            harness="claude",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        self.assertFalse(
+            overlap.is_set(), "same subscription provider ran overlapping models"
+        )
+
+    def test_parallel_keeps_workers_full_across_subscription_providers(self) -> None:
+        max_in_flight = 0
+        in_flight = 0
+        active_lock = threading.Lock()
+
+        def dispatch_model(
+            model: dict, index: int, *, skip_stale_kill: bool = False
+        ) -> dict:
+            raise AssertionError("sequential dispatch should not run in parallel mode")
+
+        def dispatch_replicate(
+            model: dict,
+            index: int,
+            replicate_index: int,
+            num_runs: int,
+            *,
+            skip_stale_kill: bool = False,
+        ) -> dict:
+            nonlocal max_in_flight, in_flight
+            with active_lock:
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+            time.sleep(0.05)
+            with active_lock:
+                in_flight -= 1
+            return {"status": "completed"}
+
+        items = [
+            (1, {"slug": "opus", "provider": "anthropic", "num_runs": 1}),
+            (2, {"slug": "fable", "provider": "anthropic", "num_runs": 1}),
+            (3, {"slug": "sonnet", "provider": "anthropic", "num_runs": 1}),
+            (4, {"slug": "a", "provider": "ollama_cloud", "num_runs": 1}),
+            (5, {"slug": "b", "provider": "ollama_cloud", "num_runs": 1}),
+            (6, {"slug": "c", "provider": "ollama_cloud", "num_runs": 1}),
+        ]
+        run_model_job_batch(
+            job_items=items,
+            workers=3,
+            harness="claude",
+            abort_flag=threading.Event(),
+            local_gpu_lock=None,
+            dispatch_model=dispatch_model,
+            dispatch_replicate=dispatch_replicate,
+        )
+        self.assertEqual(max_in_flight, 3)
+
     def test_parallel_prefers_different_models_at_same_replicate(self) -> None:
         calls: list[tuple[str, int]] = []
         call_lock = threading.Lock()
-        slot_locks = ModelSlotLocks()
 
         def dispatch_model(
             model: dict, index: int, *, skip_stale_kill: bool = False
@@ -414,9 +501,9 @@ class TestRunModelJobBatch(unittest.TestCase):
             return {"status": "completed"}
 
         items = [
-            (1, {"slug": "a", "provider": "openai", "num_runs": 3}),
-            (2, {"slug": "b", "provider": "openai", "num_runs": 3}),
-            (3, {"slug": "c", "provider": "openai", "num_runs": 3}),
+            (1, {"slug": "a", "provider": "ollama_cloud", "num_runs": 3}),
+            (2, {"slug": "b", "provider": "ollama_cloud", "num_runs": 3}),
+            (3, {"slug": "c", "provider": "ollama_cloud", "num_runs": 3}),
         ]
         run_model_job_batch(
             job_items=items,
@@ -424,7 +511,6 @@ class TestRunModelJobBatch(unittest.TestCase):
             harness="codex",
             abort_flag=threading.Event(),
             local_gpu_lock=None,
-            model_slot_locks=slot_locks,
             dispatch_model=dispatch_model,
             dispatch_replicate=dispatch_replicate,
         )

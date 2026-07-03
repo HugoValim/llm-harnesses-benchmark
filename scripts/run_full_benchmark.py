@@ -2,7 +2,10 @@
 """End-to-end benchmark + audit + meta-analysis pipeline.
 
 Phase 1 runs every model in ``config/models.json`` on each harness it resolves for
-(opencode, codex, claude, cursor per provider routing).
+(opencode, codex, claude, cursor per provider routing). Subscription-backed
+providers (``anthropic``, ``openai``, ``cursor``) never run two models
+concurrently; the global ``-j`` pool backfills idle workers with other
+eligible jobs so three workers stay busy when enough work exists.
 
 Phase 2 audits all benchmark results; Phase 3 runs cross-auditor meta-analysis.
 

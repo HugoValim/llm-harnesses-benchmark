@@ -250,7 +250,8 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_JOBS,
         help=f"Max concurrent model runs (default: {DEFAULT_JOBS}). Pass 1 for sequential. Pass 0 for "
         "one worker per selected model. Local GPU models (provider=ollama) share one "
-        "lock so only one loads at a time; other models can run in parallel.",
+        "lock so only one loads at a time; subscription providers (anthropic, openai, "
+        "cursor) allow only one model per provider at a time.",
     )
     parser.add_argument(
         "--max-validation-retries",

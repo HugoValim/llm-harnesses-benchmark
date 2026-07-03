@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")
 TargetKey = tuple[str, str]
+ConcurrencyKeysFn = Callable[[T], frozenset[str]]
 
 
 def job_pool_workers(total_jobs: int, workers: int) -> int:
@@ -24,16 +26,52 @@ def job_pool_workers(total_jobs: int, workers: int) -> int:
     return max(1, min(workers, total_jobs))
 
 
+def _keys_blocked(keys: frozenset[str], in_flight_keys: set[str]) -> bool:
+    return bool(keys & in_flight_keys)
+
+
+def _pop_runnable_job(
+    pending: deque[T],
+    deferred: deque[T],
+    *,
+    concurrency_keys: ConcurrencyKeysFn[T] | None,
+    in_flight_keys: set[str],
+) -> T | None:
+    """Return the next pending job whose concurrency keys are free."""
+    scanned: list[T] = []
+    while pending:
+        job = pending.popleft()
+        keys = concurrency_keys(job) if concurrency_keys is not None else frozenset()
+        if concurrency_keys is None or not _keys_blocked(keys, in_flight_keys):
+            pending.extendleft(reversed(scanned))
+            return job
+        scanned.append(job)
+    pending.extendleft(reversed(scanned))
+
+    scanned.clear()
+    while deferred:
+        job = deferred.popleft()
+        keys = concurrency_keys(job) if concurrency_keys is not None else frozenset()
+        if concurrency_keys is None or not _keys_blocked(keys, in_flight_keys):
+            deferred.extend(scanned)
+            return job
+        scanned.append(job)
+    deferred.extend(scanned)
+    return None
+
+
 def run_job_pool(
     jobs: list[T],
     workers: int,
     run_job: Callable[[T], R],
+    *,
+    concurrency_keys: ConcurrencyKeysFn[T] | None = None,
 ) -> list[R]:
     """Keep up to ``workers`` jobs running; backfill on completion.
 
-    Example:
-        ``run_job_pool(items, 3, process)`` runs at most three ``process`` calls
-        concurrently until ``items`` is exhausted.
+    When ``concurrency_keys`` is set, jobs that share a key are not started
+    until earlier jobs with the same key finish, but other jobs still backfill
+    idle workers.
     """
     if not jobs:
         return []
@@ -42,13 +80,39 @@ def run_job_pool(
         return [run_job(job) for job in jobs]
 
     pending: deque[T] = deque(jobs)
+    deferred: deque[T] = deque()
     in_flight: set[Future[R]] = set()
+    in_flight_keys: set[str] = set()
     results: list[R] = []
 
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
-        while pending or in_flight:
-            while pending and len(in_flight) < worker_count:
-                in_flight.add(pool.submit(run_job, pending.popleft()))
+        while pending or deferred or in_flight:
+            while len(in_flight) < worker_count:
+                job = _pop_runnable_job(
+                    pending,
+                    deferred,
+                    concurrency_keys=concurrency_keys,
+                    in_flight_keys=in_flight_keys,
+                )
+                if job is None:
+                    break
+                keys = (
+                    concurrency_keys(job)
+                    if concurrency_keys is not None
+                    else frozenset()
+                )
+                in_flight_keys.update(keys)
+
+                def run_with_release(
+                    runnable_job: T,
+                    runnable_keys: frozenset[str] = keys,
+                ) -> R:
+                    try:
+                        return run_job(runnable_job)
+                    finally:
+                        in_flight_keys.difference_update(runnable_keys)
+
+                in_flight.add(pool.submit(run_with_release, job))
 
             if not in_flight:
                 break
@@ -83,6 +147,7 @@ def run_target_pipelined_job_pool(
     replicate_index: Callable[[T], int],
     initial_next_index: Callable[[TargetKey], int] | None = None,
     on_complete: Callable[[T, R], bool] | None = None,
+    concurrency_keys: ConcurrencyKeysFn[T] | None = None,
 ) -> list[R]:
     """Run jobs with per-target replicate serialization and a global worker cap.
 
@@ -103,6 +168,7 @@ def run_target_pipelined_job_pool(
         for key in target_order
     }
     in_flight_targets: set[TargetKey] = set()
+    in_flight_concurrency_keys: set[str] = set()
     results: list[R] = []
 
     def has_pending() -> bool:
@@ -121,12 +187,13 @@ def run_target_pipelined_job_pool(
                     break
         return results
 
-    future_to_context: dict[Future[R], tuple[TargetKey, T]] = {}
+    future_to_context: dict[Future[R], tuple[TargetKey, T, frozenset[str]]] = {}
     in_flight: set[Future[R]] = set()
 
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
         while has_pending() or in_flight:
             while has_pending() and len(in_flight) < worker_count:
+                scheduled = False
                 for key in target_order:
                     if len(in_flight) >= worker_count:
                         break
@@ -137,18 +204,32 @@ def run_target_pipelined_job_pool(
                     if idx >= len(target_jobs):
                         continue
                     job = target_jobs[idx]
+                    keys = (
+                        concurrency_keys(job)
+                        if concurrency_keys is not None
+                        else frozenset()
+                    )
+                    if concurrency_keys is not None and _keys_blocked(
+                        keys, in_flight_concurrency_keys
+                    ):
+                        continue
                     in_flight_targets.add(key)
+                    in_flight_concurrency_keys.update(keys)
                     fut = pool.submit(run_job, job)
-                    future_to_context[fut] = (key, job)
+                    future_to_context[fut] = (key, job, keys)
                     in_flight.add(fut)
+                    scheduled = True
+                if not scheduled:
+                    break
 
             if not in_flight:
                 break
 
             done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
             for fut in done:
-                key, job = future_to_context.pop(fut)
+                key, job, keys = future_to_context.pop(fut)
                 in_flight_targets.discard(key)
+                in_flight_concurrency_keys.difference_update(keys)
                 result = fut.result()
                 results.append(result)
                 advance = on_complete(job, result) if on_complete else True

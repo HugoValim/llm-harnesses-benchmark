@@ -506,6 +506,87 @@ def test_dispatch_build_jobs_pipelined_starts_run2_while_straggler_on_run1(
     }
 
 
+def test_dispatch_build_jobs_pipelined_serializes_subscription_provider(
+    tmp_path: Path,
+) -> None:
+    import threading
+    import time
+
+    active_by_provider: dict[str, int] = {}
+    overlap = threading.Event()
+    active_lock = threading.Lock()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        model = cmd[cmd.index("--model") + 1]
+        provider = {
+            "claude_opus_4_8": "anthropic",
+            "claude_fable_5": "anthropic",
+            "codex_gpt_5_5": "openai",
+        }[model]
+        with active_lock:
+            active_by_provider[provider] = active_by_provider.get(provider, 0) + 1
+            if active_by_provider[provider] > 1:
+                overlap.set()
+        time.sleep(0.05)
+        with active_lock:
+            active_by_provider[provider] -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("claude", "claude_opus_4_8", 1, 1),
+        BuildJob("claude", "claude_fable_5", 1, 1),
+        BuildJob("codex", "codex_gpt_5_5", 1, 1),
+    ]
+    dispatch_build_jobs_pipelined(
+        jobs,
+        workers=3,
+        models_config=MODELS_CONFIG,
+        results_dir=tmp_path,
+        extra_args=[],
+        run_cmd=fake_run_cmd,
+    )
+    assert not overlap.is_set(), "anthropic subscription models overlapped"
+
+
+def test_dispatch_build_jobs_pipelined_keeps_workers_full(
+    tmp_path: Path,
+) -> None:
+    import threading
+    import time
+
+    max_in_flight = 0
+    in_flight = 0
+    active_lock = threading.Lock()
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        with active_lock:
+            nonlocal max_in_flight, in_flight
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        time.sleep(0.05)
+        with active_lock:
+            in_flight -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    jobs = [
+        BuildJob("claude", "claude_opus_4_8", 1, 1),
+        BuildJob("claude", "claude_fable_5", 1, 1),
+        BuildJob("claude", "claude_sonnet_4_6", 1, 1),
+        BuildJob("codex", "kimi_k2_7", 1, 1),
+        BuildJob("codex", "qwen3_5", 1, 1),
+        BuildJob("codex", "glm_5_2", 1, 1),
+    ]
+    dispatch_build_jobs_pipelined(
+        jobs,
+        workers=3,
+        models_config=MODELS_CONFIG,
+        results_dir=tmp_path,
+        extra_args=[],
+        run_cmd=fake_run_cmd,
+    )
+    assert max_in_flight == 3
+
+
 def test_phase_build_forwards_no_docker_prune_and_prunes_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

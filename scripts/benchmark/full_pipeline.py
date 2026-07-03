@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -26,6 +25,7 @@ from benchmark.harnesses import dispatch_harness
 from benchmark.job_pool import run_job_pool, run_target_pipelined_job_pool
 from benchmark.replicates import expand_replicate_first, model_num_runs
 from benchmark.result_layout import format_replicate_dir, replicate_result_dir
+from benchmark.subscription_providers import build_job_concurrency_keys
 from benchmark.timeouts import meta_timeout_cli_flags, timeout_cli_flags
 from benchmark.util import load_json, print_line
 
@@ -266,6 +266,14 @@ def dispatch_build_jobs(
             for job in jobs
         ]
 
+    registry = registry_by_slug(
+        _normalize_registry_models(load_json(models_config).get("models"))
+    )
+
+    def concurrency_keys(job: BuildJob) -> frozenset[str]:
+        model_row = registry.get(job.model_slug, {"slug": job.model_slug})
+        return build_job_concurrency_keys(harness=job.harness, model_row=model_row)
+
     def run_one(job: BuildJob) -> tuple[str, int]:
         return execute_build_job(
             job,
@@ -277,7 +285,9 @@ def dispatch_build_jobs(
             run_cmd=run_cmd,
         )
 
-    return run_job_pool(list(jobs), workers, run_one)
+    return run_job_pool(
+        list(jobs), workers, run_one, concurrency_keys=concurrency_keys
+    )
 
 
 def dispatch_build_jobs_by_replicate_wave(
@@ -392,20 +402,11 @@ def dispatch_build_jobs_pipelined(
     if any(job.harness == "opencode" for job in jobs):
         kill_stale_opencode_processes()
 
-    opencode_lock = threading.Lock()
+    def concurrency_keys(job: BuildJob) -> frozenset[str]:
+        model_row = registry.get(job.model_slug, {"slug": job.model_slug})
+        return build_job_concurrency_keys(harness=job.harness, model_row=model_row)
 
     def run_one(job: BuildJob) -> tuple[str, int]:
-        if job.harness == "opencode":
-            with opencode_lock:
-                return execute_build_job(
-                    job,
-                    models_config=models_config,
-                    results_dir=results_dir,
-                    extra_args=extra_args,
-                    run_id=run_id,
-                    dry_run=dry_run,
-                    run_cmd=run_cmd,
-                )
         return execute_build_job(
             job,
             models_config=models_config,
@@ -441,6 +442,7 @@ def dispatch_build_jobs_pipelined(
         replicate_index=lambda job: job.replicate_index,
         initial_next_index=initial_next_index,
         on_complete=on_complete,
+        concurrency_keys=concurrency_keys,
     )
 
 

@@ -110,3 +110,38 @@ def test_run_target_pipelined_job_pool_never_overlaps_same_target() -> None:
     assert not overlap.is_set(), "same target replicates overlapped"
     assert set(results) == {"a1", "a2", "a3", "b1"}
     assert set(ran) == {"a1", "a2", "a3", "b1"}
+
+
+def test_run_job_pool_backfills_with_concurrency_keys() -> None:
+    max_in_flight = 0
+    in_flight = 0
+    lock = threading.Lock()
+
+    def concurrency_keys(job: tuple[str, str]) -> frozenset[str]:
+        slug, provider = job
+        keys = {f"model:{slug}"}
+        if provider:
+            keys.add(f"subscription:{provider}")
+        return frozenset(keys)
+
+    def run_job(job: tuple[str, str]) -> str:
+        nonlocal max_in_flight, in_flight
+        with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        time.sleep(0.05)
+        with lock:
+            in_flight -= 1
+        return job[0]
+
+    jobs = [
+        ("opus", "anthropic"),
+        ("fable", "anthropic"),
+        ("sonnet", "anthropic"),
+        ("a", ""),
+        ("b", ""),
+        ("c", ""),
+    ]
+    results = run_job_pool(jobs, 3, run_job, concurrency_keys=concurrency_keys)
+    assert max_in_flight == 3
+    assert set(results) == {"opus", "fable", "sonnet", "a", "b", "c"}
